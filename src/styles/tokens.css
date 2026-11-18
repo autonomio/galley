@@ -1,0 +1,150 @@
+/* ==========================================================================
+   Galley tokens — the only file allowed to hold raw values.
+
+   The default look is Poise's: its dark neutral stack, IBM Plex Sans for
+   reading, Zen Maru Gothic for headings, a 4-base spacing scale.
+
+   Three layers, each reading only from the one above it:
+     1. Controls    --galley-ctl-*   the knobs a host turns
+     2. Primitives  --galley-p-*     the raw palette and families
+     3. Semantic    --galley-*       the only names galley.css uses
+
+   Everything is defined on the editor root at zero specificity, so a host
+   restyles Galley by setting any of these on `.galley` (or on a class of
+   its own on the same element) — never by overriding galley.css rules.
+   ========================================================================== */
+
+:where(.galley) {
+  /* ---------- 1. Controls ---------- */
+  --galley-ctl-base-size: 15px;   /* type and component scale root */
+  --galley-ctl-density: 1;        /* 0.8 compact · 1 calm · 1.2 comfortable */
+  --galley-ctl-radius: 1;         /* 0 square · 1 Poise · 2 round */
+  --galley-ctl-motion: 1;         /* 0 still · 1 animated */
+  --galley-ctl-tint: 22%;         /* strength of status tints */
+  --galley-ctl-leading: 1;        /* line height of reading text */
+  --galley-ctl-measure: 1;        /* reading width of the page */
+  --galley-ctl-heading: 1;        /* size of headings, and the space around them */
+  --galley-ctl-paragraph: 0;      /* extra space after a paragraph, in lines */
+  --galley-ctl-font-ui: "IBM Plex Sans";
+  --galley-ctl-font-display: "Zen Maru Gothic";
+  --galley-ctl-font-mono: "IBM Plex Mono";
+
+  /* ---------- 2. Primitives ---------- */
+  --galley-p-n0: #161A20;
+  --galley-p-n1: #1C2129;
+  --galley-p-n2: #2F353D;
+  --galley-p-n3: #5C636D;
+  --galley-p-n4: #8E959E;
+  --galley-p-n5: #C5CBD1;
+  --galley-p-n6: #DEE2E6;
+  --galley-p-n7: #F7F8F9;
+  --galley-p-white: #FFFFFF;
+  --galley-p-black: #000000;
+  /* Accents: each one is a meaning, never a decoration */
+  --galley-p-blue: #3A72B0;
+  --galley-p-green: #4A8E5E;
+  --galley-p-amber: #A8792B;
+  --galley-p-red: #B85048;
+  --galley-p-fallback-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --galley-p-fallback-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* ---------- 3. Semantic: colour ---------- */
+  --galley-canvas: var(--galley-p-n0);
+  --galley-surface: var(--galley-p-n1);
+  --galley-line: var(--galley-p-n2);
+  --galley-edge: var(--galley-p-n3);
+  --galley-text: var(--galley-p-n6);
+  --galley-text-strong: var(--galley-p-n7);
+  --galley-text-soft: var(--galley-p-n5);
+  --galley-text-muted: var(--galley-p-n4);
+  --galley-row-hover: color-mix(in srgb, var(--galley-surface) 55%, transparent);
+  --galley-shadow-color: var(--galley-p-black);
+
+  /* Meanings. Change one and its tint and edge follow. */
+  --galley-accent: var(--galley-p-blue);      /* links, focus, the active item */
+  --galley-done: var(--galley-p-green);       /* done, saved, applied */
+  --galley-attention: var(--galley-p-amber);  /* notes, needs you */
+  --galley-failed: var(--galley-p-red);       /* failed, destructive */
+  --galley-accent-tint: color-mix(in srgb, var(--galley-accent) var(--galley-ctl-tint), transparent);
+  --galley-done-tint: color-mix(in srgb, var(--galley-done) var(--galley-ctl-tint), transparent);
+  --galley-attention-tint: color-mix(in srgb, var(--galley-attention) var(--galley-ctl-tint), transparent);
+  --galley-failed-tint: color-mix(in srgb, var(--galley-failed) var(--galley-ctl-tint), transparent);
+  --galley-attention-edge: color-mix(in srgb, var(--galley-attention) 55%, var(--galley-line));
+  --galley-failed-edge: color-mix(in srgb, var(--galley-failed) 55%, var(--galley-line));
+  --galley-note-mark: color-mix(in srgb, var(--galley-attention) 65%, transparent);
+  --galley-note-mark-hover: color-mix(in srgb, var(--galley-attention) 14%, transparent);
+  --galley-highlight: color-mix(in srgb, var(--galley-attention) 18%, transparent);
+
+  /* ---------- 3. Semantic: type ---------- */
+  --galley-font-ui: var(--galley-ctl-font-ui), var(--galley-p-fallback-sans);
+  --galley-font-display: var(--galley-ctl-font-display), var(--galley-ctl-font-ui), var(--galley-p-fallback-sans);
+  --galley-font-mono: var(--galley-ctl-font-mono), var(--galley-p-fallback-mono);
+  --galley-fw-regular: 400;
+  --galley-fw-strong: 600;
+  --galley-fw-display: 700;
+  --galley-fs-tiny: calc(var(--galley-ctl-base-size) * 0.7);
+  --galley-fs-micro: calc(var(--galley-ctl-base-size) * 0.75);
+  --galley-fs-row: calc(var(--galley-ctl-base-size) * 0.8125);
+  --galley-fs-ui: calc(var(--galley-ctl-base-size) * 0.875);
+  --galley-fs-read: var(--galley-ctl-base-size);
+  --galley-fs-code: calc(var(--galley-ctl-base-size) * 0.92);
+  --galley-fs-h1: calc(var(--galley-ctl-base-size) * 2.4 * var(--galley-ctl-heading));
+  --galley-fs-h2: calc(var(--galley-ctl-base-size) * 1.6 * var(--galley-ctl-heading));
+  --galley-lh-tight: 1.15;
+  --galley-lh-ui: 1.4;
+  --galley-lh-body: calc(1.55 * var(--galley-ctl-leading));
+  --galley-lh-read: calc(1.7 * var(--galley-ctl-leading));
+  --galley-ls-micro: 0.06em;
+
+  /* ---------- 3. Semantic: space, size, shape ---------- */
+  --galley-sp-unit: calc(4px * var(--galley-ctl-density));
+  --galley-sp-1: var(--galley-sp-unit);
+  --galley-sp-2: calc(var(--galley-sp-unit) * 2);
+  --galley-sp-3: calc(var(--galley-sp-unit) * 3);
+  --galley-sp-4: calc(var(--galley-sp-unit) * 4);
+  --galley-sp-6: calc(var(--galley-sp-unit) * 6);
+  --galley-sp-10: calc(var(--galley-sp-unit) * 10);
+  --galley-sp-heading: calc(var(--galley-sp-unit) * var(--galley-ctl-heading));
+  --galley-sp-paragraph: calc(var(--galley-ctl-base-size) * 1.7 * var(--galley-ctl-leading) * var(--galley-ctl-paragraph));
+  --galley-w-page: calc(680px * var(--galley-ctl-measure));
+  --galley-size-bar: calc(var(--galley-sp-unit) * 12);
+  --galley-size-button: calc(var(--galley-sp-unit) * 6.5);
+  --galley-size-floating: 24px;     /* the selection buttons; selection.ts lays them out at this size */
+  --galley-line-hair: 1px;
+  --galley-line-focus: 2px;
+  --galley-r-card: calc(4px * var(--galley-ctl-radius));
+  --galley-r-panel: calc(8px * var(--galley-ctl-radius));
+  --galley-r-pill: 999px;
+  --galley-shadow-menu: 0 4px 8px color-mix(in srgb, var(--galley-shadow-color) 45%, transparent), 0 2px 4px color-mix(in srgb, var(--galley-shadow-color) 30%, transparent);
+  --galley-shadow-panel: 0 12px 24px color-mix(in srgb, var(--galley-shadow-color) 40%, transparent), 0 4px 8px color-mix(in srgb, var(--galley-shadow-color) 25%, transparent);
+
+  /* ---------- 3. Semantic: motion and layers ---------- */
+  --galley-dur-feedback: calc(100ms * var(--galley-ctl-motion));
+  --galley-dur-settle: calc(320ms * var(--galley-ctl-motion));
+  --galley-ease-spring: cubic-bezier(0.22, 1.2, 0.36, 1);
+  --galley-z-layer: 2;
+  --galley-z-notes: 5;
+  --galley-z-menu: 40;
+  --galley-z-floating: 50;
+  --galley-z-notices: 60;
+}
+
+/* Light: the same stack, inverted. */
+:where(.galley[data-galley-theme="light"]) {
+  --galley-p-n0: #FBFBFA;
+  --galley-p-n1: #F2F2F0;
+  --galley-p-n2: #E2E3E1;
+  --galley-p-n3: #B9BCBF;
+  --galley-p-n4: #6E747B;
+  --galley-p-n5: #3F454C;
+  --galley-p-n6: #23272D;
+  --galley-p-n7: #111418;
+  --galley-p-blue: #2F64A3;
+  --galley-p-amber: #A16E1C;
+  --galley-row-hover: color-mix(in srgb, var(--galley-p-n2) 60%, transparent);
+  --galley-shadow-color: color-mix(in srgb, var(--galley-p-black) 40%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.galley) { --galley-ctl-motion: 0; }
+}

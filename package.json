@@ -1,0 +1,53 @@
+{
+  "name": "@autonomio/galley",
+  "version": "0.1.0",
+  "description": "A calm markdown writing surface any web app can adopt as its own editor.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/autonomio/galley.git"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "default": "./dist/server/index.js"
+    },
+    "./galley.css": "./dist/styles/galley.css",
+    "./tokens.css": "./dist/styles/tokens.css"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node -e \"require('fs').cpSync('src/styles','dist/styles',{recursive:true})\"",
+    "build:demo": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "@types/node": "24.13.3",
+    "typescript": "5.9.3",
+    "vite": "8.1.6",
+    "vitest": "4.1.12"
+  }
+}
