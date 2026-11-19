@@ -1,8 +1,0 @@
-id: "S-891ddf2c-ac93-52ea-7a53-cf760718196a"
-kind: "publication"
-title: "Show Me How You Cite: Citation Fidelity, Usage, and Topology in the Evidence Behavior of AI Scientific Writing"
-uri: "https://doi.org/10.18653/2026.emnlp-main.2063"
-date: "2026"
-locator: "abstract"
-excerpt: "Even when retrieval and human guidance reduce ghost citations, AI-generated papers contain more unsupported claims, rely on front-section evidence, use citations more affirmatively, and form broader but less interconnected reference networks."
-access: "inspected"

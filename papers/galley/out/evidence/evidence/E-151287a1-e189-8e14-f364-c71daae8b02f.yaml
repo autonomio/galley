@@ -1,8 +1,8 @@
 id: "E-151287a1-e189-8e14-f364-c71daae8b02f"
 kind: "external"
-summary: "narrower: The passage comes from a single analysis that suggests highest-impact papers combine conventional and unusual prior work, without specifying long-run impact or multiple measurable features."
-source_ids: ["S-6ae26fbf-f3cc-58b3-9af1-2cab0a17f080"]
+summary: "narrower: The passage describes manual fault seeding and mutant generation only within software testing as a common practice for analyzing fault detection effectiveness and explicitly notes uncertainty about whether results obtained this way yield valid, representative conclusions."
+source_ids: ["S-c83708cb-4686-31b6-94b4-968bb8d9b86c"]
 independent: false
 limitations: ["Verified against the abstract; the full text was not inspected."]
 premise_claim_ids: []
-claim_ids: ["C-92a5cbf7-4f1f-f313-653e-d78f0e8a1f4a"]
+claim_ids: ["C-4a52c88f-f4b6-4854-f891-27f13c9d882d"]

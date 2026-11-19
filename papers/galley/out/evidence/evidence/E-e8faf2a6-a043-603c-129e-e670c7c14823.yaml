@@ -1,8 +1,0 @@
-id: "E-e8faf2a6-a043-603c-129e-e670c7c14823"
-kind: "external"
-summary: "narrower: The passage states the conclusion with lower certainty ('suggests' rather than 'found'), qualifies the grounding as 'primarily' conventional, and refers to '17.9 million papers' rather than specifically 'research papers'."
-source_ids: ["S-feba46e4-08a1-932a-1fa2-e38ca1d24f8b"]
-independent: false
-limitations: ["Verified against the abstract; the full text was not inspected."]
-premise_claim_ids: []
-claim_ids: ["C-7858fd78-29a3-a15b-3fc9-56658fbc7373"]

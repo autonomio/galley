@@ -1,6 +1,6 @@
 id: "C-72e4f242-8177-e976-c41a-bf52474c4336"
 class: "derived_inference"
-statement: "In a thread shared with the agents (@both), agent changes arrive as proposed edits placed in the document, following the side-chat pattern of the authors' poise editor. The person accepts or declines each one and stays in charge."
+statement: "With citation choices turned on, each claim waits for the person to pick one of its candidate sources (a, b, c), let the system pick, or state the claim without a source. This run used automatic citation."
 uncertainty: "medium"
 evidence_ids: ["E-97abce5e-6e74-230a-6db5-3427633e8fd9"]
 state: "active"

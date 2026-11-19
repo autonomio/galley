@@ -1,6 +1,6 @@
 id: "C-374f2cc4-23e6-8233-4e1d-384824fa6474"
 class: "derived_inference"
-statement: "Code restricts the draft to verified passages, and drafting instructions direct it to write claims with hypothesis standing as hypotheses. The fidelity behaviour checks drafted sections and rewrites sentences that exceed their claim's standing or verified evidence. It can miss overclaims and is skipped after two failures."
+statement: "Each family uses its own command-line client without tools or delegation and answers in a strict JSON schema. Galley stores every prompt and answer in the paper's folder, and a rerun replays the recorded model exchanges step by step without calling a model. Readers can inspect the journal where the authors release the folder."
 uncertainty: "medium"
 evidence_ids: ["E-eae2c838-0185-aed0-8ec3-d444670a969e"]
 state: "active"

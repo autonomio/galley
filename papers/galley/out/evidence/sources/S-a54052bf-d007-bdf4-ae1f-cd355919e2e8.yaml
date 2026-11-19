@@ -4,5 +4,5 @@ title: "Argument plan of the manuscript"
 uri: null
 date: "2026-11-19"
 locator: "C42"
-excerpt: "Based on the cited abstracts, we hypothesize that PaperOrchestra, The AI Scientist and DeepSciVerify each lack the combination of manuscript preparation that continues when an improver fails and is skipped, automatic narrowing or hedging of claims based on code-confirmed verbatim evidence, cross-family verification, and a human sign-off sheet. The proposed novelty is the combination. Earlier work established multi-agent drafting and automated review."
+excerpt: "The paper does not test whether cross-family separation catches more errors than single-family review or evaluate the human controls with users. Galley checks citations against OpenAlex abstracts outside model-run reviews, which use full-text passages and an independent model audit. The evidence comes from one run on one seed, with one family assignment and no baseline system."
 access: "inspected"

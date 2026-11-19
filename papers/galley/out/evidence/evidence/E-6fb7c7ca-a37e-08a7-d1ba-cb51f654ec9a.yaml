@@ -1,0 +1,8 @@
+id: "E-6fb7c7ca-a37e-08a7-d1ba-cb51f654ec9a"
+kind: "external"
+summary: "narrower: The passage reports rates of fabricated citations and real citations with substantive errors only for ChatGPT's GPT-3.5 and GPT-4 models within an unspecified set of documents, without generalizing across large language models or specifying scholarly text such as literature reviews."
+source_ids: ["S-91191346-cac4-da00-a68a-e4c9cd764eba"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-9fd0b749-d665-bb35-13b9-b718f99aca9f"]

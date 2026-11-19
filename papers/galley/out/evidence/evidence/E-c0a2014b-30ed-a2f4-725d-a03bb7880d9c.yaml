@@ -1,0 +1,8 @@
+id: "E-c0a2014b-30ed-a2f4-725d-a03bb7880d9c"
+kind: "external"
+summary: "narrower: The passage states that InkSync maintains a trace of auto-generated content for auditing during LLM-assisted document editing, without stating that it visually displays provenance at the text-span level or marks human-written versus LLM-generated portions."
+source_ids: ["S-fc5c76ba-8c96-8b58-309c-c80dafe28b1c"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-a9fa3523-f94e-7115-2078-314dfd16fa87"]

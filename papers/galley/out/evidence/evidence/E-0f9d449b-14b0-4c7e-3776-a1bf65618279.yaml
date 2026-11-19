@@ -1,7 +1,7 @@
 id: "E-0f9d449b-14b0-4c7e-3776-a1bf65618279"
 kind: "external"
-summary: "narrower: The passage states that the framework enables large language models to generate ideas, run experiments and write full scientific papers and that The AI Scientist runs a simulated review process for evaluation, without stating that evaluation uses an automated LLM reviewer."
-source_ids: ["S-c4a2f5ce-5ff9-a6a4-3f8d-96090e0e0bc3"]
+summary: "narrower: The passage describes OpenAlex simply as an open rather than fully open index and specifies scholarly papers and journals rather than the broader categories of scholarly works and venues."
+source_ids: ["S-d64f70c6-a31f-3540-6356-4f9b98e15c52"]
 independent: false
 limitations: ["Verified against the abstract; the full text was not inspected."]
 premise_claim_ids: []

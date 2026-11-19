@@ -1,6 +1,6 @@
 id: "C-c3a470ac-5923-8c47-e87e-fca2650f7ea6"
 class: "observed_fact"
-statement: "LLMs used as evaluators tend to rate their own outputs more favourably than outputs from other models."
-uncertainty: "low"
-evidence_ids: ["E-d96bad3e-d7d1-3b5d-3278-447e7f4fa298","E-b6afd696-62df-4cf5-b40f-72e848bdc3c4"]
+statement: "Separation of duties is an established security principle in organizations."
+uncertainty: "medium"
+evidence_ids: ["E-488a4890-9a26-4e38-d839-54fc72ebe6aa"]
 state: "active"

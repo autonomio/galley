@@ -1,0 +1,8 @@
+id: "E-9496cc01-48ff-fb24-2eb8-5f475244c637"
+kind: "assumption"
+summary: "No external evidence was verified; the manuscript states this as a hypothesis."
+source_ids: ["S-c2633c05-976a-56d7-35ed-bd4ea1809c9f"]
+independent: false
+limitations: []
+premise_claim_ids: []
+claim_ids: ["C-915cde86-ca46-89d8-abce-d4ac254744aa"]

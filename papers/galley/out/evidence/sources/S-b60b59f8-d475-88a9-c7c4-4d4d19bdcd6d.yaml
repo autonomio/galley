@@ -1,0 +1,8 @@
+id: "S-b60b59f8-d475-88a9-c7c4-4d4d19bdcd6d"
+kind: "publication"
+title: "Exploring design decisions for mutation testing"
+uri: "https://openalex.org/W3094413649"
+date: "2018"
+locator: "abstract"
+excerpt: "Mutation testing produces a measure of quality of the test suite called mutation score. The mutation score of a given test suite is the percentage of mutants killed by that test suite out of the total number of generated mutants."
+access: "inspected"

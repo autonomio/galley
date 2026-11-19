@@ -1,0 +1,8 @@
+id: "S-3ed0d732-4aaf-c64d-44ed-5d59ef0292ff"
+kind: "publication"
+title: "Replacing Judges with Juries: Evaluating LLM Generations with a Panel of Diverse Models"
+uri: "https://doi.org/10.48550/arxiv.2404.18796"
+date: "2024"
+locator: "abstract"
+excerpt: "We propose instead to evaluate models using a Panel of LLm evaluators (PoLL). Across three distinct judge settings and spanning six different datasets, we find that using a PoLL composed of a larger number of smaller models outperforms a single large judge, exhibits less intra-model bias due to its composition of disjoint model families, and does so while being over seven times less expensive."
+access: "inspected"

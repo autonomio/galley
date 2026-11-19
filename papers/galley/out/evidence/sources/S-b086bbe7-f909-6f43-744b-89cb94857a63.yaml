@@ -4,5 +4,5 @@ title: "Argument plan of the manuscript"
 uri: null
 date: "2026-11-19"
 locator: "C35"
-excerpt: "Code confirms that every cited passage is copied verbatim from the cited work's abstract. A citation cannot rest on a model-invented passage. For works with a DOI, the bibliographic record comes from the DOI registry, which prevents a model-invented record for those works."
+excerpt: "The calibrate behavior plants defective citations and unaltered controls among the verified citations and measures how many defects the verifier catches and how many controls it wrongly rejects. The production record reports both rates for this run."
 access: "inspected"

@@ -1,0 +1,8 @@
+id: "E-f66150d0-888b-77f7-b542-0c1957f46af3"
+kind: "external"
+summary: "narrower: The passage identifies fabricated or inaccurate citations as a prevalent LLM hallucination in academic contexts, but it does not specifically mention misattributed citations or state that the literature stresses claim-level verification, traceable evidence, and human accountability."
+source_ids: ["S-754c49b6-da01-dc8e-ced0-02618721b66d"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-0baf7f3b-0d8d-5b6f-1f1c-5e019a23b548"]

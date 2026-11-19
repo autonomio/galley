@@ -1,6 +1,6 @@
 id: "C-70cac857-6141-b0a9-11c9-848013315e81"
 class: "observed_fact"
-statement: "Evaluating the quality of AI-generated research papers remains an open challenge. A benchmarking protocol assesses such papers using LLM-based automated peer review."
-uncertainty: "medium"
-evidence_ids: ["E-309fb27a-c136-5bb4-4863-2477f5252271"]
+statement: "LLMs used as evaluators tend to rate their own outputs more favorably than outputs from other models (self-preference bias)."
+uncertainty: "low"
+evidence_ids: ["E-d96bad3e-d7d1-3b5d-3278-447e7f4fa298","E-b6afd696-62df-4cf5-b40f-72e848bdc3c4"]
 state: "active"
