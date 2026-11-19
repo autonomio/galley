@@ -8,7 +8,8 @@ interface Context {
   openalexKey: boolean
   seats: Record<'author' | 'checker' | 'challenger' | 'verifier', Seat>
   referees: string[]
-  defaults: { venue: string; words: number; rounds: number; dial: string; citations: string }
+  defaults: { venue: string; words: number; rounds: number; dial: string; citations: string; literatureReview?: boolean }
+  review?: { research: string; audit: string; papers: number }
 }
 interface Item { name: string; kind: 'dataset' | 'document' | 'link'; url?: string; file?: File; detail: string; private: boolean }
 
@@ -64,7 +65,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   const items: Item[] = []
   let step = 0
   let context: Context | null = null
-  const settings = { author: '', affiliation: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto' }
+  const settings = { author: '', affiliation: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false }
 
   const dialog = h('dialog', { class: 'gw', 'aria-labelledby': 'gw-title' })
   const trail = h('ol', { class: 'gw-trail' })
@@ -80,7 +81,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
 
   fetch('/api/galley-papers/_context').then((r) => r.ok ? r.json() : null).then((c: Context | null) => {
     context = c
-    if (c) Object.assign(settings, { venue: c.defaults.venue, words: c.defaults.words, rounds: c.defaults.rounds, dial: c.defaults.dial, citations: c.defaults.citations })
+    if (c) Object.assign(settings, { venue: c.defaults.venue, words: c.defaults.words, rounds: c.defaults.rounds, dial: c.defaults.dial, citations: c.defaults.citations, literatureReview: !!c.defaults.literatureReview })
     render()
   }).catch(() => render())
 
@@ -178,6 +179,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       field('Author', h('div', { class: 'gw-pair' }, input('author', 'Name'), input('affiliation', 'Affiliation')), 'Set in the byline when the paper is typeset; never sent to a model.'),
       field('Venue', h('span', {}, input('venue', 'Venue', 'gw-venues'), h('datalist', { id: 'gw-venues' }, ...['preprint (arXiv)', 'preprint (bioRxiv)', 'preprint (medRxiv)', 'preprint (SSRN)', 'preprint (EdArXiv)', 'journal article'].map((v) => h('option', { value: v })))), 'Shapes the outline and how the referees read the paper.'),
       field('Length', segmented([3000, 5000, 7000, 9000].map((w) => [`${n(w)} words`, w] as [string, number]), settings.words, (v) => { settings.words = v; render() }, 'Length')),
+      field('Also include', h('div', { class: 'gw-choices' }, toggle('literatureReview', 'Systematic literature review', `Canary searches OpenAlex, screens the candidates, reads at least ${context?.review?.papers ?? 50} full papers and has every finding audited by a second model; the paper gets its own review section. It runs alongside the other steps.`))),
       field('Review', segmented([['1 round', 1], ['2 rounds', 2]], settings.rounds, (v) => { settings.rounds = v; render() }, 'Referee rounds'), `Four referee seats a round: ${context?.referees.join(', ') ?? 'methods, field, citations, editor'}, from the families that did not write the text. About 50 min a round.`),
       field('Your part', choice('dial', [
         ['autonomous', 'Autonomous', 'Nothing waits for you. You review the finished paper.'],
@@ -199,6 +201,12 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       h('button', { type: 'button', role: 'radio', 'aria-checked': String(value === current), class: value === current ? 'is-on' : '', text, onclick: () => pick(value) })))
   }
 
+  function toggle(key: 'literatureReview', label: string, help: string): HTMLElement {
+    const box = h('input', { type: 'checkbox', checked: settings[key] })
+    box.addEventListener('change', () => { settings[key] = box.checked })
+    return h('label', { class: 'gw-choice' }, box, h('span', {}, h('span', { class: 'gw-choice-label', text: label }), h('span', { class: 'gw-help', text: help })))
+  }
+
   function choice(key: 'dial' | 'citations', options: [string, string, string][]): HTMLElement {
     return h('div', { class: 'gw-choices', role: 'radiogroup' }, ...options.map(([value, label, help]) => {
       const radio = h('input', { type: 'radio', name: `gw-${key}`, value, checked: settings[key] === value })
@@ -213,11 +221,13 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
     const m = (seat: keyof Context['seats']) => s?.[seat]?.model ?? seat
     const datasets = items.filter((i) => i.kind === 'dataset')
     const searches = context?.openalexKey ? 'two' : 'one'
-    const plan: [string, string, string, number][] = [
+    // A step that runs alongside the others shows its own time but adds little to the whole.
+    const plan: [string, string, string, number, boolean?][] = [
       ['Read your seed', 'claims, concern, contribution and host field', m('author'), 1],
       ...(items.length ? [['Read your materials', datasets.length ? 'profile datasets here; read documents and links' : 'read documents and links', 'this machine', 1] as [string, string, string, number]] : []),
       ['Place the idea', '7 literature searches through Canary: closest work, bottleneck, consensus', m('checker'), 3],
       ['Challenge the idea', 'seven impact factors; three directions; one chosen', `${m('challenger')} · ${m('checker')}`, 10],
+      ...(settings.literatureReview ? [['Systematic review', `Canary: search plan, screening, at least ${context?.review?.papers ?? 50} full papers read, every finding audited; alongside the steps below`, `${context?.review?.research ?? 'gpt-6.1-sol'} · ${context?.review?.audit ?? 'gpt-6-astra'}`, 40, true] as [string, string, string, number, boolean]] : []),
       ...(datasets.length ? [['Measure your data', 'the analyses the claims need, computed on this machine', `${m('author')} · this machine`, 3] as [string, string, string, number]] : []),
       ['Plan and outline', 'thesis, claims, sections, figures', m('author'), 8],
       ['Find and verify evidence', `${searches} search${searches === 'one' ? '' : 'es'} per claim; verbatim passages; another family's verdict; planted-defect calibration`, `${m('checker')} · ${m('verifier')}`, 20],
@@ -225,12 +235,13 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       ['Review', `${settings.rounds} round${settings.rounds === 1 ? '' : 's'} of four referees; each answer judged by the referee who raised it`, `${m('checker')} · ${m('verifier')}`, 50 * settings.rounds],
       ['Finish', 'ledger reconciled with the text; title and abstract; typeset', `${m('checker')} · ${m('author')}`, 10],
     ]
-    const total = plan.reduce((a, p) => a + p[3], 0) + Math.round((settings.words - 7000) / 1000) * 3
+    const total = plan.reduce((a, p) => a + (p[4] ? 5 : p[3]), 0) + Math.round((settings.words - 7000) / 1000) * 3
     const leaves = [
       [items.some((i) => i.kind !== 'dataset') ? 'Your seed, documents and links' : 'Your seed', 'go to the providers of the three model families (Anthropic, OpenAI, Google).'],
       ...(datasets.some((d) => d.private) ? [['Private datasets', 'never leave this machine; the models see column summaries and computed results.']] : []),
       ...(datasets.some((d) => !d.private) ? [['Shared datasets', 'their summaries and first 15 rows go to the model providers.']] : []),
       ['Search terms', 'go to OpenAlex through Canary.'],
+      ...(settings.literatureReview ? [['Review question', 'goes to Canary\'s research and audit models (OpenAI) and to OpenAlex.']] : []),
       ['Your name', 'is never sent; it is set in the byline at typesetting.'],
     ]
     return [
@@ -333,7 +344,7 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
       h('h2', { id: 'gw-title', class: 'gw-title', text: d.title ?? d.seedTitle ?? 'Untitled paper' }),
       state,
       h('p', { class: 'gw-note', text: `Started ${clock(d.startedAt)}${d.title ? ` · from “${d.seedTitle.length > 70 ? `${d.seedTitle.slice(0, 70)}…` : d.seedTitle}”` : ''}` }),
-      h('ol', { class: 'gw-stages' }, ...d.stages.map((s, i) => h('li', { class: s.done ? 'is-done' : i === current && !done ? 'is-current' : '' },
+      h('ol', { class: d.stages.length > 7 ? 'gw-stages gw-stages--dense' : 'gw-stages' }, ...d.stages.map((s, i) => h('li', { class: s.done ? 'is-done' : i === current && !done ? 'is-current' : '' },
         h('span', { class: 'gw-num', text: s.done ? '✓' : String(i + 1) }), h('span', { class: 'gw-stage', text: s.label })))),
       d.running && d.now.length
         ? h('div', { class: 'gw-box' }, h('div', { class: 'gw-label', text: 'Now' }), ...d.now.map((f) => h('p', { class: 'gw-now' }, h('span', { class: 'gw-now-what' }, h('strong', { text: f.doing }), h('span', { class: 'gw-mono gw-now-who', text: f.who })), h('span', { class: 'gw-mono gw-now-time', text: ago(f.seconds) }))))

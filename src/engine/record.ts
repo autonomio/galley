@@ -47,6 +47,9 @@ export function productionRecord(paper: Paper): Record_ {
     'run.rounds': s.round,
     'run.calibration': s.calibration ? `${s.calibration.caught} of ${s.calibration.planted}` : 'none to check',
     'run.calibration_controls': s.calibration ? `${s.calibration.details.filter((d) => d.kind === 'control' && d.caught).length} of ${s.calibration.details.filter((d) => d.kind === 'control').length}` : 'none to check',
+    'run.claims_review': active.filter((c) => c.origin === 'review').length,
+    // The systematic review's own numbers, as Canary reported them.
+    ...Object.fromEntries(Object.entries(s.literature?.counts ?? {}).map(([key, value]) => [`lit.${key}`, value])),
     // Numbers from the authors' data, as galley computed them.
     ...Object.fromEntries(Object.values(s.measurements ?? {}).map((m) => [`data.${m.id}`, m.value])),
   }

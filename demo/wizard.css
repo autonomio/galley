@@ -108,7 +108,7 @@ html[data-theme="light"] .gw {
 @keyframes gw-lamp { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .gw-lamp { animation: none; } .gw * { transition: none !important; } }
 
-.gw--status { width: min(92vw, 620px); }
+.gw--status { width: min(92vw, 680px); }
 .gw--status .gw-body { padding-top: 20px; }
 .gw--status .gw-label { margin-bottom: 4px; }
 .gw-state { display: flex; align-items: center; gap: 8px; margin: 4px 0 2px; color: var(--gw-text); font-weight: 600; }
@@ -120,6 +120,7 @@ html[data-theme="light"] .gw {
 .gw-stages li:not(:last-child)::after { content: ""; position: absolute; top: 9px; left: 26px; right: 8px; height: 1px; background: var(--gw-line); }
 .gw-stages li.is-done:not(:last-child)::after { background: var(--gw-done); opacity: .5; }
 .gw-stages .gw-stage { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gw-stages--dense li { font-size: 10px; letter-spacing: .04em; }
 .gw-stages .gw-num { display: inline-grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--gw-edge); border-radius: 2px; font: 500 11px/1 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0; }
 .gw-stages li.is-done { color: var(--gw-soft); }
 .gw-stages li.is-done .gw-num { border-color: var(--gw-done); color: var(--gw-done); }

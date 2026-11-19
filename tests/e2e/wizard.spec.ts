@@ -17,7 +17,8 @@ test('the paper wizard walks through seed, materials and settings, and starts th
     openalexKey: true,
     seats: { author: { family: 'claude', name: 'Claude Opus 5.5', model: 'claude-opus-5-5' }, checker: { family: 'gpt', name: 'GPT-6.2 Sol', model: 'gpt-6.2-sol' }, challenger: { family: 'gemini', name: 'Gemini 4 Carbon', model: 'gemini-4-carbon-high' }, verifier: { family: 'gemini', name: 'Gemini 4 Carbon', model: 'gemini-4-carbon-high' } },
     referees: ['methods', 'field', 'citations', 'editor'],
-    defaults: { venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto' },
+    defaults: { venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false },
+    review: { research: 'gpt-6.1-sol', audit: 'gpt-6-astra', papers: 50 },
   } }))
   await page.route(`**/api/galley-papers/${slug}`, async (route) => {
     if (route.request().method() !== 'POST') return route.fulfill({ status: 404, body: '' })
@@ -42,15 +43,18 @@ test('the paper wizard walks through seed, materials and settings, and starts th
   await wizard.getByRole('button', { name: 'Next: Settings' }).click()
   await wizard.getByLabel('Name').fill('Ada Lovelace')
   await wizard.getByRole('radio', { name: '1 round' }).click()
+  await wizard.getByLabel('Systematic literature review').check()
   await expect(wizard).toContainText('key found: two searches per claim')
 
   await wizard.getByRole('button', { name: 'Next: Start' }).click()
   await expect(wizard).toContainText('Measure your data')
+  await expect(wizard).toContainText('Systematic review')
+  await expect(wizard).toContainText('Review question')
   await expect(wizard).toContainText('never leave this machine')
   await wizard.getByRole('button', { name: 'Start the paper' }).click()
   await expect(wizard.getByRole('heading', { name: 'Writing the paper' })).toBeVisible()
 
-  expect(posted!.settings).toMatchObject({ author: 'Ada Lovelace', rounds: 1, dial: 'autonomous', citations: 'auto' })
+  expect(posted!.settings).toMatchObject({ author: 'Ada Lovelace', rounds: 1, dial: 'autonomous', citations: 'auto', literatureReview: true })
   expect(posted!.materials).toEqual([
     expect.objectContaining({ name: 'trees.csv', private: true }),
     { name: 'https://example.org/survey', url: 'https://example.org/survey' },

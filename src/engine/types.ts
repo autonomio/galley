@@ -36,7 +36,9 @@ export interface Claim {
   kind: ClaimKind
   /** Verbatim excerpt of the seed this claim comes from; empty when the system added it. */
   seedQuote: string
-  origin: 'seed' | 'system'
+  origin: 'seed' | 'system' | 'review'
+  /** For a finding of the systematic review: how uncertain the reviewed evidence leaves it (low means well established). */
+  uncertainty?: 'low' | 'moderate' | 'high'
   need: EvidenceNeed
   loadBearing: boolean
   dependsOn: string[]
@@ -235,6 +237,27 @@ export interface Choice {
   answered?: { letters: string[]; at: string }
 }
 
+/** A systematic review of the literature, run by Canary, as the paper uses it. */
+export interface LiteratureReview {
+  question: string
+  status: 'running' | 'done' | 'failed'
+  /** Canary's run key, kept as soon as the run is submitted, so a resumed paper rejoins the same run. */
+  key?: string
+  submittedAt?: string
+  finishedAt?: string
+  error?: string
+  /** The finished research bundle, saved in the paper folder. */
+  bundle?: string
+  searchedOn?: string
+  models?: { research: string; audit: string }
+  protocol?: { concepts: string[]; eligibility: { core: string; supporting: string; exclusion: string }; queries: string[] }
+  counts?: { discovered: number; screened: number; retrieved: number; reviewed: number; core: number; supporting: number; cited: number; queries: number; findings: number; audited: number; minutes: number }
+  gaps?: string[]
+  contradictions?: string[]
+  /** The ledger claims the review contributed. */
+  claimIds?: string[]
+}
+
 export interface PaperState {
   version: 1
   slug: string
@@ -259,6 +282,8 @@ export interface PaperState {
   calibration?: Calibration
   /** What galley computed in the authors' datasets, by analysis id (A1, A2 …). */
   measurements?: Record<string, import('./materials.js').Measurement>
+  /** The systematic review of the literature, when the paper has one. */
+  literature?: LiteratureReview
   profileAfter?: IdeaReview
   /** Behavior targets that are settled: done, skipped, or exhausted. */
   settled: Record<string, 'done' | 'skipped'>

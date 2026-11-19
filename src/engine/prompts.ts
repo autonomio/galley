@@ -27,6 +27,7 @@ export const PLACEHOLDERS: Record<string, string> = {
   'run.claims': 'claims in the final argument',
   'run.claims_seed': 'claims that came from the seed',
   'run.claims_added': 'claims the system added',
+  'run.claims_review': 'claims that are findings of the systematic review, when the paper has one',
   'run.claims_narrowed': 'claims narrowed to what their evidence supports',
   'run.claims_unsupported': 'claims left without external evidence and hedged',
   'run.works_screened': 'candidate works screened for evidence',

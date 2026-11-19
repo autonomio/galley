@@ -2,6 +2,7 @@
 // against the literature, challenge the idea, and plan and outline the paper.
 import { canarySearch, SourceUnavailable, workFromHit, type QueryResult } from '../evidence.js'
 import { BLUEPRINT, HOUSE, STYLE } from '../prompts.js'
+import { REVIEW_SECTION, withReviewSection } from '../literature.js'
 import type { Behavior } from '../scheduler.js'
 import { arr, bool, enm, int, nstr, obj, str } from '../schema.js'
 import { squash } from '../text.js'
@@ -271,7 +272,7 @@ ${s.directions.map((d) => `${d.id}: ${d.title}\n  Question: ${d.question}\n  Shi
 }
 
 /** The aim is settled when the idea review is done or given up, and any direction is chosen. */
-function aimSettled(paper: Parameters<Behavior['ready']>[0]): boolean {
+export function aimSettled(paper: Parameters<Behavior['ready']>[0]): boolean {
   const s = paper.state
   if (!paper.isSettled('position:seed') && !paper.config.off.includes('position')) return false
   if (paper.config.off.includes('review-idea')) return true
@@ -362,7 +363,7 @@ export const outline: Behavior = {
 ${STYLE}
 
 Outline the paper for ${paper.config.venue} in the host field (${s.brief!.field}), about ${paper.config.words} words in total.
-- sections: in order. Each has an id (S1, S2, …), a title, its purpose in one or two sentences, the ids of the claims it establishes, and its word budget. Every load-bearing claim is placed in exactly one section; other claims where they help, or nowhere. Use the host field's conventional structure. Include a section on related work, a section stating the limitations, and a closing section that names what this opens. Do not include an abstract or a references section; those are written later.
+- sections: in order. Each has an id (S1, S2, …), a title, its purpose in one or two sentences, the ids of the claims it establishes, and its word budget. Every load-bearing claim is placed in exactly one section; other claims where they help, or nowhere. Use the host field's conventional structure. ${paper.config.literatureReview && s.literature?.status !== 'failed' ? 'A systematic literature review section is placed after the introduction for you: do not include a separate related-work section; position the paper against prior work in the introduction and the discussion.' : 'Include a section on related work.'} Include a section stating the limitations, and a closing section that names what this opens. Do not include an abstract or a references section; those are written later.
 - figures: at most three in the whole paper, each in the section it belongs to, with an id (fig1, …), a caption, and a spec precise enough to draw it. A figure is a diagram of a structure the paper describes (a pipeline, a set of roles, a lifecycle) or a chart of numbers the paper states. Never a figure that needs data the paper does not have.
 - style: notes on register and conventions for this venue and field.
 - glossary: the terms the paper defines, as "term: definition", including the paper's noun.
@@ -383,6 +384,12 @@ ${activeClaims(paper).map((c) => `- ${c.id} [${c.kind}${c.loadBearing ? ', load-
           figureIds: (sec.figures ?? []).map((f: any) => f.id),
         }))
         s.outline = { sections, style: reply.style, glossary: reply.glossary ?? [] }
+        // The systematic review gets its own section after the introduction; its findings fill it once Canary is done.
+        if (paper.config.literatureReview && s.literature?.status !== 'failed') {
+          s.outline.sections = withReviewSection(s.outline.sections, paper.config.words)
+          const review = s.outline.sections.find((sec) => sec.id === REVIEW_SECTION)
+          if (review && s.literature?.status === 'done') review.claimIds = s.literature.claimIds ?? []
+        }
         s.figures = (reply.sections ?? []).flatMap((sec: any, i: number) => (sec.figures ?? []).map((f: any) => ({ id: String(f.id).replace(/[^A-Za-z0-9_-]/g, ''), caption: f.caption, spec: f.spec, sectionId: `S${i + 1}`, status: 'planned' as const }))).slice(0, 3)
         const placed = new Set(sections.flatMap((sec: { claimIds: string[] }) => sec.claimIds))
         const missing = activeClaims(paper).filter((c) => c.loadBearing && !placed.has(c.id))

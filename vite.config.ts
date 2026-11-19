@@ -131,6 +131,7 @@ function papersPlugin(): Plugin {
           add('rounds', s.rounds, (v) => /^[12]$/.test(v))
           add('dial', s.dial, (v) => ['autonomous', 'assisted', 'propose'].includes(v))
           add('citations', s.citations ?? citations, (v) => ['auto', 'choose', 'mixed'].includes(v))
+          if (s.literatureReview === true) args.push('--literature-review', 'yes')
           // Uploaded files are written under their own names for the engine to copy into the paper; links pass as they are.
           const inbox = join(tmpdir(), `galley-materials-${slug}-${stamp}`)
           for (const m of materials as { name?: string; url?: string; data?: string; private?: boolean }[]) {

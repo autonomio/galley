@@ -16,7 +16,7 @@ npm install && npm run build
 node dist/engine/cli.js write my-seed.md --author "Your Name"
 ```
 
-The manuscript then opens in this editor, with a note on every referee finding; your edits and notes go back into the paper on the next run. See [Papers](docs/PAPERS.md) for the ladder, the seats, the outputs and the editor loop.
+The manuscript then opens in this editor, with a note on every referee finding; your edits and notes go back into the paper on the next run. A paper can also rest on your own datasets and documents (private datasets never leave your machine) and include a systematic literature review that Canary carries out for it (`--literature-review yes`). See [Papers](docs/PAPERS.md) for the ladder, the seats, the outputs and the editor loop.
 
 The first paper galley wrote introduces galley itself, from a seed of the author's own words with nothing added: `papers/galley/` (*Scope-Elastic Manuscript Compilation Narrows or Hedges Unsupported Claims Instead of Blocking Drafts*; `out/paper.pdf`, its sign-off sheet, evidence package and production journal). One untouched run took it from seed to manuscript in 2.8 hours: 121 model calls, 81 referee findings settled over two rounds, 11 citations verified against verbatim passages and 11 rejected, and 6 of 6 planted defects caught by the verifier.
 

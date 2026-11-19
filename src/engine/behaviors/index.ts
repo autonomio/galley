@@ -7,6 +7,7 @@ import { adjudicate, closeRound, referee, respond, verifyDisposition } from './r
 import { findEvidence, reassess, verify } from './truth.js'
 import { draft, fidelity, figure, frame as firstFrame } from './write.js'
 import { analyzeData } from './data.js'
+import { literatureReview } from './literature.js'
 
 // One behavior writes the frame: once when the draft is checked, and again from the reviewed text.
 const frame: Behavior = { ...firstFrame, ready: (paper) => [...firstFrame.ready(paper), ...finalFrame(paper)] }
@@ -16,6 +17,8 @@ export const LADDER: Behavior[] = [
   extract,
   // Aim: is this worth writing, and in which direction?
   position, reviewIdea, reformulate, selectDirection,
+  // When asked for: a systematic review of the literature, by Canary, in the background.
+  literatureReview,
   // With the authors' data: measure, then argue.
   analyzeData,
   plan, outline,

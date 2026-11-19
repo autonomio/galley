@@ -13,6 +13,8 @@ export interface Target {
   run: () => Promise<void>
   /** What giving up on this target means for the state, so nothing waits on it forever. */
   skip?: () => void
+  /** Long work outside the models (a Canary review): it runs alongside the rest of the paper instead of holding it up. */
+  background?: boolean
 }
 
 export interface Behavior {
@@ -98,18 +100,29 @@ export async function runPaper(paper: Paper, behaviors: Behavior[], options: Run
 }
 
 async function scan(paper: Paper, behaviors: Behavior[], options: RunOptions, log: (line: string) => void): Promise<string | undefined> {
+  // Background targets run alongside the scan; the paper waits for them only when nothing else is ready.
+  const background = new Map<string, Promise<void>>()
+  let failure: unknown = null
   for (;;) {
     let progressed = false
     for (const behavior of behaviors) {
       if (paper.config.off.includes(behavior.id)) continue
-      const targets = behavior.ready(paper).filter((t) => !paper.isSettled(t.key))
-      if (!targets.length) continue
+      const targets = behavior.ready(paper).filter((t) => !paper.isSettled(t.key) && !background.has(t.key))
+      for (const target of targets.filter((t) => t.background)) {
+        background.set(target.key, runTarget(paper, behavior, target, log).catch((error) => { failure ??= error }).finally(() => background.delete(target.key)))
+      }
+      const now = targets.filter((t) => !t.background)
+      if (!now.length) continue
       progressed = true
-      await Promise.all(targets.map((target) => runTarget(paper, behavior, target, log)))
+      await Promise.all(now.map((target) => runTarget(paper, behavior, target, log)))
       if (options.until === behavior.id) return paper.state.outcome
       break
     }
-    if (!progressed) return paper.state.outcome
+    if (failure) throw failure
+    if (!progressed) {
+      if (!background.size) return paper.state.outcome
+      await Promise.race(background.values())
+    }
   }
 }
 

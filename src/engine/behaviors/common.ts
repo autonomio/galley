@@ -57,7 +57,8 @@ export function describeClaim(paper: Paper, c: Claim): string {
     : c.status === 'internal' ? 'evidence: the authors\' own work; state it plainly as a property of what this paper presents; do not cite'
       : c.status === 'assumed' ? 'evidence: none needed (common knowledge or a stated premise)'
         : 'evidence: none verified; present it only as a hypothesis, an expectation or an open question, or leave it out if the section works without it'
-  return `- ${c.id} [${c.kind}${c.loadBearing ? ', load-bearing' : ''}] ${c.text}\n  ${support}`
+  const review = c.origin === 'review' ? `, finding of the systematic review, uncertainty ${c.uncertainty ?? 'moderate'}` : ''
+  return `- ${c.id} [${c.kind}${c.loadBearing ? ', load-bearing' : ''}${review}] ${c.text}\n  ${support}`
 }
 
 export function claimsBlock(paper: Paper, ids?: string[]): string {
@@ -105,7 +106,7 @@ export function ledgerAppendix(paper: Paper): string {
   const lines = activeClaims(paper).map((c) => {
     const keys = verifiedCitations(paper, c.id).map((cite) => `@${keyFor(paper, paper.state.works[cite.workId])}`)
     const evidence = keys.length ? ` [${keys.join('; ')}]` : ''
-    return `- **${c.id}** (${c.kind}${c.loadBearing ? ', load-bearing' : ''}; ${STATUS_WORDS[c.status] ?? c.status}${c.origin === 'system' ? '; added by the system' : '; from the seed'})${evidence}. ${c.text}`
+    return `- **${c.id}** (${c.kind}${c.loadBearing ? ', load-bearing' : ''}; ${STATUS_WORDS[c.status] ?? c.status}${c.origin === 'review' ? `; from the systematic review, uncertainty ${c.uncertainty ?? 'moderate'}` : c.origin === 'system' ? '; added by the system' : '; from the seed'})${evidence}. ${c.text}`
   })
   return `Every claim of the final argument, as the claim ledger holds it: its kind, its standing, where it came from, and the verified sources it rests on. Identifiers are the ledger's own and need not be consecutive.\n\n${lines.join('\n')}`
 }

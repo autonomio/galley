@@ -10,6 +10,7 @@ import { claim, keyFor, ledgerAppendix } from './behaviors/common.js'
 import { FAMILY_NAMES } from './config.js'
 import { cleanCsl, cslForDoi, cslFromWork } from './evidence.js'
 import type { Paper } from './paper.js'
+import { LIT_PLACEHOLDERS, modelName } from './literature.js'
 import { PLACEHOLDERS } from './prompts.js'
 import { fillPlaceholders, productionRecord, type Record_ } from './record.js'
 import { software, sourceStatement } from './self.js'
@@ -49,7 +50,10 @@ const yamlString = (text: string) => JSON.stringify(text)
 function disclosure(paper: Paper, record: Record_): string {
   const seats = paper.config.seats
   const referees = [...new Set(paper.config.referees.map((r) => r.family))].map((f) => FAMILY_NAMES[f]).join(' and ')
-  return `This manuscript was produced with ${software()} from a seed text written by the author. ${FAMILY_NAMES[seats.author]} extracted the seed's claims, planned the argument, drafted every section and answered the referees. ${FAMILY_NAMES[seats.checker]} wrote the literature searches, selected candidate passages and checked each section against its claims. ${seats.challenger === seats.verifier ? `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting and verified every citation against the passage it rests on.` : `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting, and ${FAMILY_NAMES[seats.verifier]} verified every citation against the passage it rests on.`} Referee reports came from ${referees}, never from the family that drafted the text, and each answer to a material finding was verified by the referee family that raised it. Literature search ran through Canary over OpenAlex; bibliographic records come from the DOI registries. No model reviewed its own work. The production journal that accompanies this manuscript records every step, model call, verdict and decision with its time, and the evidence package holds each claim with the verbatim passage and verdict behind every citation.
+  const lit = paper.state.literature?.status === 'done' ? paper.state.literature : null
+  const everyCitation = lit ? 'every citation outside the systematic review' : 'every citation'
+  const review = lit ? ` The systematic review reported in its own section was carried out with Canary: ${modelName(lit.models?.research)} planned the search of OpenAlex, screened the candidates, read the full texts and quoted the passages behind each finding, and ${modelName(lit.models?.audit)} audited every finding against those passages; the citations of that section rest on them.` : ''
+  return `This manuscript was produced with ${software()} from a seed text written by the author. ${FAMILY_NAMES[seats.author]} extracted the seed's claims, planned the argument, drafted every section and answered the referees. ${FAMILY_NAMES[seats.checker]} wrote the literature searches, selected candidate passages and checked each section against its claims. ${seats.challenger === seats.verifier ? `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting and verified ${everyCitation} against the passage it rests on.` : `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting, and ${FAMILY_NAMES[seats.verifier]} verified ${everyCitation} against the passage it rests on.`} Referee reports came from ${referees}, never from the family that drafted the text, and each answer to a material finding was verified by the referee family that raised it. Literature search ran through Canary over OpenAlex; bibliographic records come from the DOI registries.${review} No model reviewed its own work. The production journal that accompanies this manuscript records every step, model call, verdict and decision with its time, and the evidence package holds each claim with the verbatim passage and verdict behind every citation.
 
 | Production record | |
 |---|---|
@@ -58,7 +62,7 @@ function disclosure(paper: Paper, record: Record_): string {
 | Claims | ${record['run.claims']} (${record['run.claims_seed']} from the seed, ${record['run.claims_added']} added; ${record['run.claims_narrowed']} narrowed; ${record['run.claims_unsupported']} stated as hypotheses) |
 | Works screened | ${record['run.works_screened']} |
 | Citations | ${record['run.citations_verified']} verified, ${record['run.citations_rejected']} rejected |
-| Referee findings | ${record['run.findings']} (${record['run.findings_material']} material or critical; ${record['run.findings_resolved']} resolved; ${record['run.findings_adjudicated']} adjudicated) over ${record['run.rounds']} round(s) |
+${lit ? `| Systematic review | ${record['lit.discovered']} records identified, ${record['lit.screened']} screened, ${record['lit.reviewed']} read in full and included; ${record['lit.findings']} findings, ${record['lit.audited']} audited |\n` : ''}| Referee findings | ${record['run.findings']} (${record['run.findings_material']} material or critical; ${record['run.findings_resolved']} resolved; ${record['run.findings_adjudicated']} adjudicated) over ${record['run.rounds']} round(s) |
 | Verifier calibration | ${record['run.calibration'] === 'none to check' ? 'no verified citations to check' : `${record['run.calibration']} planted defective citations caught; ${record['run.calibration_controls']} unaltered controls accepted`} |
 `
 }
@@ -321,12 +325,16 @@ ${list(s.findings.filter((f) => f.assignee === 'humans' && f.status === 'open').
 ## Steps skipped along the way
 ${list(s.notes.filter((n) => / was skipped /.test(n.text)).map((n) => `${n.behavior}: ${n.text}`), 'None.')}
 
-## Your materials
+${s.literature?.status === 'done' ? `## The systematic review
+Question: ${s.literature.question}
+Canary run ${s.literature.key}, searched ${s.literature.searchedOn}: ${s.literature.counts?.discovered} records identified, ${s.literature.counts?.screened} screened, ${s.literature.counts?.reviewed} read in full; ${s.literature.counts?.findings} findings, cited from ${s.literature.counts?.cited} publications. The full research bundle is ${s.literature.bundle}. Check that the question is the one you want answered; the findings appear in the claim ledger as "from the systematic review".
+
+` : ''}## Your materials
 ${list((paper.config.materials ?? []).map((m) => `${m.id} ${m.kind} ${m.url ?? m.name}${m.kind === 'dataset' ? (m.private ? ': private, the models saw only its profile and the measurements' : ': shared, the models saw its profile and first rows') : ''}`), 'None.')}
 ${Object.values(s.measurements ?? {}).length ? `\nMeasurements galley computed from your data (check each against your own analysis):\n${Object.values(s.measurements ?? {}).map((m) => `- ${m.id}: ${m.summary}`).join('\n')}\n` : ''}
 
 ## Production record
-${Object.entries(record).map(([k, v]) => `- ${PLACEHOLDERS[k] ?? k}: ${v}`).join('\n')}
+${Object.entries(record).map(([k, v]) => `- ${PLACEHOLDERS[k] ?? LIT_PLACEHOLDERS[k] ?? k}: ${v}`).join('\n')}
 `
 }
 
@@ -371,9 +379,12 @@ function exportEvidence(paper: Paper): void {
       writeFileSync(join(root, 'evidence', `${eid}.yaml`), yaml({ id: eid, kind, summary: c.status === 'internal' ? 'Stated by the authors about their own work, as presented in the manuscript.' : c.status === 'unsupported' ? 'No external evidence was verified; the manuscript states this as a hypothesis.' : 'Common knowledge or a stated premise.', source_ids: [sid], independent: false, limitations: [], premise_claim_ids: [], claim_ids: [cid] }))
       evidenceIds.push(eid)
     }
-    const uncertainty = c.status === 'supported' && cites.length >= 2 ? 'low' : c.status === 'supported' || c.status === 'narrowed' || c.status === 'internal' ? 'medium' : 'high'
+    // A review finding keeps Canary's class, made conservative as Canary does for Resolvent: low and moderate become medium.
+    const uncertainty = c.origin === 'review' ? (c.uncertainty === 'high' ? 'high' : 'medium') : c.status === 'supported' && cites.length >= 2 ? 'low' : c.status === 'supported' || c.status === 'narrowed' || c.status === 'internal' ? 'medium' : 'high'
     writeFileSync(join(root, 'claims', `${cid}.yaml`), yaml({ id: cid, class: claimClass(c), statement: c.text, uncertainty, evidence_ids: evidenceIds, state: 'active' }))
   }
+  // The systematic review's protocol and counts, beside Canary's own bundle in the paper folder.
+  if (s.literature?.status === 'done') writeFileSync(join(root, 'literature-review.json'), JSON.stringify({ question: s.literature.question, canary_run: s.literature.key, searched: s.literature.searchedOn, models: s.literature.models, protocol: s.literature.protocol, counts: s.literature.counts, disagreements: s.literature.contradictions, open_questions: s.literature.gaps, findings: s.literature.claimIds }, null, 2))
   // Measurements carry their exact specification, so anyone holding the data can recompute every number.
   const measurements = Object.values(s.measurements ?? {})
   if (measurements.length) writeFileSync(join(root, 'measurements.json'), JSON.stringify(measurements.map((m) => ({ id: m.id, dataset: (paper.config.materials ?? []).find((x) => x.id === m.spec.dataset)?.name ?? m.spec.dataset, spec: m.spec, result: m.summary, n: m.n })), null, 2) + '\n')

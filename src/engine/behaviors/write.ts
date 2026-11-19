@@ -10,6 +10,7 @@ import { applyExact, dropUnknownCitations, words } from '../text.js'
 import type { Passage, Section } from '../types.js'
 import { briefBlock, claimsBlock, keyFor, live, manuscriptBlock, now, seatFamily, sectionText } from './common.js'
 import { verifyCitationsSettled } from './truth.js'
+import { literatureBlock, REVIEW_SECTION, REVIEW_SECTION_RULES } from '../literature.js'
 
 function knownKeys(paper: Paper): Set<string> {
   return new Set(paper.state.citations.filter((c) => c.status === 'verified').map((c) => keyFor(paper, paper.state.works[c.workId])))
@@ -40,7 +41,8 @@ export const draft: Behavior = {
     if (!live(paper) || !s.outline) return []
     const evidenceOff = paper.config.off.includes('find-evidence')
     return s.outline.sections
-      .filter((section) => !s.passages[section.id] && (evidenceOff || verifyCitationsSettled(paper, section.claimIds)))
+      // The review section waits for Canary's findings; every other section, for its evidence.
+      .filter((section) => !s.passages[section.id] && (section.id === REVIEW_SECTION ? s.literature?.status === 'done' : evidenceOff || verifyCitationsSettled(paper, section.claimIds)))
       .map((section): Target => ({
         key: `draft:${section.id}`, label: `${section.id} ${section.title}`,
         run: async () => {
@@ -77,7 +79,7 @@ Rules:
 - Do not write the section heading. You may use ## subheadings if the section is long.
 - Numbers about how this manuscript itself was produced may be written only as these placeholders, which are filled in from the production record at typesetting:
 ${placeholderGuide()}
-
+${section.id === REVIEW_SECTION ? `\n${literatureBlock(paper)}\n\n${REVIEW_SECTION_RULES}\n` : ''}
 Return markdown (the section body) and used_claims (ids of the claims you stated).`,
             schema: obj({ markdown: str(), used_claims: arr(str()) }),
           })
@@ -108,7 +110,7 @@ export const fidelity: Behavior = {
 
 ${STYLE}
 
-Check one section of a manuscript against the claims and evidence it is allowed to state. Report each sentence that says more than its claim or passage supports (overclaim), states a fact that is not among the claims (unsupported), cites a key whose passage does not back the sentence (miscite), contradicts another claim (contradiction), or breaks the style rules (style). For each, give the exact text to replace (old, copied character for character from the section, long enough to be unique) and its replacement (new): the smallest change that makes the sentence faithful. Placeholders like {{run.calls}} are filled in later and are allowed. Report nothing for sentences that are fine.
+Check one section of a manuscript against the claims and evidence it is allowed to state. Report each sentence that says more than its claim or passage supports (overclaim), states a fact that is not among the claims (unsupported), cites a key whose passage does not back the sentence (miscite), contradicts another claim (contradiction), or breaks the style rules (style). For each, give the exact text to replace (old, copied character for character from the section, long enough to be unique) and its replacement (new): the smallest change that makes the sentence faithful. When a citation is wrong, remove or replace its key; never write an author's name in its place. Placeholders like {{run.calls}} are filled in later and are allowed. Report nothing for sentences that are fine.
 
 Section ${section.id} ${section.title} (purpose: ${section.purpose}):
 """
@@ -116,7 +118,7 @@ ${text}
 """
 
 Claims and evidence for this section:
-${claimsBlock(paper, section.claimIds) || '(none)'}`,
+${claimsBlock(paper, section.claimIds) || '(none)'}${section.id === REVIEW_SECTION ? `\n\nThis section reports a systematic review. Each citation's passage is an excerpt of the full text the review read, and the review's independent audit checked every finding against those texts: report a miscite only when a passage is about something else or contradicts the sentence, not because the excerpt leaves out a detail the finding states. Besides its findings the section may state the review's method, disagreements and open questions as given here:\n${literatureBlock(paper)}` : ''}`,
             schema: obj({ issues: arr(obj({ problem: enm(['overclaim', 'unsupported', 'miscite', 'contradiction', 'style']), severity: enm(['minor', 'material']), old: str(), new: str() })) }),
           })
           let next = text

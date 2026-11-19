@@ -58,6 +58,8 @@ export interface PaperConfig {
   declarations?: { availability?: string; competing_interests?: string; funding?: string }
   /** The authors' own datasets, documents and links, copied into the paper's materials folder when it starts. */
   materials?: Material[]
+  /** Include a systematic review of the literature, run by Canary, as its own section. */
+  literatureReview?: boolean
 }
 
 export const DEFAULT_REFEREES: RefereeSeat[] = [
