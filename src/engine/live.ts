@@ -246,7 +246,7 @@ function workingNotes(s: PaperState, config: { rounds?: number, literatureReview
 export function liveView(dir: string, options: { limit?: number } = {}): LiveView | null {
   const s = readJson<PaperState>(join(dir, 'state.json'))
   if (!s) return null
-  const config = readJson<{ title?: string, rounds?: number, literatureReview?: unknown, simulation?: unknown, seats?: Record<string, Family>, referees?: { seat: string }[] }>(join(dir, 'paper.json')) ?? {}
+  const config = readJson<{ title?: string, rounds?: number, literatureReview?: unknown, simulation?: unknown, seats?: Record<string, Family>, referees?: { seat: string }[], editorDoc?: string }>(join(dir, 'paper.json')) ?? {}
   const progress = readJson<{ pid: number, outcome: string | null, inFlight?: { behavior: string, target: string, what: string, started: string }[] }>(join(dir, 'progress.json'))
   let running = false
   if (progress && !progress.outcome && !s.outcome) {
@@ -302,7 +302,7 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
   const sections = (s.outline?.sections ?? []).map((sec) => ({ id: sec.id, title: sec.title, written: !!s.passages[sec.id] }))
   return {
     slug: s.slug,
-    doc: editorSlug(s.slug),
+    doc: config.editorDoc || editorSlug(s.slug),
     title: config.title || s.titleByHuman || s.frame?.title || s.plan?.workingTitle || 'Untitled paper',
     running,
     outcome: s.outcome ?? null,

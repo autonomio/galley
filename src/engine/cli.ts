@@ -253,6 +253,7 @@ async function main(): Promise<void> {
         ...(flag('venue') ? { venue: flag('venue')! } : {}),
         ...(flag('words') ? { words: Number(flag('words')) } : {}),
         ...(flag('editor') ? { editorDir: resolve(flag('editor')!) } : {}),
+        ...(flag('editor-doc') ? { editorDoc: flag('editor-doc')! } : {}),
         ...(flag('citations') ? { citations: flag('citations') as 'auto' | 'choose' | 'mixed' } : {}),
         ...(flag('dial') ? { dial: flag('dial') as 'autonomous' | 'assisted' | 'propose' } : {}),
         ...(option(flag('literature-review')) !== undefined ? { literatureReview: option(flag('literature-review')) } : {}),

@@ -185,7 +185,8 @@ function papersPlugin(): Plugin {
           }
           mkdirSync(paperDir, { recursive: true })
           const log = openSync(join(paperDir, 'run.log'), 'a')
-          spawn(process.execPath, [cli, 'write', seed, paperDir, '--editor', dir, ...args], { detached: true, stdio: ['ignore', log, log] }).unref()
+          // The paper is written into the document it starts from, by that document's exact name.
+          spawn(process.execPath, [cli, 'write', seed, paperDir, '--editor', dir, '--editor-doc', slug, ...args], { detached: true, stdio: ['ignore', log, log] }).unref()
           res.statusCode = 202
           res.end(JSON.stringify({ dir: paperDir }))
         })

@@ -227,7 +227,8 @@ function withAnswers(paper: Paper, note: Annotation): Annotation {
   return out
 }
 
-const editorSlug = (paper: Paper) => paper.state.slug.toLowerCase().replace(/[^a-z0-9-]+/g, '-')
+// The document the project started from keeps its exact name; a project from the command line gets its folder's.
+const editorSlug = (paper: Paper) => paper.config.editorDoc || paper.state.slug.toLowerCase().replace(/[^a-z0-9-]+/g, '-')
 /** The editor's own document folder, the one `npm run dev` lists, so every paper's manuscript shows up there. */
 const EDITOR_DOCUMENTS = resolve(process.env.GALLEY_DIR || join(dirname(fileURLToPath(import.meta.url)), '..', '..', '.galley-data'))
 export const editorDir = (paper: Paper) => paper.config.editorDir || EDITOR_DOCUMENTS
@@ -310,6 +311,16 @@ export function syncEditor(paper: Paper): { edits: string[], notes: number, deci
   const dir = editorDir(paper)
   const docPath = join(dir, `${editorSlug(paper)}.md`)
   const notesPath = join(dir, `${editorSlug(paper)}.annotations.json`)
+  // On the first pass the document still holds the seed: its notes and proposals belong to the seed, so they move
+  // into the project with it, and the paper's first write carries only its own threads.
+  if (!s.editorWritten) {
+    for (const [file, kept] of [[notesPath, 'seed.annotations.json'], [join(dir, `${editorSlug(paper)}.proposals.json`), 'seed.proposals.json']] as const) {
+      const held = fileText(file)
+      if (held === null) continue
+      writeFileSync(paper.path(kept), held)
+      rmSync(file, { force: true })
+    }
+  }
   const seen = { doc: fileText(docPath), notes: fileText(notesPath) }
   const docChanged = seen.doc !== null && digest(seen.doc) !== s.editorWritten?.doc
   const notesChanged = seen.notes !== null && digest(seen.notes) !== s.editorWritten?.notes

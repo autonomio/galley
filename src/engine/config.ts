@@ -73,6 +73,8 @@ export interface PaperConfig {
   ledgerAppendix?: boolean
   /** Where the manuscript's editor document goes; defaults to the paper's own editor/ folder. */
   editorDir?: string
+  /** The editor document the paper is written into, by its exact name: the document the project started from. Defaults to the folder's name. */
+  editorDoc?: string
   /** Statements only the authors can make; each one left empty is a sign-off item. */
   declarations?: { availability?: string; competing_interests?: string; funding?: string }
   /** The authors' own datasets, documents and links, copied into the paper's materials folder when it starts. */

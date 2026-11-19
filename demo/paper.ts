@@ -23,8 +23,9 @@ export function writePaperAction(): EditorAction {
     async run(editor) {
       const slug = editor.slug
       if (!slug) return
+      // Only a document with no project yet starts one; any other answer leads to the project's status and settings.
       const existing = await fetch(`/api/galley-papers/${encodeURIComponent(slug)}`)
-      if (existing.ok) {
+      if (existing.status !== 404) {
         openPaperStatus(slug, (manuscript) => { void editor.open(manuscript) })
         return
       }
