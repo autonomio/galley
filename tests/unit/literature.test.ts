@@ -127,3 +127,16 @@ describe('systematic review', () => {
     expect(paper.isSettled('slow:1')).toBe(true)
   })
 })
+
+describe('typeset', () => {
+  it('writes the editor copy where a stale link to a deleted file stands in its place', async () => {
+    const { symlinkSync, readFileSync, lstatSync } = await import('node:fs')
+    const { writeReplacing } = await import('../../src/engine/render.js')
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const path = join(dir, 'galley.md')
+    symlinkSync(join(dir, 'gone', 'galley.md'), path)
+    writeReplacing(path, '# The paper\n')
+    expect(lstatSync(path).isSymbolicLink()).toBe(false)
+    expect(readFileSync(path, 'utf8')).toBe('# The paper\n')
+  })
+})

@@ -3,7 +3,7 @@
 // the production record and a Resolvent evidence package.
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { claim, keyFor, ledgerAppendix } from './behaviors/common.js'
@@ -161,6 +161,12 @@ export const editorDir = (paper: Paper) => paper.config.editorDir || EDITOR_DOCU
 const demote = (text: string) => text.replace(/^(#{1,5}) /gm, '#$1 ')
 const promote = (text: string) => text.replace(/^#(#{1,5}) /gm, '$1 ')
 
+/** Writes a file even where a stale link stands in its place: a link whose target is gone gives way to the file. */
+export function writeReplacing(path: string, text: string): void {
+  try { if (lstatSync(path).isSymbolicLink() && !existsSync(path)) unlinkSync(path) } catch { /* nothing there yet */ }
+  writeFileSync(path, text)
+}
+
 /** The editor shows the manuscript's source: what a person changes there is what the paper says. */
 function writeEditorDocument(paper: Paper): void {
   const s = paper.state
@@ -175,7 +181,7 @@ function writeEditorDocument(paper: Paper): void {
     blocks.push(`## ${section.title}\n\n${demote(passage)}`)
   }
   const text = blocks.join('\n\n') + '\n'
-  writeFileSync(join(dir, `${editorSlug(paper)}.md`), text)
+  writeReplacing(join(dir, `${editorSlug(paper)}.md`), text)
   s.editorBase = base
   paper.save()
   const lines = text.split('\n')
@@ -190,8 +196,8 @@ function writeEditorDocument(paper: Paper): void {
       const { snippet, ...range } = annotationFor(lines, f.quote, section?.title ?? title)
       return { id: `galley-${f.id}`, range, snippet, comment: findingComment(paper, f), created_at: at, updated_at: at }
     })
-  writeFileSync(annotationsPath, JSON.stringify({ annotations: [...human, ...ours] }, null, 2))
-  writeFileSync(join(dir, `${editorSlug(paper)}.proposals.json`), JSON.stringify({ proposals: (s.proposals ?? []).filter((p) => p.state === 'pending') }, null, 2))
+  writeReplacing(annotationsPath, JSON.stringify({ annotations: [...human, ...ours] }, null, 2))
+  writeReplacing(join(dir, `${editorSlug(paper)}.proposals.json`), JSON.stringify({ proposals: (s.proposals ?? []).filter((p) => p.state === 'pending') }, null, 2))
 }
 
 /** Accept and Decline from the editor: an accepted change is already in the text; a declined one is closed. */
@@ -452,7 +458,8 @@ export async function typeset(paper: Paper): Promise<string[]> {
   }
   exportEvidence(paper)
   writeFileSync(join(out, 'signoff.md'), signoff(paper, record))
-  writeEditorDocument(paper)
+  // The editor's copy is a convenience: a failure to write it is noted, never a reason the paper stops.
+  try { writeEditorDocument(paper) } catch (error) { paper.note('typeset', `The editor copy of the manuscript was not written: ${(error as Error).message.slice(0, 200)}`) }
   try {
     rmSync(join(out, 'submission.zip'), { force: true })
     await exec('zip', ['-qr', 'submission.zip', ...made, 'manuscript.md', 'refs.json', 'evidence', 'production-journal.jsonl', ...(existsSync(join(out, 'figures')) ? ['figures'] : [])], out)
