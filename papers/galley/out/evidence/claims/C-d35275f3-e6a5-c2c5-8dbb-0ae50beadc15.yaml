@@ -1,0 +1,6 @@
+id: "C-d35275f3-e6a5-c2c5-8dbb-0ae50beadc15"
+class: "derived_inference"
+statement: "For each claim the plan marks as needing external evidence, galley writes literature searches, runs them through Canary over OpenAlex, and selects up to ten passages copied verbatim from the returned abstracts. Retrieval stays in Canary so galley handles manuscript production."
+uncertainty: "medium"
+evidence_ids: ["E-7db4e92c-76a4-6a12-a89f-f15816d8d589"]
+state: "active"

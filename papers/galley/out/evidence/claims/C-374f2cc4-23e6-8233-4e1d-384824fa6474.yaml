@@ -1,0 +1,6 @@
+id: "C-374f2cc4-23e6-8233-4e1d-384824fa6474"
+class: "derived_inference"
+statement: "Code restricts the draft to verified passages, and drafting instructions direct it to write claims with hypothesis standing as hypotheses. The fidelity behaviour checks drafted sections and rewrites sentences that exceed their claim's standing or verified evidence. It can miss overclaims and is skipped after two failures."
+uncertainty: "medium"
+evidence_ids: ["E-eae2c838-0185-aed0-8ec3-d444670a969e"]
+state: "active"

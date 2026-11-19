@@ -1,0 +1,6 @@
+id: "C-b6199daf-f83f-9410-6349-6b201badafe7"
+class: "derived_inference"
+statement: "A person can comment anywhere in the document or edit it directly. Edits become that person's revision on the next run. Each comment becomes a thread that agents take over by default, that the person keeps (@humans), or that both share (@both). A dial can make load-bearing citations and critical answers, or every answer, wait for the person."
+uncertainty: "medium"
+evidence_ids: ["E-61e90f3e-f181-00fa-2ddf-7e7dd66154f5"]
+state: "active"

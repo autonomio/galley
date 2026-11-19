@@ -1,0 +1,6 @@
+id: "C-c1181640-22a5-e062-4c40-f16d5615f001"
+class: "observed_fact"
+statement: "PaperOrchestra is a multi-agent framework that turns pre-writing materials into submission-ready research manuscripts."
+uncertainty: "medium"
+evidence_ids: ["E-86cc5516-6e9a-1b8c-6252-b9ab523f4cf1"]
+state: "active"

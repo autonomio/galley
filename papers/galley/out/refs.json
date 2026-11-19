@@ -1,0 +1,378 @@
+[
+  {
+    "type": "article-journal",
+    "title": "Hedging in Medical and Pharmaceutical Academic Writing",
+    "container-title": "Forum for Linguistic Studies",
+    "container-title-short": "Forum Linguist. Stud.",
+    "volume": "7",
+    "issue": "7",
+    "DOI": "10.30564/fls.v7i7.10269",
+    "URL": "http://dx.doi.org/10.30564/fls.v7i7.10269",
+    "publisher": "Bilingual Publishing Group",
+    "ISSN": "2705-0602",
+    "author": [
+      {
+        "family": "Alshbeekat",
+        "given": "Aseel"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2025,
+          7,
+          17
+        ]
+      ]
+    },
+    "id": "alshbeekat2025hedging"
+  },
+  {
+    "type": "chapter",
+    "title": "How Atypical Combinations of Scientific Ideas Are Related to Impact: The General Case and the Case of the Field of Geography",
+    "container-title": "Knowledge and Space",
+    "page": "243-267",
+    "DOI": "10.1007/978-3-319-45023-0_12",
+    "URL": "http://dx.doi.org/10.1007/978-3-319-45023-0_12",
+    "publisher": "Springer International Publishing",
+    "ISSN": "1877-9220",
+    "ISBN": "9783319450223",
+    "author": [
+      {
+        "family": "Mukherjee",
+        "given": "Satyam"
+      },
+      {
+        "family": "Uzzi",
+        "given": "Brian"
+      },
+      {
+        "family": "Jones",
+        "given": "Benjamin F."
+      },
+      {
+        "family": "Stringer",
+        "given": "Michael"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2017
+        ]
+      ]
+    },
+    "id": "mukherjee2017atypical"
+  },
+  {
+    "type": "article",
+    "title": "DeepSciVerify: Verifying Scientific Claim--Citation Alignment via LLM-Driven Evidence Escalation",
+    "DOI": "10.48550/ARXIV.2605.27710",
+    "URL": "https://arxiv.org/abs/2605.27710",
+    "publisher": "arXiv",
+    "author": [
+      {
+        "family": "Sadeghi",
+        "given": "Shaghayegh"
+      },
+      {
+        "family": "Khajavi",
+        "given": "Khashayar"
+      },
+      {
+        "family": "Adhikari",
+        "given": "Rise"
+      },
+      {
+        "family": "Tessier",
+        "given": "Alexander"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2026
+        ]
+      ]
+    },
+    "id": "sadeghi2026deepsciverif"
+  },
+  {
+    "type": "paper-conference",
+    "title": "Show Me How You Cite: Citation Fidelity, Usage, and Topology in the Evidence Behavior of AI Scientific Writing",
+    "container-title": "Proceedings of the 2026 Conference on Empirical Methods in Natural Language Processing",
+    "page": "46978-47004",
+    "DOI": "10.18653/2026.emnlp-main.2063",
+    "URL": "http://dx.doi.org/10.18653/2026.emnlp-main.2063",
+    "publisher": "Association for Computational Linguistics",
+    "author": [
+      {
+        "family": "Oh",
+        "given": "Jihwan"
+      },
+      {
+        "family": "Sun",
+        "given": "Gyeonghun"
+      },
+      {
+        "family": "Kim",
+        "given": "Jisoo"
+      },
+      {
+        "family": "Lee",
+        "given": "Yuho"
+      },
+      {
+        "family": "Yun",
+        "given": "Taewon"
+      },
+      {
+        "family": "Shin",
+        "given": "Jisu"
+      },
+      {
+        "family": "Song",
+        "given": "Hwanjun"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2026
+        ]
+      ]
+    },
+    "id": "oh2026show"
+  },
+  {
+    "type": "article-journal",
+    "title": "Can AI Evaluate AI Scientists? A Benchmarking Study of Autonomous Research Generation Systems Using Automated Multi-Model Review",
+    "container-title": "Unpublished",
+    "DOI": "10.13140/RG.2.2.27158.31045",
+    "URL": "https://www.researchgate.net/doi/10.13140/RG.2.2.27158.31045",
+    "publisher": "Unpublished",
+    "language": "en",
+    "author": [
+      {
+        "literal": "Vaibhava Lakshmi Ravideshik"
+      },
+      {
+        "literal": "Mayank Kejriwal"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2026
+        ]
+      ]
+    },
+    "id": "ravideshik2026can"
+  },
+  {
+    "type": "paper-conference",
+    "title": "Beyond the Surface: Measuring Self-Preference in LLM Judgments",
+    "container-title": "Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing",
+    "page": "1653-1672",
+    "DOI": "10.18653/v1/2025.emnlp-main.86",
+    "URL": "http://dx.doi.org/10.18653/v1/2025.emnlp-main.86",
+    "publisher": "Association for Computational Linguistics",
+    "author": [
+      {
+        "family": "Chen",
+        "given": "Zhi-Yuan"
+      },
+      {
+        "family": "Wang",
+        "given": "Hao"
+      },
+      {
+        "family": "Zhang",
+        "given": "Xinyu"
+      },
+      {
+        "family": "Hu",
+        "given": "Enrui"
+      },
+      {
+        "family": "Lin",
+        "given": "Yankai"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2025
+        ]
+      ]
+    },
+    "id": "chen2025beyond"
+  },
+  {
+    "type": "article",
+    "title": "The Judge is Not Impartial: Self-Preference in Medical LLM\nEvaluation",
+    "DOI": "10.21203/rs.3.rs-11022502/v1",
+    "URL": "http://dx.doi.org/10.21203/rs.3.rs-11022502/v1",
+    "publisher": "Springer Science and Business Media LLC",
+    "author": [
+      {
+        "family": "Daneshjou",
+        "given": "Roxana"
+      },
+      {
+        "family": "Natarajan",
+        "given": "Shlok"
+      },
+      {
+        "family": "Ansari",
+        "given": "Zara"
+      },
+      {
+        "family": "Yip",
+        "given": "Vincent"
+      },
+      {
+        "family": "Lin",
+        "given": "Cally"
+      },
+      {
+        "family": "Udash",
+        "given": "Avi"
+      },
+      {
+        "family": "Garvey",
+        "given": "Mia"
+      },
+      {
+        "family": "Fanous",
+        "given": "Aaron"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2026,
+          9,
+          17
+        ]
+      ]
+    },
+    "id": "daneshjou2026judge"
+  },
+  {
+    "type": "article",
+    "title": "PaperOrchestra: A Multi-Agent Framework for Automated AI Research Paper Writing",
+    "DOI": "10.48550/ARXIV.2604.05018",
+    "URL": "https://arxiv.org/abs/2604.05018",
+    "publisher": "arXiv",
+    "author": [
+      {
+        "family": "Song",
+        "given": "Yiwen"
+      },
+      {
+        "family": "Song",
+        "given": "Yale"
+      },
+      {
+        "family": "Pfister",
+        "given": "Tomas"
+      },
+      {
+        "family": "Yoon",
+        "given": "Jinsung"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2026
+        ]
+      ]
+    },
+    "id": "song2026paperorchest"
+  },
+  {
+    "type": "article",
+    "title": "The AI Scientist: Towards Fully Automated Open-Ended Scientific Discovery",
+    "DOI": "10.48550/ARXIV.2408.06292",
+    "URL": "https://arxiv.org/abs/2408.06292",
+    "publisher": "arXiv",
+    "author": [
+      {
+        "family": "Lu",
+        "given": "Chris"
+      },
+      {
+        "family": "Lu",
+        "given": "Cong"
+      },
+      {
+        "family": "Lange",
+        "given": "Robert Tjarko"
+      },
+      {
+        "family": "Foerster",
+        "given": "Jakob"
+      },
+      {
+        "family": "Clune",
+        "given": "Jeff"
+      },
+      {
+        "family": "Ha",
+        "given": "David"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2024
+        ]
+      ]
+    },
+    "id": "lu2024scientist"
+  },
+  {
+    "type": "article-journal",
+    "title": "Atypical Combinations and Scientific Impact",
+    "container-title": "Science",
+    "container-title-short": "Science",
+    "volume": "342",
+    "issue": "6157",
+    "page": "468-472",
+    "DOI": "10.1126/science.1240474",
+    "URL": "http://dx.doi.org/10.1126/science.1240474",
+    "publisher": "American Association for the Advancement of Science (AAAS)",
+    "ISSN": "0036-8075",
+    "language": "en",
+    "author": [
+      {
+        "family": "Uzzi",
+        "given": "Brian"
+      },
+      {
+        "family": "Mukherjee",
+        "given": "Satyam"
+      },
+      {
+        "family": "Stringer",
+        "given": "Michael"
+      },
+      {
+        "family": "Jones",
+        "given": "Ben"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2013,
+          10,
+          25
+        ]
+      ]
+    },
+    "id": "uzzi2013atypical"
+  }
+]

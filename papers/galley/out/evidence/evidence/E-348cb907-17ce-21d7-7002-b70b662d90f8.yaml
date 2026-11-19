@@ -1,0 +1,8 @@
+id: "E-348cb907-17ce-21d7-7002-b70b662d90f8"
+kind: "external"
+summary: "narrower: The passage supports that unsupported claims remain an issue in AI-generated papers even with retrieval and human guidance, but it does not mention dedicated verifiers or DeepSciVerify."
+source_ids: ["S-891ddf2c-ac93-52ea-7a53-cf760718196a"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-ad4d7174-8091-190a-0e3d-a7506711749f"]

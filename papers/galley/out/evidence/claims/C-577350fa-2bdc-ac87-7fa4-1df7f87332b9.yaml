@@ -1,0 +1,6 @@
+id: "C-577350fa-2bdc-ac87-7fa4-1df7f87332b9"
+class: "derived_inference"
+statement: "The checker proposes a candidate passage. A verifier from a different family then judges it against its claim as supported, narrower (the claim is narrowed to what the passage states) or not supported (the citation is rejected and the next candidate is tried)."
+uncertainty: "medium"
+evidence_ids: ["E-6132aec3-e956-e700-580b-ed2d93c861d7"]
+state: "active"

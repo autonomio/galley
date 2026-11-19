@@ -1,0 +1,8 @@
+id: "E-10d3d23b-ad5b-d0f9-aeaa-d9bcaa0949fc"
+kind: "statement"
+summary: "Stated by the authors about their own work, as presented in the manuscript."
+source_ids: ["S-b086bbe7-f909-6f43-744b-89cb94857a63"]
+independent: false
+limitations: []
+premise_claim_ids: []
+claim_ids: ["C-a1b9fae5-088b-c135-2499-bf64c21cbdca"]

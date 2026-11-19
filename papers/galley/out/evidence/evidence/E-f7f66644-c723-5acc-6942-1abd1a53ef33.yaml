@@ -1,0 +1,8 @@
+id: "E-f7f66644-c723-5acc-6942-1abd1a53ef33"
+kind: "external"
+summary: "supported: The passage states that claim-evidence misalignment commonly limits the reliability of LLM-generated reports in scientific settings and introduces DeepSciVerify to verify scientific claims against cited abstract- and passage-level evidence."
+source_ids: ["S-dd5b6ebf-e494-57e0-1d84-b6efa23ada5d"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-ad4d7174-8091-190a-0e3d-a7506711749f"]

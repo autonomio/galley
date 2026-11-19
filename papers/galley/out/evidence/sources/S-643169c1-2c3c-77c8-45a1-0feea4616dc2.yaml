@@ -1,0 +1,8 @@
+id: "S-643169c1-2c3c-77c8-45a1-0feea4616dc2"
+kind: "publication"
+title: "Can AI Evaluate AI Scientists? A Benchmarking Study of Autonomous Research Generation Systems Using Automated Multi-Model Review"
+uri: "https://doi.org/10.13140/rg.2.2.27158.31045"
+date: "2026"
+locator: "abstract"
+excerpt: "However, evaluating and comparing the quality of AI-generated papers remains an open challenge. We propose and implement a rigorous benchmarking protocol using an automated peer-review system that harnesses frontier large language models to assess scientific papers across four core dimensions: originality, scientific rigor, clarity, and significance."
+access: "inspected"

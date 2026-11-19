@@ -1,0 +1,6 @@
+id: "C-4567dbdd-0f1e-224a-6e6b-b434489946d1"
+class: "derived_inference"
+statement: "After review, a family other than the author's reads the final text against each claim and confirms, narrows, or drops its ledger entry. The ledger, evidence package and sign-off sheet reflect those model judgments. If reconciliation fails twice, the sign-off sheet records the skipped step and unaligned ledger entries remain pending author sign-off."
+uncertainty: "medium"
+evidence_ids: ["E-9eae2c80-ffdd-8188-cb5e-5171bbffefc6"]
+state: "active"

@@ -1,0 +1,6 @@
+id: "C-bf3ebe7c-17fe-3d1e-0bf2-6d7390866b8d"
+class: "derived_inference"
+statement: "Galley takes the atomic-behaviour pattern from poise, the authors' earlier tool for semi-autonomous software engineering. Each behaviour reads the paper's state, does one thing and writes its result. A scheduler rescans the ladder from the top whenever anything settles, so no behaviour knows what comes next."
+uncertainty: "medium"
+evidence_ids: ["E-68a2f84d-1796-876e-a43e-a1bd16637228"]
+state: "active"

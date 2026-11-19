@@ -1,0 +1,8 @@
+id: "S-c4a2f5ce-5ff9-a6a4-3f8d-96090e0e0bc3"
+kind: "publication"
+title: "The AI Scientist: Towards Fully Automated Open-Ended Scientific Discovery"
+uri: "https://doi.org/10.48550/arxiv.2408.06292"
+date: "2024"
+locator: "abstract"
+excerpt: "This paper presents the first comprehensive framework for fully automatic scientific discovery, enabling frontier large language models to perform research independently and communicate their findings. We introduce The AI Scientist, which generates novel research ideas, writes code, executes experiments, visualizes results, describes its findings by writing a full scientific paper, and then runs a simulated review process for evaluation."
+access: "inspected"

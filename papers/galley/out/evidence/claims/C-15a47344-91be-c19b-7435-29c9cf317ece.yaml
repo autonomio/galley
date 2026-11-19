@@ -1,0 +1,6 @@
+id: "C-15a47344-91be-c19b-7435-29c9cf317ece"
+class: "derived_inference"
+statement: "Auto-fix is a capped loop. The author answers each material finding as fixed (with exact edits), rebutted, stated as a limitation, or needing evidence; in the last case a new claim goes through search and verification. The referee who raised the finding judges the answer. After a set number of answers (three in this run), a third family adjudicates. Each family runs through its own command-line client with no tools, answering in a strict JSON schema. Every prompt and answer is stored, so a rerun replays the process without calling a model and people have its full provenance."
+uncertainty: "medium"
+evidence_ids: ["E-100358de-d67c-561c-78fa-db7daa21e9cb"]
+state: "active"

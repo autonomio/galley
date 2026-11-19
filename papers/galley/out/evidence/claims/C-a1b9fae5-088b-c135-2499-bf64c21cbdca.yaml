@@ -1,0 +1,6 @@
+id: "C-a1b9fae5-088b-c135-2499-bf64c21cbdca"
+class: "derived_inference"
+statement: "Code confirms that every cited passage is copied verbatim from the cited work's abstract. A citation cannot rest on a model-invented passage. For works with a DOI, the bibliographic record comes from the DOI registry, which prevents a model-invented record for those works."
+uncertainty: "medium"
+evidence_ids: ["E-10d3d23b-ad5b-d0f9-aeaa-d9bcaa0949fc"]
+state: "active"

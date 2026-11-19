@@ -1,0 +1,6 @@
+id: "C-158398f3-cc03-ad90-af84-abf16710490a"
+class: "derived_inference"
+statement: "Scope-elastic compilation uses required behaviours to carry the manuscript to completion while verification sets the standing of claims marked as needing external evidence. A claim that exceeds its verified evidence is narrowed, given hypothesis standing, or listed for human sign-off. Failed verification does not halt the draft. With citation choices on, a claim can be held back pending a person's decision. Code enforces citation eligibility, while keeping prose within a claim's standing depends on drafting instructions and model judgments."
+uncertainty: "medium"
+evidence_ids: ["E-1c81c3f1-8a95-5484-4639-85674425deb2"]
+state: "active"

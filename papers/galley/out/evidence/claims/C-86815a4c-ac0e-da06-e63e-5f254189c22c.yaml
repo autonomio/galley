@@ -1,0 +1,6 @@
+id: "C-86815a4c-ac0e-da06-e63e-5f254189c22c"
+class: "derived_inference"
+statement: "A calibration behaviour mixes defective citations and unaltered controls among verified citations. The production record reports how many planted defects the verifier caught in that run. The count measures sensitivity to those planted defects."
+uncertainty: "medium"
+evidence_ids: ["E-c0b2be55-a481-7931-b87f-4f2c84839036"]
+state: "active"

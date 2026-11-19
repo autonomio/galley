@@ -1,0 +1,6 @@
+id: "C-ad4d7174-8091-190a-0e3d-a7506711749f"
+class: "observed_fact"
+statement: "Claim–citation alignment is still a reliability concern in AI-assisted scientific writing, and dedicated verifiers such as DeepSciVerify check whether cited sources support the claims they are attached to."
+uncertainty: "low"
+evidence_ids: ["E-f7f66644-c723-5acc-6942-1abd1a53ef33","E-348cb907-17ce-21d7-7002-b70b662d90f8"]
+state: "active"

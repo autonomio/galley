@@ -1,0 +1,8 @@
+id: "S-b5ff2ff7-3c09-757d-609e-14c9e0d2b8e8"
+kind: "reasoning"
+title: "Argument plan of the manuscript"
+uri: null
+date: "2026-11-19"
+locator: "C36"
+excerpt: "The checker proposes a candidate passage. A verifier from a different family then judges it against its claim as supported, narrower (the claim is narrowed to what the passage states) or not supported (the citation is rejected and the next candidate is tried)."
+access: "inspected"
