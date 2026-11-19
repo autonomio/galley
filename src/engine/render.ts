@@ -12,6 +12,7 @@ import { cleanCsl, cslForDoi, cslFromWork } from './evidence.js'
 import type { Paper } from './paper.js'
 import { LIT_PLACEHOLDERS, modelName } from './literature.js'
 import { methodWords, runsOf, sizeOf } from './simulations.js'
+import { writeReproduction } from './simulation/index.js'
 import { PLACEHOLDERS } from './prompts.js'
 import { fillPlaceholders, productionRecord, type Record_ } from './record.js'
 import { software, sourceStatement } from './self.js'
@@ -111,7 +112,8 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   if (paper.config.ledgerAppendix !== false) body.push(`# Appendix A: Claim ledger {.unnumbered}\n\n${ledgerAppendix(paper)}`)
   body.push(`# Use of AI and production record {.unnumbered}\n\n${disclosure(paper, record)}`)
   const evidencePackage = 'Every claim in this manuscript, the evidence it rests on and the verbatim passages of its sources are available as an evidence package accompanying it (claims, evidence and sources in the Resolvent format).'
-  body.push(`# Data and code availability {.unnumbered}\n\n${decl.availability || (s.brief?.aboutSystem ? `${sourceStatement()} ${evidencePackage}`.trim() : evidencePackage)}`)
+  const reproduction = runsOf(paper).length ? ` The simulations can be rerun, and every simulated number checked against this manuscript, with the reproduction package that accompanies it (simulation/: node simulate.mjs --verify, or index.html in a browser).` : ''
+  body.push(`# Data and code availability {.unnumbered}\n\n${decl.availability || `${s.brief?.aboutSystem ? `${sourceStatement()} ` : ''}${evidencePackage}${reproduction}`}`)
   body.push(`# Competing interests {.unnumbered}\n\n${declaration(decl.competing_interests)}`)
   body.push(`# Funding {.unnumbered}\n\n${declaration(decl.funding)}`)
   body.push('# References {.unnumbered}\n\n::: {#refs}\n:::')
@@ -457,12 +459,16 @@ export async function typeset(paper: Paper): Promise<string[]> {
     for (const fig of paper.state.figures.filter((f) => f.status === 'rendered' && f.file)) copyFileSync(join(build, fig.file!), join(out, fig.file!))
   }
   exportEvidence(paper)
+  // The runnable reproduction of the paper's simulations: a reader reruns them and checks every simulated number with Node or a browser.
+  if (runsOf(paper).length) {
+    try { writeReproduction(join(out, 'simulation'), runsOf(paper), { title: paper.config.title || paper.state.frame?.title }) } catch (error) { paper.note('typeset', `The simulation reproduction package was not written: ${(error as Error).message.slice(0, 200)}`) }
+  }
   writeFileSync(join(out, 'signoff.md'), signoff(paper, record))
   // The editor's copy is a convenience: a failure to write it is noted, never a reason the paper stops.
   try { writeEditorDocument(paper) } catch (error) { paper.note('typeset', `The editor copy of the manuscript was not written: ${(error as Error).message.slice(0, 200)}`) }
   try {
     rmSync(join(out, 'submission.zip'), { force: true })
-    await exec('zip', ['-qr', 'submission.zip', ...made, 'manuscript.md', 'refs.json', 'evidence', 'production-journal.jsonl', ...(existsSync(join(out, 'figures')) ? ['figures'] : [])], out)
+    await exec('zip', ['-qr', 'submission.zip', ...made, 'manuscript.md', 'refs.json', 'evidence', 'production-journal.jsonl', ...(existsSync(join(out, 'figures')) ? ['figures'] : []), ...(existsSync(join(out, 'simulation')) ? ['simulation'] : [])], out)
     made.push('submission.zip')
   } catch { /* the folder itself is the package */ }
   return made
