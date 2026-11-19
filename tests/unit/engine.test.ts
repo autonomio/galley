@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Paper } from '../../src/engine/paper.js'
 import { resetHintMs } from '../../src/engine/models.js'
-import { fillPlaceholders, importEditorEdits } from '../../src/engine/render.js'
+import { fillPlaceholders, importEditorEdits, syncEditor } from '../../src/engine/render.js'
 import { runPaper, Stalled, type Behavior } from '../../src/engine/scheduler.js'
 import { obj, str } from '../../src/engine/schema.js'
 import { applyExact, citationKey, dropUnknownCitations, escapeUnknownCitations, isVerbatim, overlap, sameClaim } from '../../src/engine/text.js'
@@ -199,6 +199,76 @@ describe('the editor round trip', () => {
     expect(s.passages.S1.text).toBe('First, changed by hand.\n\n## Sub\n\nMore.')
     expect(s.passages.S1.revisions.at(-1)?.by).toEqual({ kind: 'human', name: 'Ada' })
     expect(s.passages.S2.revisions).toEqual([])
+  })
+
+  // The paper lives in the editor while it is written: galley writes it there from the first step,
+  // reads a person's changes once they pause, and never writes over them.
+  const living = async () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const editor = join(dir, 'docs')
+    const paper = Paper.create(join(dir, 'p'), 'seed', { authors: [{ name: 'Ada' }], editorDir: editor })
+    const fs = await import('node:fs')
+    const doc = join(editor, 'p.md')
+    const notes = join(editor, 'p.annotations.json')
+    // A person's save, made a while ago: galley reads changes only once the writer pauses.
+    const save = (path: string, text: string) => { fs.writeFileSync(path, text); const past = new Date(Date.now() - 60_000); fs.utimesSync(path, past, past) }
+    const outline = () => {
+      paper.state.plan = { thesis: 'T', workingTitle: 'Working title', noun: 'n', opens: [], objectType: 'finding' }
+      paper.state.outline = { sections: [{ id: 'S1', title: 'One', purpose: '', claimIds: [], words: 1, figureIds: [] }, { id: 'S2', title: 'Two', purpose: '', claimIds: [], words: 1, figureIds: [] }], style: '', glossary: [] }
+    }
+    return { paper, fs, doc, notes, save, outline }
+  }
+
+  it('writes the paper into the editor from its first step, and each section as it is written', async () => {
+    const { paper, fs, doc, outline } = await living()
+    syncEditor(paper)
+    expect(fs.readFileSync(doc, 'utf8')).toBe('# Untitled paper\n')
+    outline()
+    paper.state.passages.S1 = { sectionId: 'S1', text: 'First.', revisions: [], checked: 'unchecked' }
+    syncEditor(paper)
+    expect(fs.readFileSync(doc, 'utf8')).toBe('# Working title\n\n## One\n\nFirst.\n\n## Two\n')
+  })
+
+  it('makes a section a person writes before the Author reaches it theirs', async () => {
+    const { paper, fs, doc, save, outline } = await living()
+    outline()
+    syncEditor(paper)
+    save(doc, '# Working title\n\n## One\n\n## Two\n\nMy own words.\n')
+    expect(syncEditor(paper).edits).toEqual(['S2'])
+    expect(paper.state.passages.S2.revisions[0].by).toEqual({ kind: 'human', name: 'Ada' })
+    expect(fs.readFileSync(doc, 'utf8')).toContain('## Two\n\nMy own words.')
+  })
+
+  it('leaves the files alone while a person is typing in them', async () => {
+    const { paper, fs, doc, outline } = await living()
+    outline()
+    syncEditor(paper)
+    fs.writeFileSync(doc, '# Working title\n\n## One\n\nHalf a sent')
+    expect(syncEditor(paper).edits).toEqual([])
+    expect(fs.readFileSync(doc, 'utf8')).toBe('# Working title\n\n## One\n\nHalf a sent')
+  })
+
+  it('turns findings into threads with every answer, and a reply into work for the agents', async () => {
+    const { paper, fs, notes, save, outline } = await living()
+    outline()
+    paper.state.passages.S1 = { sectionId: 'S1', text: 'A claim that says too much.', revisions: [], checked: 'faithful' }
+    const finding: Finding = {
+      id: 'F1-methods-1', at: '2026-11-19T06:34:00.000Z', round: 1, seat: 'methods', family: 'gpt', model: 'gpt-6.2-sol', severity: 'material', sectionId: 'S1',
+      quote: 'says too much', question: 'What supports this?', alternatives: '', evidence: '', decision: '', edit: null, status: 'open', assignee: 'agents', origin: 'agent',
+      dispositions: [{ at: '2026-11-19T06:40:00.000Z', kind: 'fixed', text: 'Fixed. Narrowed to what the source states.', edits: [], family: 'claude', verification: { outcome: 'verified', reason: 'It now matches.', family: 'gpt' } }],
+    }
+    paper.state.findings.push(finding)
+    syncEditor(paper)
+    const thread = JSON.parse(fs.readFileSync(notes, 'utf8')).annotations[0]
+    expect(thread).toMatchObject({ id: 'galley-F1-methods-1', comment: 'What supports this?', author: { name: 'Methods referee', kind: 'agent', tone: 'b' }, snippet: 'says too much' })
+    expect(thread.replies.map((r: { id: string, author: { name: string } }) => [r.id, r.author.name])).toEqual([['galley-F1-methods-1-d0', 'Author'], ['galley-F1-methods-1-v0', 'Methods referee']])
+    expect(thread.replies[0].text).toBe('**Fixed.** Narrowed to what the source states.')
+    const mine = { id: 'rep-1', author: { name: 'You', kind: 'human' }, text: 'Keep the stronger wording @both', created_at: '2026-11-19T06:50:00.000Z' }
+    save(notes, JSON.stringify({ annotations: [{ ...thread, replies: [...thread.replies, mine] }] }))
+    expect(syncEditor(paper).notes).toBe(1)
+    expect(paper.state.findings.at(-1)).toMatchObject({ id: 'H-rep-1', parent: 'F1-methods-1', assignee: 'both', origin: 'human' })
+    const after = JSON.parse(fs.readFileSync(notes, 'utf8')).annotations[0]
+    expect(after.replies.at(-1)).toEqual(mine)
   })
 })
 

@@ -126,18 +126,29 @@ test('a note left empty is not kept', async ({ page }) => {
   await expect.poll(() => savedNotes(page, slug)).toEqual([])
 })
 
-test('a change made elsewhere is never overwritten', async ({ page }) => {
+test('a change made elsewhere merges with yours; where you both changed a line, yours stands and you are told', async ({ page }) => {
   const slug = await newDocument(page)
+  await page.keyboard.type('first line')
+  await page.keyboard.press('Enter')
   await page.keyboard.type('mine')
-  await expect.poll(() => saved(page, slug)).toBe('mine')
+  await expect.poll(() => saved(page, slug)).toBe('first line\nmine')
+  // Another writer changes the first line; the writer here goes on typing on the second.
   const current = await (await page.request.get(`/api/galley/doc/${slug}`)).json()
   await page.request.put(`/api/galley/doc/${slug}`, {
-    data: { content: 'theirs', client_id: 'elsewhere', revision: 1, base_version: current.version },
+    data: { content: 'their first line\nmine', client_id: 'elsewhere', revision: 1, base_version: current.version },
   })
   await page.keyboard.type(' and more')
-  await expect(page.locator('.galley-notice')).toContainText('changed somewhere else')
-  await expect(page.locator('.galley-status-save')).toHaveText('Not saved')
-  expect(await saved(page, slug)).toBe('theirs')
+  await expect.poll(() => saved(page, slug)).toBe('their first line\nmine and more')
+  await expect(page.locator('.galley-doc')).toContainText('their first line')
+  await expect(page.locator('.galley-notice')).toHaveCount(0)
+  // Both change the same line: the writer's version stands, and they are told.
+  const again = await (await page.request.get(`/api/galley/doc/${slug}`)).json()
+  await page.request.put(`/api/galley/doc/${slug}`, {
+    data: { content: 'their first line\ntheirs instead', client_id: 'elsewhere', revision: 2, base_version: again.version },
+  })
+  await page.keyboard.type('!')
+  await expect.poll(() => saved(page, slug)).toBe('their first line\nmine and more!')
+  await expect(page.locator('.galley-notice')).toContainText('your version stands')
 })
 
 test('undo history survives a reload', async ({ page }) => {

@@ -1,6 +1,6 @@
 // "For this claim, choose a, b or c", from the seed document a paper was started from.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 
 declare global {
@@ -10,7 +10,8 @@ declare global {
 test('a citation choice lists its candidate sources, and picking one records it', async ({ page }) => {
   const dir = process.env.GALLEY_E2E_DIR!
   const slug = `seed-${Date.now()}`
-  const paperDir = resolve('papers', `${slug}-paper`)
+  // Papers live in the end-to-end run's own folder, never in the repository's papers/.
+  const paperDir = join(process.env.GALLEY_E2E_PAPERS!, `${slug}-paper`)
   writeFileSync(join(dir, `${slug}.md`), 'A seed with something to say.\n')
   mkdirSync(paperDir, { recursive: true })
   const option = (letter: string, workId: string) => ({ letter, claimId: 'C1', workId, passage: `Passage ${letter} says so.`, fit: 'direct', role: 'support', note: '' })

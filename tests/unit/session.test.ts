@@ -7,12 +7,14 @@ import type { DocumentStore } from '../../src/stores/types.js'
 function setup(store: DocumentStore = createMemoryStore({ documents: { doc: 'hello' } })) {
   const states: SaveState[] = []
   const notices: Notice[] = []
+  const rebased: string[] = []
   const session = new DocumentSession(store, {
     status: (state) => states.push(state),
     notice: (notice) => notices.push(notice),
     documents: () => {},
+    rebased: (_slug, _ours, merged) => rebased.push(merged),
   }, { save: 50, annotations: 50 })
-  return { session, store, states, notices }
+  return { session, store, states, notices, rebased }
 }
 
 async function opened(store?: DocumentStore) {
@@ -35,14 +37,39 @@ describe('DocumentSession', () => {
     expect(session.isDirty()).toBe(false)
   })
 
-  it('reports a conflict instead of overwriting another writer', async () => {
-    const { session, store, notices, states } = await opened()
+  it('merges a change made elsewhere with ours, line by line', async () => {
+    const { session, store, notices, rebased } = await opened(createMemoryStore({ documents: { doc: 'one\ntwo\nthree' } }))
+    await store.write('doc', 'ONE\ntwo\nthree', { clientId: 'agent', revision: 1, baseVersion: session.version('doc')! })
+    session.scheduleSave('one\ntwo\nTHREE')
+    expect(await session.flush()).toBe(true)
+    expect((await store.read('doc')).content).toBe('ONE\ntwo\nTHREE')
+    expect(rebased).toEqual(['ONE\ntwo\nTHREE'])
+    expect(notices.filter((n) => n.level === 'attention')).toEqual([])
+  })
+
+  it('keeps our lines where both writers changed the same ones, and says so', async () => {
+    const { session, store, notices } = await opened()
     await store.write('doc', 'theirs', { clientId: 'other', revision: 1, baseVersion: session.version('doc')! })
     session.scheduleSave('mine')
-    expect(await session.flush()).toBe(false)
-    expect((await store.read('doc')).content).toBe('theirs')
-    expect(states.at(-1)).toBe('unsaved')
-    expect(notices.at(-1)).toMatchObject({ source: 'save', level: 'attention' })
+    expect(await session.flush()).toBe(true)
+    expect((await store.read('doc')).content).toBe('mine')
+    expect(notices).toContainEqual(expect.objectContaining({ source: 'merge', level: 'attention' }))
+  })
+
+  it('merges notes changed elsewhere, reply by reply', async () => {
+    const { session, store } = await opened()
+    await session.loadAnnotations('doc')
+    const note = { id: 'n', range: { start_line: 0, start_offset: 0, end_line: 0, end_offset: 5 }, snippet: 'hello', comment: 'Is this right?', created_at: '', updated_at: '' }
+    session.annotations.push({ ...note })
+    session.scheduleAnnotationsSave()
+    expect(await session.flush()).toBe(true)
+    const theirs = await store.readAnnotations('doc')
+    const reply = { id: 'r1', author: { name: 'Author', kind: 'agent' as const }, text: 'Yes.', created_at: '2026-01-01T00:00:00Z' }
+    await store.writeAnnotations('doc', [{ ...note, replies: [reply] }], { clientId: 'agent', revision: 1, baseVersion: theirs.version })
+    session.annotations[0].resolved = true
+    session.scheduleAnnotationsSave()
+    expect(await session.flush()).toBe(true)
+    expect((await store.readAnnotations('doc')).annotations).toEqual([expect.objectContaining({ id: 'n', resolved: true, replies: [reply] })])
   })
 
   it('discards pending text when asked, and saves nothing for a document being deleted', async () => {

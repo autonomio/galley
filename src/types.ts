@@ -47,7 +47,37 @@ export interface AnnotationRange {
   end_offset: number
 }
 
-/** A note attached to a passage. The snippet re-finds the passage after edits. */
+/**
+ * Who wrote a note or a reply. A note without an author is the writer's own.
+ * `tone` picks one of the editor's author colours (`--galley-tone-*`), so a
+ * host can tell its agents apart without styling the editor itself.
+ */
+export interface AnnotationAuthor {
+  name: string
+  kind: 'human' | 'agent'
+  /** A second line, such as the model behind an agent. */
+  detail?: string
+  tone?: 'a' | 'b' | 'c' | 'd'
+}
+
+/** One answer in a note's thread. */
+export interface AnnotationReply {
+  id: string
+  author: AnnotationAuthor
+  text: string
+  created_at: string
+}
+
+/** A short state shown on a thread, such as "material" or "needs you". */
+export interface AnnotationLabel {
+  text: string
+  tone?: 'attention' | 'done' | 'failed'
+}
+
+/**
+ * A note attached to a passage. The snippet re-finds the passage after edits.
+ * With replies it is a thread: the comment opens it, and anyone can answer.
+ */
 export interface Annotation {
   id: string
   range: AnnotationRange
@@ -56,6 +86,12 @@ export interface Annotation {
   comment: string
   created_at: string
   updated_at: string
+  /** Who opened the thread; absent for the writer's own note. */
+  author?: AnnotationAuthor
+  replies?: AnnotationReply[]
+  /** Settled: drawn quietly, and its panel offers Reopen. */
+  resolved?: boolean
+  labels?: AnnotationLabel[]
   /** Kept on notes written by older Poise versions; Galley never sets it. */
   session_id?: string
 }

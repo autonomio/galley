@@ -8,6 +8,7 @@ import { defineConfig, devices } from '@playwright/test'
 const PORT = 5199
 // Workers inherit the main process's environment, so one folder is shared.
 process.env.GALLEY_E2E_DIR ??= mkdtempSync(join(tmpdir(), 'galley-e2e-'))
+process.env.GALLEY_E2E_PAPERS ??= mkdtempSync(join(tmpdir(), 'galley-e2e-papers-'))
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -22,7 +23,7 @@ export default defineConfig({
   webServer: {
     command: `npx vite --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}`,
-    env: { GALLEY_DIR: process.env.GALLEY_E2E_DIR },
+    env: { GALLEY_DIR: process.env.GALLEY_E2E_DIR, GALLEY_PAPERS: process.env.GALLEY_E2E_PAPERS },
     reuseExistingServer: false,
     stdout: 'ignore',
   },

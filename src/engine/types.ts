@@ -181,6 +181,10 @@ export interface Disposition {
 
 export interface Finding {
   id: string
+  /** When it was raised. */
+  at?: string
+  /** A finding raised as an answer in another finding's thread: a person replying in the editor. */
+  parent?: string
   round: number
   seat: string
   family: Family
@@ -295,5 +299,11 @@ export interface PaperState {
   proposals?: Proposal[]
   /** The text galley last wrote to the editor, per section, to tell a person's edits from its own. */
   editorBase?: Record<string, string>
+  /** Hashes of the document and notes galley last wrote, so a person's change is noticed without a diff. */
+  editorWritten?: { doc: string; notes: string }
+  /** Replies a person wrote in the editor that are already findings. */
+  repliesSeen?: string[]
+  /** A title a person gave the paper in the editor; it stands over the system's. */
+  titleByHuman?: string
   outcome?: Outcome
 }

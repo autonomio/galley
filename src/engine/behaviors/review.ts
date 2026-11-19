@@ -98,7 +98,7 @@ ${citationEvidenceBlock(paper) || '(no citations)'}`,
         let n = s.findings.filter((f) => f.round === round && f.seat === ref.seat).length
         for (const raw of (reply.findings ?? []).slice(0, 12)) {
           const finding: Finding = {
-            id: `F${round}-${ref.seat}-${++n}`, round, seat: ref.seat, family: ref.family, model: paper.config.models[ref.family]?.model ?? ref.family,
+            id: `F${round}-${ref.seat}-${++n}`, at: new Date().toISOString(), round, seat: ref.seat, family: ref.family, model: paper.config.models[ref.family]?.model ?? ref.family,
             severity: raw.severity, sectionId: raw.section_id && sections.has(raw.section_id) ? raw.section_id : null,
             quote: raw.quote ?? '', question: raw.question, alternatives: raw.alternatives, evidence: raw.evidence, decision: raw.decision,
             edit: raw.edit && raw.edit.old ? raw.edit : null, status: 'open', assignee: 'agents', origin: 'agent', dispositions: [],
