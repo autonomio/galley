@@ -17,9 +17,9 @@ function files(dir: string): string[] {
 const imports = (path: string) => [...readFileSync(path, 'utf8').matchAll(/from '([^']+)'/g)].map((m) => m[1])
 
 describe('module boundaries', () => {
-  it('keeps Node out of everything but src/server', () => {
+  it('keeps Node out of everything but src/server and src/engine', () => {
     const offenders = files(SRC)
-      .filter((path) => !relative(SRC, path).startsWith('server'))
+      .filter((path) => !/^(server|engine)\//.test(relative(SRC, path)))
       .filter((path) => imports(path).some((spec) => spec.startsWith('node:')))
       .map((path) => relative(SRC, path))
     expect(offenders).toEqual([])
@@ -31,6 +31,17 @@ describe('module boundaries', () => {
       .filter((path) => imports(path).some((spec) => /\/(editor|surface|server|stores)\//.test(spec)))
       .map((path) => relative(SRC, path))
     expect(offenders).toEqual([])
+  })
+
+  it('keeps the paper engine out of the browser half, and the browser half out of the engine', () => {
+    const intoEngine = files(SRC)
+      .filter((path) => !/^(server|engine)\//.test(relative(SRC, path)))
+      .filter((path) => imports(path).some((spec) => /\/engine\//.test(spec)))
+      .map((path) => relative(SRC, path))
+    const fromEngine = files(join(SRC, 'engine'))
+      .filter((path) => imports(path).some((spec) => /\/(editor|surface|stores)\//.test(spec)))
+      .map((path) => relative(SRC, path))
+    expect([...intoEngine, ...fromEngine]).toEqual([])
   })
 
   it('keeps the server free of the browser half', () => {

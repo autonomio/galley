@@ -3,8 +3,12 @@
 import '../src/styles/tokens.css'
 import '../src/styles/galley.css'
 import './demo.css'
+import './wizard.css'
 import welcome from './welcome.md?raw'
 import { createEditor, createHttpStore, createLocalStore, icons, type EditorAction } from '../src/index.js'
+import { choicesAction } from './choices.js'
+import { writePaperAction } from './paper.js'
+import { proposalsAction } from './proposals.js'
 
 const params = new URLSearchParams(location.search)
 const local = params.get('store') === 'local'
@@ -18,6 +22,7 @@ const store = local
 const download: EditorAction = {
   id: 'download',
   label: 'Download as Markdown',
+  description: 'Save this document to your computer as a Markdown file.',
   icon: icons.download,
   run(editor) {
     const title = editor.documents().find((d) => d.slug === editor.slug)?.title || 'document'
@@ -32,7 +37,7 @@ const editor = createEditor(document.getElementById('editor')!, {
   store,
   theme,
   placeholder: 'Start writing…',
-  toolbar: ['writer', 'new', 'import', 'copy', download, 'delete'],
+  toolbar: ['writer', 'new', 'import', 'copy', download, ...(local ? [] : [writePaperAction(), choicesAction(), proposalsAction()]), 'delete'],
   storagePrefix: local ? 'galley-local' : 'galley',
 })
 

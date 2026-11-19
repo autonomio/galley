@@ -1,0 +1,6 @@
+id: "C-4b3e98e0-5b0b-5112-111f-df41d87c958e"
+class: "derived_inference"
+statement: "Citation selection is automatic by default. With citation choices turned on, each claim waits for the person to choose among its candidate sources (a, b, c), let the system pick, or state the claim without a source."
+uncertainty: "medium"
+evidence_ids: ["E-e5ab040d-f2e3-772d-a2ad-86a915efc605"]
+state: "active"

@@ -386,6 +386,29 @@
 .galley-notice-close { flex: 0 0 auto; display: inline-flex; padding: var(--galley-sp-1); border: none; border-radius: var(--galley-r-card); background: transparent; color: var(--galley-text-muted); cursor: pointer; }
 .galley-notice-close:hover { color: var(--galley-text); background: var(--galley-row-hover); }
 
+/* ---------- Tooltip: a control's name, then what it does ---------- */
+.galley-tooltip {
+  position: fixed;
+  z-index: var(--galley-z-notices);
+  max-width: min(calc(var(--galley-sp-unit) * 72), calc(100vw - var(--galley-sp-4)));
+  padding: var(--galley-sp-2) var(--galley-sp-3);
+  border: var(--galley-line-hair) solid var(--galley-edge);
+  border-radius: var(--galley-r-card);
+  background: var(--galley-surface);
+  box-shadow: var(--galley-shadow-menu);
+  color: var(--galley-text);
+  font-size: var(--galley-fs-row);
+  line-height: var(--galley-lh-ui);
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity var(--galley-dur-feedback);
+}
+.galley-tooltip.is-shown { visibility: visible; opacity: 1; }
+.galley-tooltip-label { font-weight: var(--galley-fw-strong); color: var(--galley-text-strong); }
+.galley-tooltip-key { margin-left: var(--galley-sp-2); color: var(--galley-text-muted); }
+.galley-tooltip-what { display: block; margin-top: var(--galley-sp-1); color: var(--galley-text-soft); }
+
 /* ---------- Writer mode: only the page, and the way out ---------- */
 .galley--writer .galley-bar { border-bottom-color: transparent; }
 .galley--writer .galley-bar-right,

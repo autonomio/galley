@@ -4,6 +4,22 @@ A calm markdown writing surface that any web app can adopt as its own editor.
 
 Markdown is drawn as you type and every marker stays in the text, so what is saved is exactly what was written. Documents are plain `.md` files. Notes attach to passages and follow them as the text changes. Saving is versioned, so a change made somewhere else is never overwritten. Galley started as the Editor in [Poise](https://github.com/autonomio/poise) and keeps its look.
 
+## Write a paper
+
+Galley also writes papers. Give it a seed (a rant, notes, a transcribed talk) and atomic behaviors turn it into a pre-publication manuscript: Claude Opus 5.5, GPT-6.2 Sol and Gemini 4 Carbon take different seats, every citation is verified against a verbatim passage by a family that did not propose it, referees from the other families review the draft until their findings are resolved, and the result is typeset as a PDF with LaTeX, Word, a sign-off sheet and an evidence package.
+
+```bash
+npm install && npm run build
+```
+
+```bash
+node dist/engine/cli.js write my-seed.md --author "Your Name"
+```
+
+The manuscript then opens in this editor, with a note on every referee finding; your edits and notes go back into the paper on the next run. A paper can also rest on your own datasets and documents (private datasets never leave your machine), include a systematic literature review that Canary carries out for it (`--literature-review yes`), and rest on a Monte Carlo simulation galley runs on your machine (`--simulation yes`). See [Papers](docs/PAPERS.md) for the ladder, the seats, the outputs and the editor loop.
+
+The first paper galley wrote introduces galley itself, from a seed of the author's own words with nothing added: `papers/galley/` (*Scope-Elastic Manuscript Compilation Narrows or Hedges Unsupported Claims Instead of Blocking Drafts*; `out/paper.pdf`, its sign-off sheet, evidence package and production journal). One untouched run took it from seed to manuscript in 2.8 hours: 121 model calls, 81 referee findings settled over two rounds, 11 citations verified against verbatim passages and 11 rejected, and 6 of 6 planted defects caught by the verifier.
+
 ## Run it locally
 
 ```bash
@@ -107,6 +123,7 @@ src/
   editor/     createEditor: session (persistence), notes, marks, toolbar, picker
   stores/     DocumentStore and its HTTP, memory and local implementations
   server/     file store, HTTP handler, Vite plugin (Node only)
+  engine/     papers: behaviors, the scheduler, model transports, evidence, rendering (Node only)
   styles/     tokens.css and galley.css
 demo/         the app `npm run dev` serves
 tests/unit    Vitest: core, stores (one contract for all), protocol, session, boundaries
@@ -114,7 +131,7 @@ tests/e2e     Playwright: the editor as a writer uses it
 ```
 
 These rules are enforced by `tests/unit/boundaries.test.ts`:
-- Only `src/server` touches Node.
+- Only `src/server` and `src/engine` touch Node, and the browser half never imports the engine.
 - `src/core` and `src/markdown` touch neither the DOM nor Node.
 - The server never imports the browser half.
 

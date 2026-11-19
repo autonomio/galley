@@ -7,3 +7,11 @@ playwright-report/
 *.tsbuildinfo
 .DS_Store
 .claude/launch.json
+
+# Paper runs: replayable model calls, search workspaces and intermediate builds stay local.
+papers/*/calls/
+papers/*/canary/
+papers/*/build/
+papers/*/run.log
+papers/*/progress.json
+papers/*/out/submission.zip

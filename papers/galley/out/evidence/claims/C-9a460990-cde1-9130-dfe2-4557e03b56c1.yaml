@@ -1,0 +1,6 @@
+id: "C-9a460990-cde1-9130-dfe2-4557e03b56c1"
+class: "derived_inference"
+statement: "Galley is a manuscript compiler built into an editor. Agents from several model families carry a text seed through to a pre-publication manuscript, applying to academic writing the semi-autonomous pattern that poise applies to software engineering."
+uncertainty: "medium"
+evidence_ids: ["E-75f870fb-c350-d893-9821-d3508be2d626"]
+state: "active"

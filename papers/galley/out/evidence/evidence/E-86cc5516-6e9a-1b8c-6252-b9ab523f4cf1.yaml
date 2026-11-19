@@ -1,0 +1,8 @@
+id: "E-86cc5516-6e9a-1b8c-6252-b9ab523f4cf1"
+kind: "external"
+summary: "narrower: The passage describes PaperOrchestra as a multi-agent framework that transforms unconstrained pre-writing materials into submission-ready LaTeX manuscripts for AI research paper writing, without stating that it uses large language models or that the input materials are unstructured."
+source_ids: ["S-c636622e-140e-dd35-b7f7-98442548f77a"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-c1181640-22a5-e062-4c40-f16d5615f001"]

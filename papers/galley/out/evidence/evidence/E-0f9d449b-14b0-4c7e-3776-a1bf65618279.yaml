@@ -1,0 +1,8 @@
+id: "E-0f9d449b-14b0-4c7e-3776-a1bf65618279"
+kind: "external"
+summary: "narrower: The passage states that the framework enables large language models to generate ideas, run experiments and write full scientific papers and that The AI Scientist runs a simulated review process for evaluation, without stating that evaluation uses an automated LLM reviewer."
+source_ids: ["S-c4a2f5ce-5ff9-a6a4-3f8d-96090e0e0bc3"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-21636ada-7395-1647-811a-5dd1709bc9e7"]

@@ -1,0 +1,6 @@
+id: "C-f1e012e6-8346-a431-3be0-77f139c14449"
+class: "hypothesis"
+statement: "Based on the cited abstracts, we hypothesize that PaperOrchestra, The AI Scientist and DeepSciVerify each lack the combination of manuscript preparation that continues when an improver fails and is skipped, automatic narrowing or hedging of claims based on code-confirmed verbatim evidence, cross-family verification, and a human sign-off sheet. The proposed novelty is the combination. Earlier work established multi-agent drafting and automated review."
+uncertainty: "high"
+evidence_ids: ["E-40a281ea-838d-e55a-cb4a-fe0956b78996"]
+state: "active"

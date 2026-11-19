@@ -1,0 +1,8 @@
+id: "S-5f519550-bc6b-0a05-8bba-5877aa71615a"
+kind: "reasoning"
+title: "Argument plan of the manuscript"
+uri: null
+date: "2026-11-19"
+locator: "C37"
+excerpt: "Code restricts the draft to verified passages, and drafting instructions direct it to write claims with hypothesis standing as hypotheses. The fidelity behaviour checks drafted sections and rewrites sentences that exceed their claim's standing or verified evidence. It can miss overclaims and is skipped after two failures."
+access: "inspected"

@@ -1,0 +1,6 @@
+id: "C-ad4ab9dc-26c9-b524-01af-4b8fd3c1fdaa"
+class: "hypothesis"
+statement: "PaperOrchestra is a multi-agent framework that turns unconstrained pre-writing materials into submission-ready LaTeX research manuscripts."
+uncertainty: "high"
+evidence_ids: ["E-ee107d3d-526b-d212-c248-7fc0d8ee6a28"]
+state: "active"

@@ -6,6 +6,7 @@ import { rangeText } from '../core/anchoring.js'
 import { offsetInLineFor, selectionIn } from '../surface/caret.js'
 import type { Surface } from '../surface/surface.js'
 import { el } from './dom.js'
+import { attachTooltip } from './tooltip.js'
 
 export interface SelectedPassage {
   /** The passage's source text, markers included. */
@@ -18,6 +19,8 @@ export interface SelectedPassage {
 export interface ClusterAction {
   id: string
   label: string
+  /** What the control does, shown under the label when the pointer rests on it. */
+  description?: string
   icon: string
   run(passage: SelectedPassage): void
 }
@@ -74,8 +77,8 @@ export function createSelectionCluster(options: {
       class: 'galley-selection-btn',
       'data-action': action.id,
       'aria-label': action.label,
-      title: action.label,
     }, action.icon)
+    attachTooltip(button, () => ({ label: action.label, description: action.description }))
     button.hidden = true
     // mousedown, not click: act before the editor sees the click and
     // collapses the selection.

@@ -1,0 +1,6 @@
+id: "C-ec4cc21c-c6c6-7ab2-a826-a2743015db78"
+class: "derived_inference"
+statement: "Galley takes written text as its seed. Spoken input is out of scope."
+uncertainty: "medium"
+evidence_ids: ["E-06641c51-5bdc-c0fb-4521-abee1936d766"]
+state: "active"

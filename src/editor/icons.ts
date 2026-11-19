@@ -17,4 +17,6 @@ export const icons = {
   comment: svg('<path d="M2.5 4a1.5 1.5 0 0 1 1.5-1.5h6A1.5 1.5 0 0 1 11.5 4v4a1.5 1.5 0 0 1-1.5 1.5H6.5L4 12V9.5a1.5 1.5 0 0 1-1.5-1.5V4z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>'),
   chat: svg('<path d="M2 3.5a1.5 1.5 0 0 1 1.5-1.5h7A1.5 1.5 0 0 1 12 3.5v5A1.5 1.5 0 0 1 10.5 10H6l-2.5 2V10A1.5 1.5 0 0 1 2 8.5v-5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M4.5 5h5M4.5 7h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'),
   close: svg('<path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'),
+  // Start: set something going that then runs by itself.
+  play: svg('<path d="M4.5 2.9v8.2a.5.5 0 0 0 .77.42l6.2-4.1a.5.5 0 0 0 0-.84l-6.2-4.1a.5.5 0 0 0-.77.42z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>'),
 } as const

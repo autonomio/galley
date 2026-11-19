@@ -1,0 +1,6 @@
+id: "C-70cac857-6141-b0a9-11c9-848013315e81"
+class: "observed_fact"
+statement: "Evaluating the quality of AI-generated research papers remains an open challenge. A benchmarking protocol assesses such papers using LLM-based automated peer review."
+uncertainty: "medium"
+evidence_ids: ["E-309fb27a-c136-5bb4-4863-2477f5252271"]
+state: "active"

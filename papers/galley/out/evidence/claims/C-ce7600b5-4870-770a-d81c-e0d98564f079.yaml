@@ -1,0 +1,6 @@
+id: "C-ce7600b5-4870-770a-d81c-e0d98564f079"
+class: "derived_inference"
+statement: "Galley separates model families for the direction proposer and selector, citation checker and verifier, author and referee, and author and ledger reconciler. The adjudicator comes from a family distinct from both the author's and the referee's. Outside these pairings, a family can review work it contributed to. In this run, Claude Opus 5.5 was the author, GPT-6.2 Sol the checker, and Gemini 4 Carbon the challenger and verifier."
+uncertainty: "medium"
+evidence_ids: ["E-4897c5ad-cab3-b002-97bb-58674f2d82b6"]
+state: "active"
