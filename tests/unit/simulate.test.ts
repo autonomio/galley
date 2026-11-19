@@ -45,3 +45,21 @@ describe('simulation in a paper', () => {
     expect(filled.text).not.toContain('{{')
   })
 })
+
+describe('a simulation paper as published', () => {
+  it('points its availability statement at the runnable reproduction', async () => {
+    const { buildManuscript } = await import('../../src/engine/render.js')
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const paper = Paper.create(join(dir, 'p'), 'seed', { simulation: true })
+    const out = simulate(spec)
+    if (!out.ok) throw new Error('spec did not run')
+    const s = paper.state
+    s.simulations = { S1: { id: 'S1', title: out.result.title, purpose: 'p', assumptions: [], result: out.result } }
+    s.outline = { sections: [{ id: 'S1', title: 'Results', purpose: '', claimIds: [], words: 200, figureIds: [] }], style: '', glossary: [] }
+    s.passages = { S1: { sectionId: 'S1', text: 'A loss in {{sim.S1.loss.p}} of years.', revisions: [], checked: 'faithful' } }
+    s.frame = { title: 'Profit', abstract: 'a', keywords: [], limitations: '', opens: '' }
+    const { markdown } = await buildManuscript(paper)
+    expect(markdown).toContain('node simulate.mjs --verify')
+    expect(markdown).not.toContain('{{sim.')
+  })
+})
