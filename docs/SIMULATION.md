@@ -20,8 +20,9 @@ else placeholders(out.result)    // { 'sim.S1.profit.p95': '18,200', 'sim.S1.los
 | `validate(spec)` | The problems alone, without running; `[]` when it can run |
 | `specSchema` | The spec as JSON Schema in the strict dialect of `src/engine/schema.ts`, for a model's reply |
 | `specGuide()` | The format in a few lines for a prompt, generated from the engine's own tables |
-| `citable(result)` | Every citable number: `{ key, value, number, meaning }` |
+| `citable(result)` | Every citable number: `{ key, value, number, step, meaning }` |
 | `placeholders(result)` | The same as `key → value`, ready to spread into the paper's record |
+| `writeReproduction(dir, runs, { title })` | Writes the paper's reproduction package (see below) and returns the files it wrote |
 | `METHODS`, `DISTRIBUTIONS`, `FUNCTIONS` | The tables the core, the schema and the guide read |
 
 ## The spec
@@ -213,7 +214,7 @@ The same spec and seed give the same numbers on the same JavaScript engine. Acro
 | `series.cdfs[name]` | The quantile at 41 probabilities from 0 to 1 |
 | `series.steps` | `sequential` only: `t`, mean ESS per step, and per output its mean, p5, p50 and p95 at every step (at most about 100 points) |
 | `diagnostics` | `correlated`: stated, used and achieved rank correlations. `sequential`: each filter's log-likelihood, resamplings and collapses |
-| `provenance` | `engine`, `method`, `seed`, `size` (draws, or particles, replicates and steps), `fingerprint` of the spec, `runtimeMs`, `checks`, `ok` |
+| `provenance` | `engine`, `method`, `seed`, `size` (draws, or particles, replicates and steps), `fingerprint` of the spec, `runtime` (the JavaScript engine, such as `node v23.10.0`), `runtimeMs`, `checks`, `ok` |
 | `spec` | The spec as it ran, the seed filled in: with it every number can be reproduced |
 
 Quantiles interpolate between the midpoints of each value's share of the weight (Hazen's rule
@@ -265,6 +266,38 @@ significant digits. Thousands get separators from 10,000 on, so a year reads `20
 
 An event that never held reads as a bound, `< 0.02%` for 20,000 draws, from the rule of three
 (3/n). One that always held reads `> 99.98%`.
+
+## Reproduction package
+
+`writeReproduction(dir, runs, { title })` writes a folder that sits beside the paper. Anyone can
+rerun it with Node alone (version 18 or later), or with only a browser, and get the paper's
+numbers. `runs` are `{ id, title, purpose, assumptions: {name, basis}[], result }`, the shape of the
+paper's `SimulationRun`.
+
+| File | What it is |
+| --- | --- |
+| `engine.mjs` | The engine as one ES module with no imports, made by `bundleEngine()` from the very modules galley ran: the compiled ones in `dist/`, or, under a test, the sources compiled one by one |
+| `simulate.mjs` | The command. `node simulate.mjs` prints every citable number under its placeholder key; `node simulate.mjs specs/S1.json` runs one spec, as published or after a change; `--json` prints JSON; `--verify` reruns every spec and checks each number against `expected/` |
+| `specs/<id>.json` | Each spec as it ran, with its seed |
+| `expected/<id>.json` | Every number the paper can cite, as the text shows it, with its rounding step, the spec's fingerprint, the engine and the JavaScript runtime |
+| `index.html` | The engine and the data inline, in one page that opens from disk with no server: it reruns every simulation, compares each number with the paper, and lets a reader change an input or the whole spec and run it again |
+| `README.md` | What each simulation models and assumes, and the numbers it gives; how to run and verify it; the engine, galley and Node versions; and whether the package's own verification passed |
+| `SPEC.md` | The spec format, from `specGuide()` |
+
+The function returns the files it wrote. It replaces only the `.json` files in `specs/` and
+`expected/`, so a simulation the paper dropped leaves nothing behind. Before it writes the README,
+it runs `node simulate.mjs --verify` in the folder, as a reader would (`verifyReproduction(dir)`),
+and the README says whether every number matched. A failure is reported there, never thrown.
+
+**Verification.** A number agrees when its text is the same. It also agrees when the rerun's own
+value rounds to the cited value at the cited step: `step` in `citable` is 10 for 12,440 and 0.1 for
+15.9%. A last-digit difference between JavaScript engines therefore never fails a check, and nothing
+coarser passes one. A seed or a bound (`< 0.02%`) must match exactly. A spec whose fingerprint
+differs from the paper's is reported as changed. Any difference prints a table of key, paper value,
+rerun value and meaning, and the command exits 1; when every number matches, it exits 0.
+
+The comparison and the command line live in `verify.ts`, and the page in `page.ts`. Both are pure,
+so the bundle carries them: the package runs the same code as galley's own check.
 
 ## Adding a method
 
