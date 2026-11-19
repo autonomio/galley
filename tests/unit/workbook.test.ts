@@ -56,3 +56,13 @@ describe('latency analyses', () => {
     expect(analyze(rows, { id: 'A2', dataset: 'M1', op: 'share', column: 'delay', column2: null, by: null, value: '<700', where: null }).value).toBe('60%')
   })
 })
+
+describe('large datasets', () => {
+  it('profiles and measures a column of 400,000 values without overflowing the stack', async () => {
+    const { profileDataset } = await import('../../src/engine/materials.js')
+    const rows: Row[] = Array.from({ length: 400_000 }, (_, i) => ({ delay: String(18 + (i % 480)) }))
+    const profile = profileDataset(rows)
+    expect(JSON.stringify(profile)).toContain('"min":18')
+    expect(analyze(rows, { id: 'A1', dataset: 'M1', op: 'max', column: 'delay', column2: null, by: null, value: null, where: null }).value).toBe('497')
+  })
+})

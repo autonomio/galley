@@ -183,7 +183,7 @@ export function profileDataset(rows: Row[]): DatasetProfile {
     const distinct = new Set(present).size
     const base = { name, missing: values.length - present.length, distinct }
     if (present.length && numbers.length === present.length && distinct > 2) {
-      return { ...base, type: 'number', min: Math.min(...numbers), max: Math.max(...numbers), mean: mean(numbers), median: median(numbers), sd: sd(numbers) }
+      return { ...base, type: 'number', min: numbers.reduce((a, x) => Math.min(a, x), Infinity), max: numbers.reduce((a, x) => Math.max(a, x), -Infinity), mean: mean(numbers), median: median(numbers), sd: sd(numbers) }
     }
     const counts = new Map<string, number>()
     for (const v of present) counts.set(v, (counts.get(v) ?? 0) + 1)
