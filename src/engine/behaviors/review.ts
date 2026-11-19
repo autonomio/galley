@@ -273,52 +273,83 @@ ${findings.map((f) => {
   },
 }
 
+/** One disputed finding's thread, as the adjudicator reads it: the question, the quote, and every answer with its verdict. */
+function thread(f: Finding): string {
+  return `FINDING ${f.id} [${f.severity}, ${f.seat} referee]: ${f.question}
+Decision asked for: ${f.decision}
+Quote: "${f.quote}"
+${f.dispositions.map((d, i) => `Round ${i + 1}: author (${d.kind}): ${d.text}${d.edits.length ? `\n  author's edits: ${d.edits.map((e) => `"${e.old}" -> "${e.new}"`).join('; ')}` : ''}\n  referee: ${d.verification?.outcome}: ${d.verification?.reason}`).join('\n')}`
+}
+
+/**
+ * Findings an author and a referee could not settle go to the third family, in
+ * one call per section and family. The adjudicator reads that section's current
+ * text, the claims and evidence it may state, and each finding's thread; only a
+ * finding with no section is judged against the whole manuscript.
+ */
 export const adjudicate: Behavior = {
   id: 'adjudicate', stage: 'referees', improver: true, title: 'Adjudicate',
   ready: (paper) => {
     const s = paper.state
     if (!live(paper)) return []
     const stuck = s.findings.filter((f) => f.status === 'open' && material(f) && f.dispositions.length >= paper.config.fixAttempts && f.assignee !== 'humans')
-    return stuck.map((f): Target => {
+    const groups = new Map<string, { sectionId: string | null; family: Family; findings: Finding[] }>()
+    for (const f of stuck) {
       const family = thirdFamily(paper.config.seats.author, f.family)
-      return {
-        key: `adjudicate:${f.id}`, label: `${f.id} by ${family}`,
-        run: async () => {
-          // The whole manuscript: a disputed finding often spans sections.
-          const current = manuscriptBlock(paper)
-          const reply = await paper.ask<any>({
-            behavior: 'adjudicate', light: true, target: f.id, seat: 'adjudicator', family,
-            prompt: `${HOUSE}
+      const key = `${f.sectionId ?? 'paper'}|${family}`
+      const group = groups.get(key) ?? { sectionId: f.sectionId, family, findings: [] }
+      group.findings.push(f)
+      groups.set(key, group)
+    }
+    return [...groups.values()].map(({ sectionId, family, findings }): Target => ({
+      key: `adjudicate:${findings.map((f) => f.id).join(',')}`, label: `${findings.length} finding(s) in ${sectionId ?? 'the paper'} by ${family}`,
+      run: async () => {
+        const pending = findings.filter((f) => f.status === 'open')
+        if (!pending.length) return
+        const section = sectionId ? s.outline?.sections.find((sec) => sec.id === sectionId) : undefined
+        const text = section ? sectionText(paper, section.id) : manuscriptBlock(paper)
+        const scope = section
+          ? `The findings are in section ${section.id} ${section.title}. Its current text:\n"""\n${text}\n"""\n\nClaims this section may state, with their evidence:\n${claimsBlock(paper, section.claimIds) || '(none)'}`
+          : `The findings concern the whole paper. The current manuscript:\n"""\n${text}\n"""`
+        const reply = await paper.ask<any>({
+          behavior: 'adjudicate', light: true, target: pending.map((f) => f.id).join(','), seat: 'adjudicator', family,
+          prompt: `${HOUSE}
 
 ${STYLE}
 
-An author and a referee from two other model families could not agree. Decide.
+For each finding below, an author and a referee from two other model families could not agree. Decide each one on its own.
 - adopt_referee: the referee is right; give the edits that implement the referee's decision.
 - adopt_author: the author's last answer stands; no edits.
 - narrow: both are partly right; give edits that narrow the text to the common ground.
 - limitation: state the disagreement as a limitation of the paper; give that edit.
-Edits are exact replacements { old, new } with old copied character for character from the current text.
+Edits are exact replacements { old, new } with old copied character for character from the text below.
 
-Finding ${f.id} [${f.severity}, ${f.seat} referee]: ${f.question}
-Decision asked for: ${f.decision}
-Quote: "${f.quote}"
-${f.dispositions.map((d, i) => `Round ${i + 1}: author (${d.kind}): ${d.text}\n  referee: ${d.verification?.outcome}: ${d.verification?.reason}`).join('\n')}
+${pending.map(thread).join('\n\n')}
 
-The finding is in ${f.sectionId ?? 'the whole paper'}. The current manuscript:
-"""
-${current}
-"""
-${placeholderLegend(paper, current)}`,
-            schema: obj({ decision: enm(['adopt_referee', 'adopt_author', 'narrow', 'limitation']), reason: str(), edits: arr(obj({ old: str(), new: str() })) }),
-          })
-          const applied = (reply.edits ?? []).filter((edit: { old: string; new: string }) => applyAnywhere(paper, edit, f.sectionId, { family, seat: 'adjudicator', behavior: 'adjudicate' }, `adjudication of ${f.id}`))
-          f.adjudication = { decision: `${reply.decision}: ${reply.reason}`, family, edits: applied }
+${scope}
+${placeholderLegend(paper, text)}
+
+Return decisions: one for each finding, with its id.`,
+          schema: obj({ decisions: arr(obj({ id: str(), decision: enm(['adopt_referee', 'adopt_author', 'narrow', 'limitation']), reason: str(), edits: arr(obj({ old: str(), new: str() })) })) }),
+        })
+        const decisions = new Map<string, any>((reply.decisions ?? []).map((d: any) => [String(d.id), d]))
+        for (const f of pending) {
+          const d = decisions.get(f.id)
+          if (!d) {
+            // A finding the decision left out is asked again with the next group; twice left out, it is noted for a person.
+            const misses = (s.attempts[`adjudicate-omitted:${f.id}`] ?? 0) + 1
+            s.attempts[`adjudicate-omitted:${f.id}`] = misses
+            if (misses >= 2) { f.status = 'noted'; paper.note('adjudicate', `${f.id} (${f.question}) could not be settled by ${family}; it is left for you.`, true) }
+            continue
+          }
+          const applied = (d.edits ?? []).filter((edit: { old: string; new: string }) => applyAnywhere(paper, edit, f.sectionId, { family, seat: 'adjudicator', behavior: 'adjudicate' }, `adjudication of ${f.id}`))
+          f.adjudication = { decision: `${d.decision}: ${d.reason}`, family, edits: applied }
           f.status = 'adjudicated'
-          paper.note('adjudicate', `${f.id} (${f.question}) was settled by ${family}: ${reply.decision}. ${reply.reason}`, true)
-          paper.save()
-        },
-        skip: () => { f.status = 'noted' },
-      }
-    })
+          paper.note('adjudicate', `${f.id} (${f.question}) was settled by ${family}: ${d.decision}. ${d.reason}`, true)
+        }
+        paper.save()
+      },
+      skip: () => { for (const f of findings) if (f.status === 'open') f.status = 'noted' },
+    }))
   },
 }
