@@ -45,6 +45,7 @@ In `papers/<slug>/out/`:
 | `signoff.md` | what only you can decide before submitting: declarations, claims the system added, claims stated as hypotheses, decisions a third model family made, steps that were skipped |
 | `evidence/` | every claim, the evidence it rests on and the verbatim passage of each source, as Resolvent records (`claims/`, `evidence/`, `sources/`) |
 | `production-journal.jsonl` | every step, model call, verdict and decision, with its time: the record that the paper was produced as described |
+| `simulation/` | when the paper runs simulations, the reproduction package: `node simulate.mjs --verify` reruns each one with Node alone and checks every number against the paper, and `index.html` does the same in a browser |
 | `submission.zip` | all of the above |
 
 The manuscript ends with its claim ledger as an appendix (every claim, its kind, its standing, whether the seed or the system made it, and the sources it rests on; `"ledgerAppendix": false` leaves it out), then a statement of how it was produced and its production record: model calls per family, tokens, claims added and narrowed, citations verified and rejected, referee findings and how they were resolved. Numbers about the run that the text itself states are written as placeholders and filled in from that record wherever the paper is shown.
@@ -99,7 +100,7 @@ Behaviors are atomic: each reads the paper's state, does one thing, and writes i
 | 23 | adjudicate | referees | a finding is still disputed at the cap | the third family decides |
 | 24 | reconcile | close | the review is done | a family other than the author's reads the final text against every claim: confirmed, narrowed to the text's wording, or dropped as no longer stated |
 | 25 | reprofile | close | the review is done | the finished paper against the seven factors |
-| 26 | typeset | skeleton | the text changed | PDF, LaTeX, Word, editor document, evidence package, sign-off |
+| 26 | typeset | skeleton | the text changed | PDF, LaTeX, Word, editor document, evidence package, reproduction package, sign-off |
 | 27 | ready | close | every gate holds on one revision | ready for submission |
 
 The skeleton (extract, plan, outline, draft, frame, typeset, ready) is what makes a paper exist. Everything else is an improver: it can make the paper better but can never stop it. An improver that fails twice is settled as skipped, its effect is written down (a claim without evidence is hedged; a figure is left out), and the paper moves on. A model provider at a usage limit is waited out for up to about six hours (a subscription's window), never counted as a failure; when the provider says when its quota resets, the call is tried again just after that; only a longer limit pauses the run, and running it again resumes it. A search index that is unavailable (OpenAlex pauses keyless search under heavy load) is waited out for up to three hours, retrying less often as the wait grows; after that the search is given up and the claims it was for are hedged.
@@ -156,7 +157,7 @@ Tick **Monte Carlo simulation** in the start dialog (or pass `--simulation yes`)
 2. Galley runs the specification on your machine with its simulation engine ([Simulations](SIMULATION.md)): deterministic for a seed, with the Monte Carlo error of every number and checks on precision. When the engine cannot run a specification, its problems go back to the author until it can.
 3. The plan is made from the results. A claim about a simulation names it, says only what the results show under its assumptions, and writes every number as a placeholder such as `{{sim.S1.profit.p95}}`, filled in at typesetting to the precision its Monte Carlo error supports; a model never types a simulated figure. Figures may chart a run's distributions or a sequential run's bands from the run itself.
 
-The sign-off sheet lists each simulation's inputs with their bases for you to check, the AI statement says how each ran, and the evidence package holds every specification with its results (`simulations/S1.json`), so anyone can rerun it and get the same numbers.
+The sign-off sheet lists each simulation's inputs with their bases for you to check, the AI statement says how each ran, and the evidence package holds every specification with its results (`simulations/S1.json`), so anyone can rerun it and get the same numbers. Typeset also writes the reproduction package, `out/simulation/`: the engine that produced the numbers in one file, every spec with its seed and every cited number. With it `node simulate.mjs --verify` reruns each simulation with Node alone and checks every number against the paper, `index.html` does the same in a browser, and the availability statement points readers to it.
 
 ## When you want to be in it
 

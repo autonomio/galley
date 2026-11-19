@@ -22,7 +22,7 @@ else placeholders(out.result)    // { 'sim.S1.profit.p95': '18,200', 'sim.S1.los
 | `specGuide()` | The format in a few lines for a prompt, generated from the engine's own tables |
 | `citable(result)` | Every citable number: `{ key, value, number, step, meaning }` |
 | `placeholders(result)` | The same as `key → value`, ready to spread into the paper's record |
-| `writeReproduction(dir, runs, { title })` | Writes the paper's reproduction package (see below) and returns the files it wrote |
+| `writeReproduction(dir, runs, { title, verified })` | Writes the paper's reproduction package (see below) and returns the files it wrote |
 | `METHODS`, `DISTRIBUTIONS`, `FUNCTIONS` | The tables the core, the schema and the guide read |
 
 ## The spec
@@ -269,10 +269,15 @@ An event that never held reads as a bound, `< 0.02%` for 20,000 draws, from the 
 
 ## Reproduction package
 
-`writeReproduction(dir, runs, { title })` writes a folder that sits beside the paper. Anyone can
-rerun it with Node alone (version 18 or later), or with only a browser, and get the paper's
-numbers. `runs` are `{ id, title, purpose, assumptions: {name, basis}[], result }`, the shape of the
-paper's `SimulationRun`.
+`writeReproduction(dir, runs, { title, verified })` writes a folder that sits beside the paper.
+Anyone can rerun it with Node alone (version 18 or later), or with only a browser, and get the
+paper's numbers. `runs` are `{ id, title, purpose, assumptions: {name, basis}[], result }`, the shape
+of the paper's `SimulationRun`, and may come straight from the paper's stored state.
+
+Typeset writes the package into `out/simulation/` and adds it to `submission.zip`. The availability
+statement then points a reader to it and names the verify command, unless the authors wrote their
+own statement. A failure to write the package, or a package that does not verify, is a note on the
+paper, never a stop.
 
 | File | What it is |
 | --- | --- |
@@ -285,16 +290,20 @@ paper's `SimulationRun`.
 | `SPEC.md` | The spec format, from `specGuide()` |
 
 The function returns the files it wrote. It replaces only the `.json` files in `specs/` and
-`expected/`, so a simulation the paper dropped leaves nothing behind. Before it writes the README,
-it runs `node simulate.mjs --verify` in the folder, as a reader would (`verifyReproduction(dir)`),
-and the README says whether every number matched. A failure is reported there, never thrown.
+`expected/`, so a simulation the paper dropped leaves nothing behind. With no runs it removes
+everything a package wrote, so a paper that dropped all its simulations publishes none. Before it
+writes the README, it runs `node simulate.mjs --verify` in the folder, as a reader would
+(`verifyReproduction(dir)`). The README says whether every number matched, and so does the
+`verified` callback. A failure is reported there, never thrown.
 
 **Verification.** A number agrees when its text is the same. It also agrees when the rerun's own
 value rounds to the cited value at the cited step: `step` in `citable` is 10 for 12,440 and 0.1 for
 15.9%. A last-digit difference between JavaScript engines therefore never fails a check, and nothing
 coarser passes one. A seed or a bound (`< 0.02%`) must match exactly. A spec whose fingerprint
-differs from the paper's is reported as changed. Any difference prints a table of key, paper value,
-rerun value and meaning, and the command exits 1; when every number matches, it exits 0.
+differs from the paper's is reported as changed. When the whole package runs, a published
+simulation whose spec is missing from `specs/` fails the check too. Any difference prints a table of
+key, paper value, rerun value and meaning, and the command exits 1; when every number matches, it
+exits 0. On the page, each input field edits the input of its name, wherever the whole spec lists it.
 
 The comparison and the command line live in `verify.ts`, and the page in `page.ts`. Both are pure,
 so the bundle carries them: the package runs the same code as galley's own check.
