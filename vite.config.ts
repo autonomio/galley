@@ -104,10 +104,11 @@ function papersPlugin(): Plugin {
         }
         if (req.method !== 'POST') {
           if (!existsSync(join(paperDir, 'state.json'))) { res.statusCode = 404; res.end(); return }
-          let status = ''
-          try { status = execFileSync(process.execPath, [cli, 'status', paperDir]).toString() } catch (error) { status = String(error) }
+          // Where the paper stands, as data the status view draws; reading it never touches the run.
+          let data: unknown = null
+          try { data = JSON.parse(execFileSync(process.execPath, [cli, 'status', paperDir, '--json']).toString()) } catch (error) { res.statusCode = 500; res.end(String(error)); return }
           res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ status: status.trim() }))
+          res.end(JSON.stringify({ data }))
           return
         }
         if (!existsSync(cli)) { res.statusCode = 503; res.end('build galley first: npm run build'); return }

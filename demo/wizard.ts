@@ -277,15 +277,88 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   }
 }
 
-/** Where a running or finished paper stands, as the engine reports it. */
-export function openPaperStatus(slug: string, status: string): void {
-  const dialog = h('dialog', { class: 'gw gw--status', 'aria-labelledby': 'gw-title' },
-    h('div', { class: 'gw-body' }, h('h2', { id: 'gw-title', class: 'gw-title', text: `${slug}-paper` }), h('pre', { class: 'gw-status', text: status })),
-    h('footer', { class: 'gw-foot' }, h('span', { class: 'gw-hint' }), h('div', { class: 'gw-actions' }, h('button', { type: 'button', class: 'gw-btn gw-btn--primary', text: 'Close', onclick: () => dialog.close() }))))
-  dialog.addEventListener('close', () => dialog.remove())
+interface StatusData {
+  slug: string
+  title: string | null
+  seedTitle: string
+  outcome: string | null
+  running: boolean
+  startedAt: string
+  stages: { id: string; label: string; done: boolean }[]
+  now: { doing: string; who: string; seconds: number }[]
+  waiting: { family: string; name: string; seconds: number; resetsIn: number | null } | null
+  claims: { total: number; supported: number; narrowed: number; own: number; premises: number; hypotheses: number; open: number }
+  evidence: { screened: number; verified: number; rejected: number }
+  sections: { drafted: number; total: number | null }
+  review: { round: number; rounds: number; findings: number; open: number }
+  cost: { calls: number; tokensInM: number; hours: number }
+  typeset: boolean
+}
+
+const clock = (iso: string | Date) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+const ago = (seconds: number) => seconds < 90 ? `${seconds} s` : seconds < 5400 ? `${Math.round(seconds / 60)} min` : `${Math.floor(seconds / 3600)} h ${Math.round((seconds % 3600) / 60)} min`
+
+/** Where a paper stands, kept current while the window is open. */
+export function openPaperStatus(slug: string, open?: (manuscript: string) => void): void {
+  const body = h('div', { class: 'gw-body' })
+  const updated = h('span', { class: 'gw-hint' })
+  const openButton = h('button', { type: 'button', class: 'gw-btn', text: 'Open the manuscript', hidden: true })
+  const close = h('button', { type: 'button', class: 'gw-btn gw-btn--primary', text: 'Close', onclick: () => dialog.close() })
+  const dialog = h('dialog', { class: 'gw gw--status', 'aria-labelledby': 'gw-title' }, body, h('footer', { class: 'gw-foot' }, updated, h('div', { class: 'gw-actions' }, openButton, close)))
+  let timer = 0
+  dialog.addEventListener('close', () => { window.clearInterval(timer); dialog.remove() })
   dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close() })
   document.body.append(dialog)
   dialog.showModal()
+  close.focus()
+
+  const draw = (d: StatusData) => {
+    const current = d.stages.findIndex((s) => !s.done)
+    const done = d.outcome === 'ready_for_submission'
+    const state = done
+      ? h('p', { class: 'gw-state is-done' }, h('span', { class: 'gw-state-mark', 'aria-hidden': 'true', text: '✓' }), 'Ready for submission')
+      : d.running
+        ? h('p', { class: 'gw-state' }, h('span', { class: 'gw-lamp', 'aria-hidden': 'true' }), `Running · ${d.stages[current]?.label ?? 'Finishing'}`)
+        : h('p', { class: 'gw-state is-stopped' }, h('span', { class: 'gw-state-mark', 'aria-hidden': 'true', text: '‖' }), d.outcome ? `Ended: ${d.outcome.replace(/_/g, ' ')}` : 'Not running')
+    const n = (x: number | null) => x === null ? '…' : x.toLocaleString('en-US')
+    const rows: [string, string][] = [
+      ['Claims', `${n(d.claims.total)}: ${d.claims.supported + d.claims.narrowed} with verified sources, ${d.claims.own} your work, ${d.claims.premises} premises, ${d.claims.hypotheses} hypotheses, ${d.claims.open} still open`],
+      ['Evidence', `${n(d.evidence.screened)} works screened · ${d.evidence.verified} citations verified · ${d.evidence.rejected} rejected`],
+      ['Sections', d.sections.total === null ? 'not outlined yet' : `${d.sections.drafted} of ${d.sections.total} drafted`],
+      ['Review', d.review.round ? `round ${d.review.round} of ${d.review.rounds} · ${d.review.findings} findings, ${d.review.open} open` : `${d.review.rounds} round${d.review.rounds === 1 ? '' : 's'}, after the draft`],
+      ['So far', `${n(d.cost.calls)} model calls · ${d.cost.tokensInM} M tokens · ${d.cost.hours} h`],
+    ]
+    body.replaceChildren(...[
+      h('div', { class: 'gw-label', text: 'Paper' }),
+      h('h2', { id: 'gw-title', class: 'gw-title', text: d.title ?? d.seedTitle ?? 'Untitled paper' }),
+      state,
+      h('p', { class: 'gw-note', text: `Started ${clock(d.startedAt)}${d.title ? ` · from “${d.seedTitle.length > 70 ? `${d.seedTitle.slice(0, 70)}…` : d.seedTitle}”` : ''}` }),
+      h('ol', { class: 'gw-stages' }, ...d.stages.map((s, i) => h('li', { class: s.done ? 'is-done' : i === current && !done ? 'is-current' : '' },
+        h('span', { class: 'gw-num', text: s.done ? '✓' : String(i + 1) }), h('span', { class: 'gw-stage', text: s.label })))),
+      d.running && d.now.length
+        ? h('div', { class: 'gw-box' }, h('div', { class: 'gw-label', text: 'Now' }), ...d.now.map((f) => h('p', { class: 'gw-now' }, h('span', { class: 'gw-now-what' }, h('strong', { text: f.doing }), h('span', { class: 'gw-mono gw-now-who', text: f.who })), h('span', { class: 'gw-mono gw-now-time', text: ago(f.seconds) }))))
+        : d.running && d.waiting ? h('div', { class: 'gw-box' }, h('div', { class: 'gw-label', text: 'Now' }), h('p', { class: 'gw-now' }, h('span', { class: 'gw-now-what' }, h('strong', { text: `Waiting for ${d.waiting.name}` }), h('span', { class: 'gw-now-who', text: d.waiting.resetsIn === null ? 'Usage limit; it carries on by itself.' : d.waiting.resetsIn > 0 ? `Usage quota; resets in ${ago(d.waiting.resetsIn)}.` : 'Usage quota has reset.' })), h('span', { class: 'gw-mono gw-now-time', text: `next try in ${ago(d.waiting.seconds)}` })))
+        : d.running ? h('div', { class: 'gw-box' }, h('div', { class: 'gw-label', text: 'Now' }), h('p', { class: 'gw-now' }, h('span', { class: 'gw-help', text: 'Between steps; the next one starts in a moment.' }))) : null,
+      h('dl', { class: 'gw-figures' }, ...rows.flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])),
+    ].filter((x) => !!x) as HTMLElement[])
+    openButton.hidden = !(d.typeset && open)
+    openButton.onclick = () => { dialog.close(); open?.(d.slug) }
+    updated.textContent = done || !d.running ? `As of ${clock(new Date())}` : `Updated ${clock(new Date())} · refreshes every 10 s`
+    if (done || !d.running) window.clearInterval(timer)
+  }
+
+  const load = async () => {
+    try {
+      const response = await fetch(`/api/galley-papers/${encodeURIComponent(slug)}`)
+      if (!response.ok) throw new Error(await response.text())
+      draw((await response.json()).data as StatusData)
+    } catch (error) {
+      body.replaceChildren(h('h2', { id: 'gw-title', class: 'gw-title', text: 'Paper status' }), h('p', { class: 'gw-error', role: 'alert', text: `The status could not be read: ${(error as Error).message}` }))
+    }
+  }
+  body.append(h('h2', { id: 'gw-title', class: 'gw-title', text: 'Paper status' }), h('p', { class: 'gw-note', text: 'Reading where the paper stands…' }))
+  void load()
+  timer = window.setInterval(load, 10_000)
 }
 
 export type { EditorAction }

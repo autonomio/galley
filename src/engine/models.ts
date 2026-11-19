@@ -36,6 +36,14 @@ export interface CallResult {
 export class RateLimited extends Error {}
 export class ModelFailure extends Error {}
 
+/** When a provider's limit message says when it resets ("Resets in 27m56s"), that time in milliseconds. */
+export function resetHintMs(message: string): number | null {
+  const hint = message.match(/[Rr]esets in ((?:\d+h)?(?:\d+m)?(?:\d+s)?)\b/)?.[1]
+  if (!hint) return null
+  const ms = [...hint.matchAll(/(\d+)([hms])/g)].reduce((n, [, v, u]) => n + Number(v) * (u === 'h' ? 3_600_000 : u === 'm' ? 60_000 : 1000), 0)
+  return ms > 0 ? ms : null
+}
+
 /** The Codex CLI that knows Sol 6.2: the one the ChatGPT app ships, unless overridden. */
 const APP_CODEX = '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex'
 export function codexBin(): string {

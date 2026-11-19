@@ -56,3 +56,45 @@ test('the paper wizard walks through seed, materials and settings, and starts th
     { name: 'https://example.org/survey', url: 'https://example.org/survey' },
   ])
 })
+
+test('a seed that already has a paper shows where the paper stands, and opens the manuscript once it is typeset', async ({ page }) => {
+  const dir = process.env.GALLEY_E2E_DIR!
+  const slug = `seed-${Date.now()}`
+  writeFileSync(join(dir, `${slug}.md`), '# Street trees\n\nA seed.\n')
+  writeFileSync(join(dir, `${slug}-paper.md`), '# Pit Size and Street-Tree Survival\n\nThe manuscript.\n')
+  const stage = (label: string, done: boolean) => ({ id: label.toLowerCase(), label, done })
+  const base = {
+    slug: `${slug}-paper`, title: 'Pit Size and Street-Tree Survival', seedTitle: 'Street trees', startedAt: '2026-11-19T14:01:00.000Z', now: [],
+    claims: { total: 12, supported: 3, narrowed: 1, own: 6, premises: 1, hypotheses: 1, open: 0 },
+    evidence: { screened: 140, verified: 4, rejected: 9 }, sections: { drafted: 0, total: 8 },
+    review: { round: 0, rounds: 2, findings: 0, open: 0 }, cost: { calls: 17, tokensInM: 0.7, hours: 0.8 },
+  }
+  let data: Record<string, unknown> = {
+    ...base, outcome: null, running: true, typeset: false,
+    stages: [stage('Seed', true), stage('Aim', true), stage('Plan', true), stage('Evidence', false), stage('Draft', false), stage('Review', false), stage('Finish', false)],
+    waiting: { family: 'gemini', name: 'Gemini 4 Carbon', seconds: 840, resetsIn: 1320 },
+  }
+  await page.route(`**/api/galley-papers/${slug}`, (route) => route.fulfill({ json: { data } }))
+  await page.goto('/')
+  await page.waitForFunction(() => !!window.galley?.slug)
+  await page.evaluate((s) => window.galley.open(s), slug)
+  await page.waitForFunction((s) => window.galley.slug === s, slug)
+
+  await page.locator('[data-action="write-paper"]').click()
+  const status = page.locator('dialog.gw--status')
+  await expect(status.getByRole('heading', { name: 'Pit Size and Street-Tree Survival' })).toBeVisible()
+  await expect(status.locator('.gw-state')).toHaveText('Running · Evidence')
+  await expect(status.locator('.gw-stages li.is-done')).toHaveCount(3)
+  await expect(status.locator('.gw-now')).toContainText('Waiting for Gemini 4 Carbon')
+  await expect(status.locator('.gw-now')).toContainText('resets in 22 min')
+  await expect(status.locator('.gw-now')).toContainText('next try in 14 min')
+  await expect(status.getByRole('button', { name: 'Open the manuscript' })).toBeHidden()
+  await status.getByRole('button', { name: 'Close' }).click()
+  await expect(status).toHaveCount(0)
+
+  data = { ...data, outcome: 'ready_for_submission', running: false, typeset: true, waiting: null, stages: (data.stages as { label: string }[]).map((s) => stage(s.label, true)) }
+  await page.locator('[data-action="write-paper"]').click()
+  await expect(status.locator('.gw-state')).toHaveText('✓Ready for submission')
+  await status.getByRole('button', { name: 'Open the manuscript' }).click()
+  await page.waitForFunction((s) => window.galley.slug === s, `${slug}-paper`)
+})

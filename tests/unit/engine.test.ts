@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Paper } from '../../src/engine/paper.js'
+import { resetHintMs } from '../../src/engine/models.js'
 import { fillPlaceholders, importEditorEdits } from '../../src/engine/render.js'
 import { runPaper, Stalled, type Behavior } from '../../src/engine/scheduler.js'
 import { obj, str } from '../../src/engine/schema.js'
@@ -234,5 +235,14 @@ describe('scheduler', () => {
     }
     await expect(runPaper(paper, [broken], { log: () => {} })).rejects.toBeInstanceOf(Stalled)
     expect(Paper.open(join(dir, 'p')).isSettled('broken:1')).toBe(false)
+  })
+})
+
+describe('provider limits', () => {
+  it('reads when a quota resets from the limit message', () => {
+    expect(resetHintMs('gemini: "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 27m56s." error: Individual quota reached.')).toBe((27 * 60 + 56) * 1000)
+    expect(resetHintMs('Resets in 1h2m')).toBe(62 * 60_000)
+    expect(resetHintMs('resets in 45s')).toBe(45_000)
+    expect(resetHintMs('usage limit reached; try later')).toBeNull()
   })
 })

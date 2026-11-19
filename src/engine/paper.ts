@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { defaultConfig, specFor, type PaperConfig } from './config.js'
-import { callModel, ModelFailure, RateLimited, type CallResult } from './models.js'
+import { callModel, ModelFailure, RateLimited, resetHintMs, type CallResult } from './models.js'
 import type { Schema } from './schema.js'
 import type { Family, Note, PaperState, Seat } from './types.js'
 
@@ -26,6 +26,7 @@ function release(family: Family): void {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 // A subscription's usage window can last five hours: an unattended run waits it out (about six hours in all) rather than stopping for a person to restart it.
 const LIMIT_WAITS = [60_000, 3 * 60_000, 10 * 60_000, 20 * 60_000, ...Array<number>(11).fill(30 * 60_000)]
+const LIMIT_HINT_CAP = 3 * 3_600_000
 
 export function sha256(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex')
@@ -182,9 +183,12 @@ export class Paper {
         done()
         release(options.family)
         if (error instanceof RateLimited && wait < LIMIT_WAITS.length) {
-          this.journal({ event: 'provider_limit', behavior: options.behavior, target: options.target, family: options.family, wait_ms: LIMIT_WAITS[wait], message: error.message })
-          this.say(`… ${options.behavior}: ${options.family} is at a usage limit or out of reach; waiting ${Math.round(LIMIT_WAITS[wait] / 60_000)} min (${error.message.slice(0, 120)})`)
-          await sleep(LIMIT_WAITS[wait])
+          // A provider that says when its quota resets is tried again just after that, not on the fixed schedule.
+          const hint = resetHintMs(error.message)
+          const ms = hint === null ? LIMIT_WAITS[wait] : Math.min(hint + 30_000, LIMIT_HINT_CAP)
+          this.journal({ event: 'provider_limit', behavior: options.behavior, target: options.target, family: options.family, wait_ms: ms, message: error.message })
+          this.say(`… ${options.behavior}: ${options.family} is at a usage limit or out of reach; waiting ${Math.max(1, Math.round(ms / 60_000))} min (${error.message.slice(0, 120)})`)
+          await sleep(ms)
           continue
         }
         const message = error instanceof Error ? error.message : String(error)

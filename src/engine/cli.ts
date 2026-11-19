@@ -19,13 +19,14 @@ import { LADDER } from './behaviors/index.js'
 import { answerChoice } from './behaviors/truth.js'
 import { defaultConfig, FAMILY_MODELS, FAMILY_NAMES } from './config.js'
 import { budgetLine, canaryPython, canarySearch, openalexBudget, openalexKeyed, SEARCH_CREDITS } from './evidence.js'
-import { callModel, codexBin } from './models.js'
+import { callModel, codexBin, resetHintMs } from './models.js'
 import { Paper } from './paper.js'
 import { editorDir, importEditorEdits, importHumanNotes, importProposalDecisions, productionRecord, typeset } from './render.js'
 import { runPaper, Stalled } from './scheduler.js'
 import { obj, bool } from './schema.js'
 import { DOES } from './self.js'
 import { addMaterials } from './materials.js'
+import { reviewDone } from './behaviors/close.js'
 import type { Family } from './types.js'
 
 const [command, ...args] = process.argv.slice(2)
@@ -53,6 +54,77 @@ function slugFromSeed(seed: string, file: string): string {
   const base = basename(file).replace(/\.[^.]+$/, '')
   if (base && base !== 'seed') return base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
   return seed.split(/\s+/).slice(0, 5).join('-').toLowerCase().replace(/[^a-z0-9-]+/g, '').slice(0, 40) || 'paper'
+}
+
+/** What each behavior is doing, in words a person reads in the status view. */
+const DOING: Record<string, string> = {
+  extract: 'Reading the seed', position: 'Searching the literature for prior art', 'review-idea': 'Reviewing the idea on seven factors',
+  reformulate: 'Writing three directions', 'select-direction': 'Choosing a direction', analyze: 'Measuring your data', plan: 'Planning the argument',
+  outline: 'Outlining', 'find-evidence': 'Finding evidence', verify: 'Verifying citations', reassess: 'Reassessing the thesis', calibrate: 'Calibrating the verifier',
+  draft: 'Drafting', figure: 'Drawing figures', fidelity: 'Checking sections against their claims', frame: 'Writing the title and abstract',
+  referee: 'Referee review', 'close-round': 'Closing the round', respond: 'Answering the referees', 'verify-disposition': 'Referees judging the answers',
+  adjudicate: 'Settling disputes', reconcile: 'Reconciling the ledger with the text', reprofile: 'Profiling the finished paper', typeset: 'Typesetting',
+}
+
+/** Where a paper stands, as structured data for a host to show. */
+function statusData(paper: Paper): Record<string, unknown> {
+  const s = paper.state
+  const active = s.claims.filter((c) => c.status !== 'dropped')
+  const count = (status: string) => active.filter((c) => c.status === status).length
+  const record = productionRecord(paper)
+  const datasets = (paper.config.materials ?? []).some((m) => m.kind === 'dataset')
+  const evidenceDone = !!s.outline && !s.citations.some((c) => c.status === 'selected') && !active.some((c) => c.need === 'external' && c.status === 'open')
+  const stages: [string, string, boolean][] = [
+    ['seed', 'Seed', !!s.brief],
+    ['aim', 'Aim', !!s.plan || !!s.selectedDirection || s.ideaReview?.verdict === 'worth_writing'],
+    ...(datasets ? [['data', 'Data', !!s.measurements] as [string, string, boolean]] : []),
+    ['plan', 'Plan', !!s.outline],
+    ['evidence', 'Evidence', evidenceDone],
+    ['draft', 'Draft', !!s.frame],
+    ['review', 'Review', !!s.frame && reviewDone(paper)],
+    ['finish', 'Finish', s.outcome === 'ready_for_submission'],
+  ]
+  let running = false
+  let now: { doing: string; who: string; seconds: number }[] = []
+  const progressFile = paper.path('progress.json')
+  if (existsSync(progressFile)) {
+    const progress = JSON.parse(readFileSync(progressFile, 'utf8'))
+    try { process.kill(progress.pid, 0); running = !progress.outcome } catch { /* not running */ }
+    if (running) now = (progress.inFlight ?? []).map((f: { behavior: string; what: string; started: string }) => ({ doing: DOING[f.behavior] ?? f.behavior, who: f.what, seconds: Math.round((Date.now() - Date.parse(f.started)) / 1000) }))
+  }
+  // A provider's usage limit being waited out, read from the journal so any run, old or new, reports it.
+  let waiting: { family: string; name: string; seconds: number; resetsIn: number | null } | null = null
+  if (running && existsSync(paper.path('journal.jsonl'))) {
+    const lines = readFileSync(paper.path('journal.jsonl'), 'utf8').trimEnd().split('\n')
+    for (let i = lines.length - 1; i >= Math.max(0, lines.length - 400); i--) {
+      const e = JSON.parse(lines[i])
+      if (e.event === 'call' || e.event === 'settled') break
+      if (e.event !== 'provider_limit') continue
+      const left = Math.round((Date.parse(e.at) + e.wait_ms - Date.now()) / 1000)
+      const hint = resetHintMs(String(e.message ?? ''))
+      const resetsIn = hint === null ? null : Math.max(0, Math.round((Date.parse(e.at) + hint - Date.now()) / 1000))
+      if (left > 0) waiting = { family: e.family, name: FAMILY_NAMES[e.family as Family] ?? e.family, seconds: left, resetsIn }
+      break
+    }
+  }
+  const firstLine = s.seed.text.split('\n').find((l) => l.trim())?.replace(/^#+\s*/, '').trim() ?? ''
+  return {
+    slug: s.slug,
+    title: paper.config.title || s.frame?.title || s.plan?.workingTitle || null,
+    seedTitle: firstLine.slice(0, 120),
+    outcome: s.outcome ?? null,
+    running,
+    startedAt: s.createdAt,
+    stages: stages.map(([id, label, done]) => ({ id, label, done })),
+    now,
+    waiting,
+    claims: { total: active.length, supported: count('supported'), narrowed: count('narrowed'), own: count('internal'), premises: count('assumed'), hypotheses: count('unsupported'), open: count('open') },
+    evidence: { screened: Object.keys(s.works).length, verified: s.citations.filter((c) => c.status === 'verified').length, rejected: s.citations.filter((c) => c.status === 'rejected').length },
+    sections: { drafted: Object.keys(s.passages).length, total: s.outline?.sections.length ?? null },
+    review: { round: s.round, rounds: paper.config.rounds, findings: s.findings.length, open: s.findings.filter((f) => f.status === 'open').length },
+    cost: { calls: record['run.calls'], tokensInM: record['run.tokens_in_m'], hours: record['run.hours'] },
+    typeset: existsSync(paper.path('out', 'paper.pdf')),
+  }
 }
 
 function status(paper: Paper): void {
@@ -179,7 +251,9 @@ async function main(): Promise<void> {
     }
     case 'status': {
       const [dir] = positional()
-      status(Paper.open(resolve(dir)))
+      const paper = Paper.open(resolve(dir))
+      if (args.includes('--json')) console.log(JSON.stringify(statusData(paper)))
+      else status(paper)
       return
     }
     case 'choices': {

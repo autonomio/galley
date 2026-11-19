@@ -100,20 +100,20 @@ Behaviors are atomic: each reads the paper's state, does one thing, and writes i
 | 24 | typeset | skeleton | the text changed | PDF, LaTeX, Word, editor document, evidence package, sign-off |
 | 25 | ready | close | every gate holds on one revision | ready for submission |
 
-The skeleton (extract, plan, outline, draft, frame, typeset, ready) is what makes a paper exist. Everything else is an improver: it can make the paper better but can never stop it. An improver that fails twice is settled as skipped, its effect is written down (a claim without evidence is hedged; a figure is left out), and the paper moves on. A model provider at a usage limit is waited out for up to about six hours (a subscription's window), never counted as a failure; only a longer limit pauses the run, and running it again resumes it. A search index that is unavailable (OpenAlex pauses keyless search under heavy load) is waited out for up to three hours, retrying less often as the wait grows; after that the search is given up and the claims it was for are hedged.
+The skeleton (extract, plan, outline, draft, frame, typeset, ready) is what makes a paper exist. Everything else is an improver: it can make the paper better but can never stop it. An improver that fails twice is settled as skipped, its effect is written down (a claim without evidence is hedged; a figure is left out), and the paper moves on. A model provider at a usage limit is waited out for up to about six hours (a subscription's window), never counted as a failure; when the provider says when its quota resets, the call is tried again just after that; only a longer limit pauses the run, and running it again resumes it. A search index that is unavailable (OpenAlex pauses keyless search under heavy load) is waited out for up to three hours, retrying less often as the wait grows; after that the search is given up and the claims it was for are hedged.
 
 Three things end a paper without a manuscript, each with a report: the seed has no subject; neither the idea nor any of its three reformulations has a contribution; the thesis fails once its evidence is in.
 
 ## Start a paper from the editor
 
-Run the editor (`npm run dev`), write or paste your rant as a document, and press the speech-bubble button, **Write a paper from this document**. A four-step dialog opens; nothing starts until its last step:
+Run the editor (`npm run dev`), write or paste your rant as a document, and press the play button (▷), **Write a paper from this document**. A four-step dialog opens; nothing starts until its last step:
 
 1. **Seed.** Your words, as they are; nothing is added to them.
 2. **Materials.** Drop datasets (CSV, TSV, JSON) and documents (Markdown, text, Word, PDF), or add links. Each dataset is private unless you switch it to shared.
 3. **Settings.** Author and affiliation (set in the byline, never sent to a model), venue, length, one or two referee rounds, your part (autonomous, assisted, propose), how citations are chosen, the seats and models, and whether literature search has an OpenAlex key.
 4. **Start.** Every step the paper will go through, who does it and about how long it takes, and exactly what leaves your machine.
 
-The manuscript arrives in the same document list as `<your-document>-paper` once it is typeset. Press the button again on the seed to see where the paper stands; its run log is `papers/<your-document>-paper/run.log`.
+The manuscript arrives in the same document list as `<your-document>-paper` once it is typeset. Press ▷ again on the seed to see where the paper stands: its stage, what is being done right now (or whose usage quota it is waiting out, and when that resets), and its claims, evidence, sections, review and cost so far. The window refreshes every 10 seconds and, once the paper is typeset, opens the manuscript. The run log is `papers/<your-document>-paper/run.log`.
 
 ## Your own materials and private data
 

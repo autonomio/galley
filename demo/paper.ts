@@ -15,8 +15,7 @@ export function writePaperAction(): EditorAction {
       if (!slug) return
       const existing = await fetch(`/api/galley-papers/${encodeURIComponent(slug)}`)
       if (existing.ok) {
-        const { status } = await existing.json()
-        openPaperStatus(slug, status)
+        openPaperStatus(slug, (manuscript) => { void editor.open(manuscript) })
         return
       }
       const text = editor.text().trim()
