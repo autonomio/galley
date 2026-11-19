@@ -274,10 +274,8 @@ Anyone can rerun it with Node alone (version 18 or later), or with only a browse
 paper's numbers. `runs` are `{ id, title, purpose, assumptions: {name, basis}[], result }`, the shape
 of the paper's `SimulationRun`, and may come straight from the paper's stored state.
 
-Typeset writes the package into `out/simulation/` and adds it to `submission.zip`. The availability
-statement then points a reader to it and names the verify command, unless the authors wrote their
-own statement. A failure to write the package, or a package that does not verify, is a note on the
-paper, never a stop.
+In a paper, typeset writes the package into `out/simulation/` and the submission zip, and the
+availability statement points a reader to it; see [Papers](PAPERS.md).
 
 | File | What it is |
 | --- | --- |

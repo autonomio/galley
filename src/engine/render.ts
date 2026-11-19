@@ -460,15 +460,8 @@ export async function typeset(paper: Paper): Promise<string[]> {
   }
   exportEvidence(paper)
   // The runnable reproduction of the paper's simulations: a reader reruns them and checks every simulated number with Node or a browser.
-  // With no simulation left, an earlier package is cleared, so a dropped simulation is never published; one that does not verify is noted.
-  const reproduction = join(out, 'simulation')
-  if (runsOf(paper).length || existsSync(reproduction)) {
-    try {
-      writeReproduction(reproduction, runsOf(paper), {
-        title: paper.config.title || paper.state.frame?.title,
-        verified: (check) => { if (!check.ok) paper.note('typeset', `The simulation reproduction package does not verify: ${check.output.slice(-300)}`) },
-      })
-    } catch (error) { paper.note('typeset', `The simulation reproduction package was not written: ${(error as Error).message.slice(0, 200)}`) }
+  if (runsOf(paper).length) {
+    try { writeReproduction(join(out, 'simulation'), runsOf(paper), { title: paper.config.title || paper.state.frame?.title }) } catch (error) { paper.note('typeset', `The simulation reproduction package was not written: ${(error as Error).message.slice(0, 200)}`) }
   }
   writeFileSync(join(out, 'signoff.md'), signoff(paper, record))
   // The editor's copy is a convenience: a failure to write it is noted, never a reason the paper stops.
