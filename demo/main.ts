@@ -61,5 +61,15 @@ themeButton.addEventListener('click', () => {
   location.search = next.toString()
 })
 
+// ?doc=<name> opens that document once the editor has loaded, so a paper can be linked to directly.
+const linked = params.get('doc')
+if (linked && /^[a-z0-9][a-z0-9-]*$/i.test(linked)) {
+  const ready = setInterval(() => {
+    if (!editor.slug) return
+    clearInterval(ready)
+    if (editor.slug !== linked) void editor.open(linked)
+  }, 50)
+}
+
 // For poking at from the console, and for the end-to-end tests.
 ;(window as unknown as { galley: typeof editor }).galley = editor
