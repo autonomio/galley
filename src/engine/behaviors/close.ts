@@ -15,33 +15,46 @@ import { FRAME_NUMBERS } from './write.js'
 const FACTORS = ['input_not_output', 'shared_bottleneck', 'conventional_body_one_graft', 'surprising_and_certain', 'opens_more_than_closes', 'cheap_to_adopt', 'early'] as const
 
 /** Plant defects among real citations and see whether the verifier catches them. */
+export interface CalibrationItem { id: string; claim: string; cite: Citation; kind: 'mismatch' | 'overclaim' | 'control' }
+
+/**
+ * The calibration set, built from the paper's own verified citations: claims
+ * paired with another claim's passage, claims inflated beyond their passage,
+ * and unaltered controls. Deterministic, so a rerun asks the same questions.
+ */
+export function calibrationItems(verified: Citation[], textOf: (claimId: string) => string): CalibrationItem[] {
+  const items: CalibrationItem[] = []
+  if (verified.length < 2) return items
+  const pick = (i: number) => verified[(i * 7) % verified.length]
+  const add = (claimText: string, cite: Citation, kind: CalibrationItem['kind']) => items.push({ id: `P${items.length + 1}`, claim: claimText, cite, kind })
+  for (let i = 0; i < 3; i++) {
+    const a = pick(i)
+    // A mismatch needs a passage from another work about another claim; without one, there is no mismatch to plant.
+    const others = verified.filter((x) => x.claimId !== a.claimId && x.workId !== a.workId)
+    const b = others.find((x) => !items.some((it) => it.cite === x)) ?? others[0]
+    if (b) add(textOf(a.claimId), b, 'mismatch')
+  }
+  for (let i = 3; i < 6; i++) {
+    const a = pick(i)
+    const text = textOf(a.claimId)
+    add(`It is now established beyond doubt, in every field and without exception, that ${text.charAt(0).toLowerCase()}${text.slice(1)}`, a, 'overclaim')
+  }
+  for (let i = 6; i < 8; i++) add(textOf(pick(i).claimId), pick(i), 'control')
+  return items
+}
+
 export const calibrate: Behavior = {
-  id: 'calibrate', stage: 'truth', improver: true, title: 'Calibrate checks',
+  // The verifier's measured accuracy is part of every paper's record, so one bad model call never costs it.
+  id: 'calibrate', stage: 'truth', improver: true, title: 'Calibrate checks', attempts: 5,
   ready: (paper) => {
     const s = paper.state
     if (!live(paper) || s.calibration || s.citations.some((c) => c.status === 'selected')) return []
     const verified = s.citations.filter((c) => c.status === 'verified')
-    if (verified.length < 6 || !s.outline) return []
+    if (verified.length < 2 || !s.outline) return []
     return [{
       key: 'calibrate:verifier', label: 'planted defects for the verifier',
       run: async () => {
-        // Deterministic picks, so a rerun asks the same questions.
-        const pick = (i: number) => verified[(i * 7) % verified.length]
-        const items: { id: string; claim: string; cite: Citation; kind: 'mismatch' | 'overclaim' | 'control' }[] = []
-        for (let i = 0; i < 3; i++) {
-          const a = pick(i)
-          const b = verified.find((x) => x.claimId !== a.claimId && x.workId !== a.workId && !items.some((it) => it.cite === x)) ?? pick(i + 3)
-          items.push({ id: `P${items.length + 1}`, claim: claim(paper, a.claimId)!.text, cite: b, kind: 'mismatch' })
-        }
-        for (let i = 3; i < 6; i++) {
-          const a = pick(i)
-          const text = claim(paper, a.claimId)!.text
-          items.push({ id: `P${items.length + 1}`, claim: `It is now established beyond doubt, in every field and without exception, that ${text.charAt(0).toLowerCase()}${text.slice(1)}`, cite: a, kind: 'overclaim' })
-        }
-        for (let i = 6; i < 8; i++) {
-          const a = pick(i)
-          items.push({ id: `P${items.length + 1}`, claim: claim(paper, a.claimId)!.text, cite: a, kind: 'control' })
-        }
+        const items = calibrationItems(verified, (id) => claim(paper, id)!.text)
         const order = [...items].sort((x, y) => (x.id.charCodeAt(1) * 31 + x.claim.length) % 11 - (y.id.charCodeAt(1) * 31 + y.claim.length) % 11)
         const family = seatFamily(paper, 'verifier')
         const reply = await paper.ask<any>({

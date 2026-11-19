@@ -79,6 +79,7 @@ Review this manuscript for ${paper.config.venue}. Report findings, most severe f
 - question: what is wrong or missing. alternatives: what else could be true or done. evidence: what in the manuscript or its cited passages shows it; never invent sources. decision: what should change.
 - edit: when the fix is local, the exact replacement { old (copied from the manuscript, unique), new }; else null.
 Also give verdict (accept, minor_revision, major_revision, reject) and a two-sentence summary. Do not report a finding just to have one.
+Numbers about this manuscript's own production are filled in from its final record when it is typeset; never ask for them to be qualified as provisional or interim. A sentence that narrates how the manuscript is being produced, describes what happens if a step of a system fails or is skipped, or comments on the text itself instead of stating the work is a material finding: ask for it to be cut.
 ${previous ? `\nEarlier rounds raised these, and they were resolved as shown; do not repeat them unless the resolution is wrong:\n${previous}` : ''}
 
 ${briefBlock(paper)}
@@ -160,7 +161,7 @@ ${STYLE}
 You are the author. Referees from other model families raised the findings below. Answer each one.
 - fixed: the referee is right; give the edits that fix it.
 - rebutted: the referee is wrong; give the concrete reason in reply, and no edits.
-- limitation: the point is fair but cannot be fixed within this paper; give an edit that states it as a limitation where it belongs. State a limitation once and about the work itself ("the rubric has not been validated as a predictor of impact"), never as a remark on what this text does not document, specify or state; if the paper already states it, point to that place in reply and give no edit.
+- limitation: the point is fair but cannot be fixed within this paper; give an edit that states it as a limitation where it belongs. State a limitation once, in the limitations section, and about the work itself ("the rubric has not been validated as a predictor of impact"), never about how this manuscript was produced or what happens if a step fails, and never as a remark on what this text does not document; if the paper already states it, point to that place in reply and give no edit.
 - needs_evidence: fixing it needs evidence this paper does not cite yet (for example prior work the referee names). Give evidence_claim: the self-contained claim that evidence would support, so the system can search for it and verify it; you will answer again once it has. Give no edits.
 Edits are exact replacements { old, new }: old is copied character for character from the current text and is unique; new is the replacement. Keep citations in [@key] form and use only keys already present. Add no new factual claims.
 Never weaken the thesis to satisfy a referee: if a finding would require that, rebut it or state it as a limitation.

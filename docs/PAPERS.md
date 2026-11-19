@@ -143,7 +143,7 @@ Comment and edit between runs, not while one is running.
 
 `claude` signed in (`claude auth login`), the ChatGPT app or `GALLEY_CODEX_BIN` pointing at a Codex CLI that serves `gpt-6.2-sol`, `agy` signed in, Canary installed as a uv tool, `pandoc` and `typst`. `galley doctor` checks all of them with one tiny call each.
 
-OpenAlex budgets its API in credits per day. Without a key it allows 1,000 credits, and a search costs 10 credits whatever its page size. With a key, a paper runs 7 positioning searches and two per claim that needs evidence (about 30); without one, one deeper search per claim (about 20), so four to five papers a day get their evidence. A free key (openalex.org) gives ten times the budget: put `OPENALEX_API_KEY=…` in `~/.local/share/canary/.env`. `galley doctor` and the start of every run say how much of today's budget is left; a search that finds the budget spent is skipped at once, and its claims are stated as hypotheses.
+OpenAlex budgets its API in credits per day. Without a key it allows 1,000 credits, and a search costs 10 credits whatever its page size. With a key, a paper runs 7 positioning searches and two per claim that needs evidence (about 30); without one, one deeper search per claim (about 20), so four to five papers a day get their evidence. A free key (openalex.org) gives ten times the budget: put `OPENALEX_API_KEY=…` (either case) in `~/.env` or in `~/.local/share/canary/.env`. Galley reads only that line and hands the key to Canary. `galley doctor` and the start of every run say how much of today's budget is left; a search that finds the budget spent is skipped at once, and its claims are stated as hypotheses.
 
 ## Tests
 

@@ -59,7 +59,7 @@ function disclosure(paper: Paper, record: Record_): string {
 | Works screened | ${record['run.works_screened']} |
 | Citations | ${record['run.citations_verified']} verified, ${record['run.citations_rejected']} rejected |
 | Referee findings | ${record['run.findings']} (${record['run.findings_material']} material or critical; ${record['run.findings_resolved']} resolved; ${record['run.findings_adjudicated']} adjudicated) over ${record['run.rounds']} round(s) |
-| Planted-defect check | ${record['run.calibration'] === 'not run' ? 'not run' : `${record['run.calibration']} planted defects caught by the citation verifier`} |
+| Verifier calibration | ${record['run.calibration'] === 'none to check' ? 'no verified citations to check' : `${record['run.calibration']} planted defective citations caught; ${record['run.calibration_controls']} unaltered controls accepted`} |
 `
 }
 

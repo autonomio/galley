@@ -1,7 +1,7 @@
 // The engine's rules that do not need a model: exact edits, verbatim checks,
 // citation keys, placeholders, and a scheduler that never lets an improver
 // stop the line.
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -14,8 +14,9 @@ import { resolved } from '../../src/engine/behaviors/review.js'
 import { isNarrowing } from '../../src/engine/behaviors/truth.js'
 import { LADDER } from '../../src/engine/behaviors/index.js'
 import { DOES, systemBlock } from '../../src/engine/self.js'
-import { cleanCsl, searchWait } from '../../src/engine/evidence.js'
-import type { Finding } from '../../src/engine/types.js'
+import { cleanCsl, openalexKey, searchWait } from '../../src/engine/evidence.js'
+import type { Citation, Finding } from '../../src/engine/types.js'
+import { calibrationItems } from '../../src/engine/behaviors/close.js'
 
 describe('text rules', () => {
   it('applies an edit only where its old text is unique', () => {
@@ -86,12 +87,38 @@ describe('references', () => {
 })
 
 describe('searching', () => {
+  it('finds the OpenAlex key in ~/.env under either case, and reads nothing else', () => {
+    const home = mkdtempSync(join(tmpdir(), 'galley-home-'))
+    const saved = { HOME: process.env.HOME, KEY: process.env.OPENALEX_API_KEY }
+    try {
+      delete process.env.OPENALEX_API_KEY
+      process.env.HOME = home
+      expect(openalexKey()).toBeNull()
+      writeFileSync(join(home, '.env'), "other_secret=nope\nopenalex_api_key='abc123'\n")
+      expect(openalexKey()).toBe('abc123')
+    } finally {
+      process.env.HOME = saved.HOME
+      if (saved.KEY) process.env.OPENALEX_API_KEY = saved.KEY
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('waits exactly as long as the index asks, else backs off to at most five minutes while nothing comes back', () => {
     expect(searchWait(0, 90_000)).toBe(91_000)
     expect(searchWait(6, 32_000)).toBe(33_000)
     expect(searchWait(1, 0)).toBe(60_000)
     expect(searchWait(2, 0)).toBe(120_000)
     expect(searchWait(9, 0)).toBe(300_000)
+  })
+})
+
+describe('verifier calibration', () => {
+  it('plants mismatches, overclaims and controls from as few as two verified citations, and never pairs a claim with its own passage as a mismatch', () => {
+    const cite = (id: string, claimId: string, workId: string) => ({ id, claimId, workId, passage: `passage ${id}`, role: 'support', status: 'verified', chosenBy: 'auto' }) as unknown as Citation
+    const items = calibrationItems([cite('K1', 'C1', 'W1'), cite('K2', 'C2', 'W2')], (id) => `Claim ${id}.`)
+    expect(items.map((i) => i.kind)).toEqual(['mismatch', 'mismatch', 'mismatch', 'overclaim', 'overclaim', 'overclaim', 'control', 'control'])
+    for (const item of items.filter((i) => i.kind === 'mismatch')) expect(item.claim).not.toBe(`Claim ${item.cite.claimId}.`)
+    expect(calibrationItems([cite('K1', 'C1', 'W1')], () => 'x')).toEqual([])
   })
 })
 

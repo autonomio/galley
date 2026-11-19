@@ -45,7 +45,8 @@ export function productionRecord(paper: Paper): Record_ {
     'run.findings_resolved': resolvedMaterial.length,
     'run.findings_adjudicated': s.findings.filter((f) => f.status === 'adjudicated').length,
     'run.rounds': s.round,
-    'run.calibration': s.calibration ? `${s.calibration.caught} of ${s.calibration.planted}` : 'not run',
+    'run.calibration': s.calibration ? `${s.calibration.caught} of ${s.calibration.planted}` : 'none to check',
+    'run.calibration_controls': s.calibration ? `${s.calibration.details.filter((d) => d.kind === 'control' && d.caught).length} of ${s.calibration.details.filter((d) => d.kind === 'control').length}` : 'none to check',
   }
 }
 

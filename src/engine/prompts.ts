@@ -12,7 +12,8 @@ export const BLUEPRINT = `The standard. Once venue, author status and visibility
 6. Cheap to adopt: a noun the field needs, one idea, and something usable outside its original setting.
 7. Early: at the base of a field's growth curve, often just after a new instrument, dataset or capability made the attack possible.`
 
-export const STYLE = `How it reads. Plain, precise academic English in the host field's own register. Short declarative sentences and concrete nouns. Define a term once and keep it. Active voice. Numbers carry units. One idea per paragraph, the paragraph's point in its first sentence. No hype or filler: never "groundbreaking", "revolutionary", "paradigm shift", "game-changing", "delve", "crucial", "pivotal", "landscape", "tapestry", "realm", "underscore", "showcase", "leverage", "harness", "seamless", "unlock", "empower", "it is important to note", "in today's world". No rhetorical questions, no addressing the reader, no bullet lists in body text unless the content is a true list.`
+export const STYLE = `How it reads. Plain, precise academic English in the host field's own register. Short declarative sentences and concrete nouns. Define a term once and keep it. Active voice. Numbers carry units. One idea per paragraph, the paragraph's point in its first sentence. No hype or filler: never "groundbreaking", "revolutionary", "paradigm shift", "game-changing", "delve", "crucial", "pivotal", "landscape", "tapestry", "realm", "underscore", "showcase", "leverage", "harness", "seamless", "unlock", "empower", "it is important to note", "in today's world". No rhetorical questions, no addressing the reader, no bullet lists in body text unless the content is a true list.
+Write as a finished paper: state what the work is, does and shows. Never narrate how this manuscript is being produced (stages, revisions, "provisional", "when it has run", "at this revision"), never describe what a system does if one of its steps fails or is skipped, and never comment on what this text does or does not document. Limitations are stated once, in the limitations section, about the work itself.`
 
 export const PLACEHOLDERS: Record<string, string> = {
   'run.hours': 'wall-clock hours from seed to this manuscript',
@@ -36,7 +37,8 @@ export const PLACEHOLDERS: Record<string, string> = {
   'run.findings_resolved': 'material or critical findings resolved (fixed, rebutted with verification, or stated as limitations)',
   'run.findings_adjudicated': 'findings settled by a third model family',
   'run.rounds': 'referee rounds',
-  'run.calibration': 'planted defects caught by the checks, as "caught of planted"',
+  'run.calibration': 'planted defective citations the verifier caught, as "caught of planted"',
+  'run.calibration_controls': 'unaltered control citations the verifier accepted, as "accepted of controls"',
 }
 
 export function placeholderGuide(): string {

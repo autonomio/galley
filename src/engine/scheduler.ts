@@ -21,6 +21,8 @@ export interface Behavior {
   /** False only for the skeleton, which must succeed for a paper to exist at all. */
   improver: boolean
   title: string
+  /** How many times a target may fail before it is given up; defaults to 2 for an improver, 3 for the skeleton. */
+  attempts?: number
   ready(paper: Paper): Target[]
 }
 
@@ -33,7 +35,7 @@ export interface RunOptions {
 }
 
 async function runTarget(paper: Paper, behavior: Behavior, target: Target, log: (line: string) => void): Promise<void> {
-  const limit = behavior.improver ? 2 : 3
+  const limit = behavior.attempts ?? (behavior.improver ? 2 : 3)
   for (;;) {
     const attempt = (paper.state.attempts[target.key] ?? 0) + 1
     paper.state.attempts[target.key] = attempt

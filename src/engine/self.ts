@@ -38,7 +38,7 @@ export const DOES: Record<string, string> = {
 }
 
 const RULES = [
-  'The skeleton (the required behaviors) makes a paper exist; every other behavior is an improver that can make it better but never stop it. An improver that fails twice is skipped and its effect is written down: a claim without evidence is hedged, a figure is left out. A model provider that hits a usage limit is waited out for up to about six hours without counting a failure (only a longer limit pauses the run, resumably); a search index that is unavailable is waited for up to three hours, after which the search is given up and its claims hedged.',
+  'The skeleton (the required behaviors) makes a paper exist; every other behavior is an improver that makes it better without being able to stop it.',
   'Behaviors are atomic: each reads the paper\'s state, does one thing and writes its result. The scheduler scans the ladder from the top, runs whatever is ready, and scans again from the top after anything settles; no behavior knows what comes next.',
   'Each model family runs through its own command-line client with no tools and no delegation, answering in a strict JSON schema. Every prompt and answer is stored in the paper\'s folder, and a rerun replays them without calling a model.',
   'No family reviews its own work. A citation rests on a passage that code confirms is copied verbatim from the cited work\'s abstract; the checker proposes it and the verifier, another family, judges it. A cited work with a DOI takes its bibliographic record from the DOI registry.',

@@ -60,7 +60,7 @@ const PARTIAL_PATIENCE_MS = 30 * 60_000
 export function searchWait(stalls: number, retryInMs: number): number {
   return Math.min(5 * 60_000, retryInMs > 0 ? retryInMs + 1_000 : 30_000 * 2 ** Math.min(stalls, 4))
 }
-const KEY_HINT = 'OpenAlex has no API key here; add OPENALEX_API_KEY=… to ~/.local/share/canary/.env (a free key from openalex.org) so searches are not limited'
+const KEY_HINT = 'OpenAlex has no API key here; add OPENALEX_API_KEY=… to ~/.env (a free key from openalex.org) so searches are not limited'
 
 interface SidecarReply {
   progress: string
@@ -107,7 +107,9 @@ async function canarySearchOnce(question: string, items: (SearchQuery & { worksp
   for (const item of items) mkdirSync(item.workspace, { recursive: true })
   const input = JSON.stringify({ question, items, top })
   const out = await new Promise<string>((resolve, reject) => {
-    const child = spawn(canaryPython(), ['-I', SIDECAR], { stdio: ['pipe', 'pipe', 'pipe'] })
+    // Canary reads its key from OPENALEX_API_KEY, so a key kept in ~/.env reaches it this way.
+    const key = openalexKey()
+    const child = spawn(canaryPython(), ['-I', SIDECAR], { stdio: ['pipe', 'pipe', 'pipe'], env: key ? { ...process.env, OPENALEX_API_KEY: key } : process.env })
     let stdout = ''
     let stderr = ''
     child.stdout.on('data', (d) => { stdout += d })
@@ -135,11 +137,26 @@ export function workFromHit(hit: SearchHit): Work {
 
 const UA = process.env.GALLEY_USER_AGENT || 'scholarly-client/0.1'
 
-/** Whether Canary searches OpenAlex with an API key (set in the environment or in Canary's own settings file). */
-export function openalexKeyed(): boolean {
-  if (process.env.OPENALEX_API_KEY) return true
-  try { return /^\s*OPENALEX_API_KEY\s*=\s*\S/m.test(readFileSync(join(homedir(), '.local/share/canary/.env'), 'utf8')) } catch { return false }
+/**
+ * The OpenAlex key, wherever the person keeps it: the environment, ~/.env, or
+ * Canary's own settings file (OPENALEX_API_KEY in any case). Only that one
+ * line is read; nothing else in those files is touched.
+ */
+export function openalexKey(): string | null {
+  if (process.env.OPENALEX_API_KEY) return process.env.OPENALEX_API_KEY
+  for (const file of [join(homedir(), '.env'), join(homedir(), '.local/share/canary/.env')]) {
+    let text = ''
+    try { text = readFileSync(file, 'utf8') } catch { continue }
+    for (const line of text.split('\n')) {
+      const value = line.match(/^\s*(?:export\s+)?openalex_api_key\s*=\s*(.*)$/i)?.[1].replace(/["'\s]/g, '')
+      if (value) return value
+    }
+  }
+  return null
 }
+
+/** Whether Canary searches OpenAlex with an API key. */
+export const openalexKeyed = (): boolean => !!openalexKey()
 
 /** A search costs this many OpenAlex credits, whatever its page size. */
 export const SEARCH_CREDITS = 10
@@ -158,7 +175,7 @@ export async function openalexBudget(): Promise<{ remaining: number; limit: numb
 
 /** One line on what today's keyless budget allows, for doctor and the start of a run. */
 export function budgetLine(budget: { remaining: number; limit: number; resetSeconds: number }): string {
-  return `OpenAlex has no API key here: ${budget.remaining} of ${budget.limit} credits left today, about ${Math.floor(budget.remaining / SEARCH_CREDITS)} searches (a paper uses about 20 without a key), resetting in ${(budget.resetSeconds / 3600).toFixed(1)} h. A free key gives ten times that: add OPENALEX_API_KEY=… to ~/.local/share/canary/.env.`
+  return `OpenAlex has no API key here: ${budget.remaining} of ${budget.limit} credits left today, about ${Math.floor(budget.remaining / SEARCH_CREDITS)} searches (a paper uses about 20 without a key), resetting in ${(budget.resetSeconds / 3600).toFixed(1)} h. A free key gives ten times that: add OPENALEX_API_KEY=… to ~/.env.`
 }
 
 /** The registry's CSL-JSON record for a DOI (Crossref and DataCite alike), or null. */
