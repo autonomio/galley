@@ -103,7 +103,8 @@ export function renderAnnotationMarks(options: {
     if (!range) continue
     for (const rect of pageRects(page, range)) {
       if (rect.width < 0.5) continue
-      const div = mark('galley-mark', rect)
+      // A settled thread stays findable but stops asking for attention.
+      const div = mark(a.resolved ? 'galley-mark is-resolved' : 'galley-mark', rect)
       div.dataset.annotation = a.id
       div.title = a.comment ? a.comment.slice(0, 200) : 'Comment'
       layer.appendChild(div)

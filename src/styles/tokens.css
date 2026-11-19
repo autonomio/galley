@@ -74,6 +74,11 @@
   --galley-note-mark: color-mix(in srgb, var(--galley-attention) 65%, transparent);
   --galley-note-mark-hover: color-mix(in srgb, var(--galley-attention) 14%, transparent);
   --galley-highlight: color-mix(in srgb, var(--galley-attention) 18%, transparent);
+  /* Authors in a thread, told apart by colour: a host assigns them by name. */
+  --galley-tone-a: #C9874F;
+  --galley-tone-b: #3FA88E;
+  --galley-tone-c: #8F8BE6;
+  --galley-tone-d: #5A92CF;
 
   /* ---------- 3. Semantic: type ---------- */
   --galley-font-ui: var(--galley-ctl-font-ui), var(--galley-p-fallback-sans);
@@ -141,6 +146,10 @@
   --galley-p-n7: #111418;
   --galley-p-blue: #2F64A3;
   --galley-p-amber: #A16E1C;
+  --galley-tone-a: #A35F24;
+  --galley-tone-b: #1E7A62;
+  --galley-tone-c: #524EB4;
+  --galley-tone-d: #2F64A3;
   --galley-row-hover: color-mix(in srgb, var(--galley-p-n2) 60%, transparent);
   --galley-shadow-color: color-mix(in srgb, var(--galley-p-black) 40%, transparent);
 }

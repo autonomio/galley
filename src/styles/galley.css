@@ -247,6 +247,7 @@
 }
 .galley-mark:hover { background: var(--galley-note-mark-hover); }
 .galley-mark.is-orphan { border-bottom-style: dotted; border-bottom-color: var(--galley-text-muted); }
+.galley-mark.is-resolved { border-bottom-width: var(--galley-line-hair); border-bottom-style: dotted; border-bottom-color: var(--galley-edge); }
 .galley-highlight { position: absolute; pointer-events: none; border-radius: calc(var(--galley-sp-unit) * 0.75); background: var(--galley-highlight); animation: galley-fade-in var(--galley-dur-feedback) ease-out; }
 
 /* ---------- The status line ---------- */
@@ -354,6 +355,75 @@
   transition: border-color var(--galley-dur-feedback) ease-out;
 }
 .galley-note-text:focus { border-color: var(--galley-attention-edge); }
+
+/* Threads: who opened the note and every answer, above a reply field. */
+.galley-note.is-thread .galley-note-header { justify-content: flex-start; padding: var(--galley-sp-2) var(--galley-sp-2) 0 var(--galley-sp-3); }
+.galley-note-labels { display: flex; flex-wrap: wrap; gap: var(--galley-sp-1); flex: 1; min-width: 0; }
+.galley-note-label {
+  font-size: var(--galley-fs-micro);
+  line-height: 1.6;
+  padding: 0 var(--galley-sp-2);
+  border: var(--galley-line-hair) solid var(--galley-line);
+  border-radius: var(--galley-r-pill);
+  color: var(--galley-text-muted);
+  white-space: nowrap;
+}
+.galley-note-label[data-tone="attention"] { background: var(--galley-attention); border-color: var(--galley-attention); color: var(--galley-canvas); }
+.galley-note-label[data-tone="done"] { color: var(--galley-done); border-color: var(--galley-done-tint); }
+.galley-note-label[data-tone="failed"] { color: var(--galley-failed); border-color: var(--galley-failed-edge); }
+.galley-note-resolve, .galley-note-reply {
+  border: var(--galley-line-hair) solid var(--galley-line);
+  border-radius: var(--galley-r-card);
+  background: transparent;
+  color: var(--galley-text-soft);
+  font: inherit;
+  font-size: var(--galley-fs-row);
+  padding: 0 var(--galley-sp-2);
+  height: var(--galley-size-button);
+  cursor: pointer;
+}
+.galley-note-resolve:hover, .galley-note-reply:hover { color: var(--galley-text); background: var(--galley-row-hover); }
+.galley-thread {
+  list-style: none;
+  margin: 0;
+  padding: var(--galley-sp-2) var(--galley-sp-3) var(--galley-sp-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--galley-sp-3);
+  max-height: 46vh;
+  overflow: auto;
+}
+.galley-thread-item { display: grid; grid-template-columns: var(--galley-size-floating) minmax(0, 1fr); gap: var(--galley-sp-2); }
+.galley-thread-face {
+  --galley-face: var(--galley-text-muted);
+  display: inline-grid;
+  place-items: center;
+  width: var(--galley-size-floating);
+  height: var(--galley-size-floating);
+  border-radius: var(--galley-r-pill);
+  font-size: var(--galley-fs-tiny);
+  font-weight: var(--galley-fw-strong);
+  color: var(--galley-face);
+  box-shadow: inset 0 0 0 var(--galley-line-focus) var(--galley-face);
+}
+.galley-thread-face[data-tone="me"] { --galley-face: var(--galley-accent); }
+.galley-thread-face[data-tone="a"] { --galley-face: var(--galley-tone-a); }
+.galley-thread-face[data-tone="b"] { --galley-face: var(--galley-tone-b); }
+.galley-thread-face[data-tone="c"] { --galley-face: var(--galley-tone-c); }
+.galley-thread-face[data-tone="d"] { --galley-face: var(--galley-tone-d); }
+.galley-thread-who { display: flex; flex-wrap: wrap; gap: var(--galley-sp-2); align-items: baseline; font-size: var(--galley-fs-row); color: var(--galley-text-muted); }
+.galley-thread-who b { color: var(--galley-text); font-weight: var(--galley-fw-strong); }
+.galley-thread-text { color: var(--galley-text-soft); overflow-wrap: anywhere; }
+.galley-thread-text p { margin: 0 0 var(--galley-sp-1); }
+.galley-thread-text code { font-family: var(--galley-font-mono); font-size: var(--galley-fs-code); }
+.galley-note.is-thread .galley-note-field { padding-top: var(--galley-sp-2); }
+.galley-note.is-thread .galley-note-text { min-height: calc(var(--galley-sp-unit) * 10); }
+.galley-note-actions { display: flex; justify-content: flex-end; padding: 0 var(--galley-sp-3) var(--galley-sp-3); margin-top: calc(var(--galley-sp-2) * -1); }
+.galley-note.is-resolved .galley-thread { opacity: 0.75; }
+
+/* Room a host can fill: a strip under the toolbar, and a block above the text. */
+.galley-slot[data-slot="header"] { flex: none; }
+.galley-slot[data-slot="header"]:empty, .galley-slot[data-slot="top"]:empty { display: none; }
 
 /* ---------- Notices ---------- */
 .galley-notices {

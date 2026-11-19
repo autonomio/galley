@@ -117,7 +117,7 @@ Run the editor (`npm run dev`), write or paste your rant as a document, and pres
 3. **Settings.** Author and affiliation (set in the byline, never sent to a model), venue, length, one or two referee rounds, your part (autonomous, assisted, propose), how citations are chosen, whether to include a systematic literature review and a Monte Carlo simulation (each in support, or as the paper's main contribution), the seats and models, and whether literature search has an OpenAlex key.
 4. **Start.** Every step the paper will go through, who does it and about how long it takes, and exactly what leaves your machine.
 
-The manuscript arrives in the same document list as `<your-document>-paper` once it is typeset. Press ▷ again on the seed to see where the paper stands: its stage, what is being done right now (or whose usage quota it is waiting out, and when that resets), and its claims, evidence, sections, review and cost so far. The window refreshes every 10 seconds and, once the paper is typeset, opens the manuscript. The run log is `papers/<your-document>-paper/run.log`.
+**Open the paper** at the end of the dialog opens `<your-document>-paper`, which appears in your documents the moment the paper starts and grows there as it is written: the working title first, then the outline's sections, each section once it is drafted, and every revision after that. Press ▷ again on the seed for the stage window. The run log is `papers/<your-document>-paper/run.log`.
 
 ## Your own materials and private data
 
@@ -160,20 +160,28 @@ Tick **Monte Carlo simulation** in the start dialog (or pass `--simulation yes`)
 
 The sign-off sheet lists each simulation's inputs with their bases for you to check, the AI statement says how each ran, and the evidence package holds every specification with its results (`simulations/S1.json`), so anyone can rerun it and get the same numbers.
 
-## When you want to be in it
+## The paper in the editor
 
-Every paper's manuscript lands in the editor's own document list (`.galley-data/`, or `GALLEY_DIR` when set), so the editor shows all of them, each with a note on every material referee finding and how it was resolved. `--editor <dir>` puts a paper's manuscript somewhere else.
+Every paper is written into the editor's own document list (`.galley-data/`, or `GALLEY_DIR` when set) from its first step, and kept in step while it runs: galley writes what the paper now says after every step, and every few seconds while a model is working. `--editor <dir>` puts a paper's document somewhere else.
 
 ```bash
 npm run dev
 ```
 
-- **Edit anything.** What you change becomes your revision of the paper on the next run.
-- **Comment anywhere.** A note becomes a thread on the next run. By default the agents take it over; write `@humans` (or `@me`) to keep it yours, or `@both` to have the agents propose a change that you accept.
+Open the paper's document and the team works in it with you:
+
+- **Who is working on it.** A strip under the toolbar shows every seat (Author, Checker, Challenger, Verifier, the referees, the Adjudicator) with the model behind it, and what each is doing right now; a mark in the margin sits beside the passage each one is working on. Where the paper stands (writing, its stage, a usage limit being waited out, ready) is at the strip's end.
+- **Working notes.** Above the text: what galley read in your seed, where the idea sits among prior work, its score, the direction chosen, the evidence, the claim ledger, the sections written and the review, each as it settles.
+- **History.** The History button opens a pane beside the editor: what is happening now, and everything that has happened, by stage, with what is new since you last looked. An entry about a finding opens its thread.
+- **Threads.** Every material referee finding is a thread under its passage: the referee's question opens it, and the Author's answers, the referee's verdict on each and a third family's decision follow as replies. A settled thread is resolved and drawn quietly.
+
+You can work in it at any time, while the paper is being written:
+
+- **Edit anything.** What you change becomes your revision of the paper as soon as you pause typing. A section you write before the Author reaches it is yours: the Author drafts only sections no one has written.
+- **Comment anywhere, and reply in any thread.** A note or a reply becomes work for the agents within seconds of you pausing. By default the agents take it over; write `@humans` (or `@me`) to keep it yours, or `@both` to have the agents propose a change that you accept. The agents' answers arrive as replies in the same thread. Resolving a referee's thread settles it: the agents stop working on it.
+- **Your edits are never written over.** Galley reads and writes the document only while you are not typing in it; if you and an agent change the same lines at once, your version stands, and the agent's is kept in the paper's revisions.
 - **Proposed changes.** The check-mark button in the toolbar lists the changes waiting for you, each with its reason, its before and after, and the passage lit when you hover. Accept applies it as one saved, undoable edit; Decline closes it. Set `"dial": "propose"` to have every answer to a referee wait for you this way.
 - **Choose citations.** With `"citations": "choose"` (every claim) or `"mixed"` (load-bearing and contested claims), each claim waits for you with its options a, b, c and the passage each would rest on. In the editor, the **Citation choices** button on the seed document lists them; pick one, or Let galley pick, or No source (the claim is then stated as a hypothesis). Once every choice is answered the paper carries on by itself. From the command line: `galley choices <dir>`, then `galley choose <dir> C12 a,c` (or `auto`, or `none`).
-
-Comment and edit between runs, not while one is running.
 
 ## paper.json
 

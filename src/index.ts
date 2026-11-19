@@ -35,9 +35,13 @@ export { reAnchor, rangeText, sameRange } from './core/anchoring.js'
 export { deriveTitle, stripMarkdownForTitle } from './markdown/title.js'
 export * as markdown from './markdown/syntax.js'
 
+export { merge3, mergeAnnotations } from './core/merge.js'
 export type {
   Annotation,
+  AnnotationAuthor,
+  AnnotationLabel,
   AnnotationRange,
+  AnnotationReply,
   AnnotationsRead,
   AnnotationsWriteResult,
   DocRead,
