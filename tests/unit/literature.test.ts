@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { plan } from '../../src/engine/behaviors/front.js'
 import { declaration, importReview, REVIEW_SECTION, withReviewSection } from '../../src/engine/literature.js'
 import { Paper } from '../../src/engine/paper.js'
 import { productionRecord } from '../../src/engine/record.js'
@@ -76,6 +77,21 @@ describe('systematic review', () => {
     expect(s.literature.protocol?.concepts).toEqual(['street trees (urban trees)'])
     expect(s.outline.sections.find((sec) => sec.id === REVIEW_SECTION)?.claimIds).toEqual(review.map((c) => c.id))
     expect(productionRecord(paper)['lit.reviewed']).toBe(50)
+  })
+
+  it('plans a paper whose contribution is its review only once the review is in; a supporting review never holds the plan', () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const brief = { hasSubject: true, concern: 'c', contribution: 'k', objectType: 'finding' as const, field: 'f', audience: 'a' }
+    const central = Paper.create(join(dir, 'central'), 'seed', { literatureReview: 'load-bearing', off: ['position', 'review-idea'] })
+    central.state.brief = brief
+    central.state.literature = { question: 'q', status: 'running', key: 'k' }
+    expect(plan.ready(central)).toEqual([])
+    central.state.literature.status = 'done'
+    expect(plan.ready(central).map((t) => t.key)).toEqual(['plan:argument'])
+    const supporting = Paper.create(join(dir, 'supporting'), 'seed', { literatureReview: true, off: ['position', 'review-idea'] })
+    supporting.state.brief = brief
+    supporting.state.literature = { question: 'q', status: 'running', key: 'k' }
+    expect(plan.ready(supporting).map((t) => t.key)).toEqual(['plan:argument'])
   })
 
   it('places the review section after the introduction, with its words taken from the others, once', () => {

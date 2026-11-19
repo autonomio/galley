@@ -242,7 +242,7 @@ export const LIT_PLACEHOLDERS: Record<string, string> = {
 export function literatureBlock(paper: Paper): string {
   const lit = paper.state.literature
   if (lit?.status !== 'done' || !lit.protocol) return ''
-  return `THE SYSTEMATIC REVIEW, carried out for this paper with Canary (searched ${lit.searchedOn}):
+  return `THE SYSTEMATIC REVIEW, carried out for this paper with Canary (searched ${lit.searchedOn}). Its method, disagreements and open questions below may be stated as facts of the review:
 Review question: ${lit.question}
 Source: OpenAlex (titles, abstracts and indexed full text); open-access full texts only.
 Concepts searched: ${lit.protocol.concepts.join('; ') || 'as in the question'}

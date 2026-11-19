@@ -292,6 +292,8 @@ export const plan: Behavior = {
     if ((paper.config.materials ?? []).some((m) => m.kind === 'dataset') && !s.measurements && !paper.config.off.includes('analyze')) return []
     // With a simulation, the argument is planned on what it shows.
     if (paper.config.simulation && !s.simulations && !paper.config.off.includes('simulate')) return []
+    // A paper whose contribution is its systematic review is planned once the review is in.
+    if (paper.config.literatureReview === 'load-bearing' && s.literature?.status !== 'done' && s.literature?.status !== 'failed' && !paper.config.off.includes('literature-review')) return []
     return [{
       key: 'plan:argument', label: 'the argument',
       run: async () => {
@@ -315,8 +317,9 @@ ${briefBlock(paper)}
 ${review}
 ${positioningBlock(paper)}
 
+${paper.config.literatureReview === 'load-bearing' && s.literature?.status === 'done' ? `\nTHE PAPER'S MAIN CONTRIBUTION IS ITS SYSTEMATIC REVIEW. The thesis states what the review establishes about its question. The review's findings (marked "review finding" below) are the paper's contribution claims: keep each one as it is (action keep), give it kind contribution, need external, and load_bearing true when the thesis rests on it. Add only the claims a review paper needs to frame them, never a contribution beyond what the review found.\n` : ''}${paper.config.simulation === 'load-bearing' && Object.keys(s.simulations ?? {}).length ? `\nTHE PAPER'S MAIN CONTRIBUTION RESTS ON ITS SIMULATION. The thesis states what the simulation shows. The contribution claims are claims about its results (need internal, load_bearing true), each naming the simulation and writing its numbers as placeholders. State the assumptions the results depend on as claims too, so the paper argues from them openly.\n` : ''}
 Seed claims:
-${s.claims.map((c) => `- ${c.id} [${c.kind}] ${c.text}${c.seedQuote ? ` (seed: "${c.seedQuote}")` : ''}`).join('\n')}`,
+${s.claims.filter((c) => c.origin !== 'review' || paper.config.literatureReview === 'load-bearing').map((c) => `- ${c.id} [${c.kind}${c.origin === 'review' ? ', review finding' : ''}] ${c.text}${c.seedQuote ? ` (seed: "${c.seedQuote}")` : ''}`).join('\n')}`,
           schema: obj({
             thesis: str(), working_title: str(), noun: str(), opens: arr(str()),
             claims: arr(obj({ id: nstr(), action: enm(['keep', 'reword', 'drop', 'add']), text: str(), kind: enm(KINDS), need: enm(['external', 'internal', 'none']), load_bearing: bool(), depends_on: arr(str()), reason: str() })),
@@ -337,6 +340,8 @@ ${s.claims.map((c) => `- ${c.id} [${c.kind}] ${c.text}${c.seedQuote ? ` (seed: "
           target.loadBearing = !!c.load_bearing
           target.dependsOn = (c.depends_on ?? []).filter((id: string) => id !== target.id)
         }
+        // A finding of the systematic review keeps the sources it was imported with.
+        for (const c of s.claims) if (c.origin === 'review') c.need = 'external'
         // Claims that need no outside evidence are settled now.
         for (const c of activeClaims(paper)) {
           if (c.status !== 'open') continue
@@ -365,7 +370,7 @@ export const outline: Behavior = {
 ${STYLE}
 
 Outline the paper for ${paper.config.venue} in the host field (${s.brief!.field}), about ${paper.config.words} words in total.
-- sections: in order. Each has an id (S1, S2, …), a title, its purpose in one or two sentences, the ids of the claims it establishes, and its word budget. Every load-bearing claim is placed in exactly one section; other claims where they help, or nowhere. Use the host field's conventional structure. ${paper.config.literatureReview && s.literature?.status !== 'failed' ? 'A systematic literature review section is placed after the introduction for you: do not include a separate related-work section; position the paper against prior work in the introduction and the discussion.' : 'Include a section on related work.'} Include a section stating the limitations, and a closing section that names what this opens. Do not include an abstract or a references section; those are written later.
+- sections: in order. Each has an id (S1, S2, …), a title, its purpose in one or two sentences, the ids of the claims it establishes, and its word budget. Every load-bearing claim is placed in exactly one section; other claims where they help, or nowhere. Use the host field's conventional structure. ${paper.config.literatureReview === 'load-bearing' && s.literature?.status === 'done' ? 'This paper is a systematic review; structure it as one: Introduction; Methods (the review\'s protocol: question, source and queries, eligibility, screening, full-text reading, independent audit); Results (the findings, by theme); Discussion (where studies disagree, what is left open, what follows); Limitations; Conclusion. Place the review\'s findings in Results.' : paper.config.literatureReview && s.literature?.status !== 'failed' ? 'A systematic literature review section is placed after the introduction for you: do not include a separate related-work section; position the paper against prior work in the introduction and the discussion.' : 'Include a section on related work.'}${paper.config.simulation === 'load-bearing' && Object.keys(s.simulations ?? {}).length ? ' The paper is built around its simulation: include a section that specifies the model (method, inputs with their bases, model lines, events, checks), a results section, and a section on how the results depend on the assumptions; chart the main results.' : ''} Include a section stating the limitations, and a closing section that names what this opens. Do not include an abstract or a references section; those are written later.
 - figures: at most three in the whole paper, each in the section it belongs to, with an id (fig1, …), a caption, and a spec precise enough to draw it. A figure is a diagram of a structure the paper describes (a pipeline, a set of roles, a lifecycle) or a chart of numbers the paper states. Never a figure that needs data the paper does not have.${s.simulations && Object.keys(s.simulations).length ? ' A simulation\'s results can be charted from its run: the distribution of an output, or a sequential run\'s bands over time.' : ''}
 - style: notes on register and conventions for this venue and field.
 - glossary: the terms the paper defines, as "term: definition", including the paper's noun.
@@ -374,7 +379,7 @@ ${briefBlock(paper)}
 What this opens: ${s.plan!.opens.join('; ')}
 
 Claims:
-${activeClaims(paper).map((c) => `- ${c.id} [${c.kind}${c.loadBearing ? ', load-bearing' : ''}] ${c.text}`).join('\n')}`,
+${activeClaims(paper).filter((c) => c.origin !== 'review' || paper.config.literatureReview === 'load-bearing').map((c) => `- ${c.id} [${c.kind}${c.loadBearing ? ', load-bearing' : ''}] ${c.text}`).join('\n')}`,
           schema: obj({
             sections: arr(obj({ id: str(), title: str(), purpose: str(), claim_ids: arr(str()), words: int(), figures: arr(obj({ id: str(), caption: str(), spec: str() })) })),
             style: str(), glossary: arr(str()),
@@ -387,7 +392,7 @@ ${activeClaims(paper).map((c) => `- ${c.id} [${c.kind}${c.loadBearing ? ', load-
         }))
         s.outline = { sections, style: reply.style, glossary: reply.glossary ?? [] }
         // The systematic review gets its own section after the introduction; its findings fill it once Canary is done.
-        if (paper.config.literatureReview && s.literature?.status !== 'failed') {
+        if (paper.config.literatureReview === true && s.literature?.status !== 'failed') {
           s.outline.sections = withReviewSection(s.outline.sections, paper.config.words)
           const review = s.outline.sections.find((sec) => sec.id === REVIEW_SECTION)
           if (review && s.literature?.status === 'done') review.claimIds = s.literature.claimIds ?? []

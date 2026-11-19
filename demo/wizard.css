@@ -86,6 +86,10 @@ html[data-theme="light"] .gw {
 .gw-choice:has(input:checked) { background: var(--gw-wash); border-color: var(--gw-edge); }
 .gw-choice input { margin: 3px 0 0; accent-color: var(--gw-accent); }
 .gw-choice-label { color: var(--gw-text); font-weight: 600; }
+.gw-option { display: grid; gap: 6px; }
+.gw-role { display: grid; gap: 4px; margin: 0 0 6px 38px; }
+.gw-role .gw-seg { justify-self: start; }
+.gw-role .gw-help { margin: 0; }
 
 .gw-seats { border-collapse: collapse; width: 100%; font-size: 13px; }
 .gw-seats th { width: 96px; padding: 5px 0; text-align: left; color: var(--gw-muted); font-weight: 400; }

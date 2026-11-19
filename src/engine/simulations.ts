@@ -36,7 +36,7 @@ export function simulationsBlock(paper: Paper): string {
 ${runs.map((run) => {
   const r = run.result
   const failed = r.provenance.checks.filter((c) => !c.ok)
-  return `${run.id}: ${run.title}. Purpose: ${run.purpose}
+  return `${run.id}: ${run.title.replace(/[.\s]+$/, '')}. Purpose: ${run.purpose}
   Method: ${methodWords(r.method)}, ${sizeOf(r)}, seed ${r.provenance.seed}. Checks: ${failed.length ? failed.map((c) => `${c.name}: ${c.detail}`).join('; ') : 'all passed'}.
   Inputs: ${r.spec.inputs.map((i) => `${i.name} ~ ${i.dist}${run.assumptions.find((a) => a.name === i.name) ? ` (basis: ${run.assumptions.find((a) => a.name === i.name)!.basis})` : ''}`).join('; ') || 'none'}
   Model: ${r.spec.model.map((m) => `${m.name} = ${m.expr}`).join('; ') || 'none'}${r.spec.events.length ? `\n  Events: ${r.spec.events.map((e) => `${e.name}: ${e.when}`).join('; ')}` : ''}${r.spec.correlations.length ? `\n  Rank correlations: ${r.spec.correlations.map((c) => `${c.a}–${c.b} ${c.rho}`).join('; ')}` : ''}

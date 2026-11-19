@@ -31,7 +31,7 @@ node dist/engine/cli.js run papers/my-seed
 | `ladder` | every behavior, in order |
 | `doctor` | check that each model, tool and source answers |
 
-`write` and `new` take `--author`, `--affiliation`, `--venue`, `--words`, `--rounds 1|2`, `--citations auto|choose|mixed`, `--dial autonomous|assisted|propose`, `--literature-review yes` (a systematic review of the literature as its own section, below), `--simulation yes` (a Monte Carlo simulation the argument rests on, below), `--editor <dir>` (where the manuscript's editor document goes), and `--material <file or link>` and `--shared-material <dataset>` for your own materials (below), each as often as needed. Everything else is in the paper's `paper.json` (below).
+`write` and `new` take `--author`, `--affiliation`, `--venue`, `--words`, `--rounds 1|2`, `--citations auto|choose|mixed`, `--dial autonomous|assisted|propose`, `--literature-review yes|load-bearing` (a systematic review of the literature, below), `--simulation yes|load-bearing` (a Monte Carlo simulation, below), `--editor <dir>` (where the manuscript's editor document goes), and `--material <file or link>` and `--shared-material <dataset>` for your own materials (below), each as often as needed. Everything else is in the paper's `paper.json` (below).
 
 ## What comes out
 
@@ -112,7 +112,7 @@ Run the editor (`npm run dev`), write or paste your rant as a document, and pres
 
 1. **Seed.** Your words, as they are; nothing is added to them.
 2. **Materials.** Drop datasets (CSV, TSV, JSON) and documents (Markdown, text, Word, PDF), or add links. Each dataset is private unless you switch it to shared.
-3. **Settings.** Author and affiliation (set in the byline, never sent to a model), venue, length, one or two referee rounds, your part (autonomous, assisted, propose), how citations are chosen, whether to include a systematic literature review and a Monte Carlo simulation, the seats and models, and whether literature search has an OpenAlex key.
+3. **Settings.** Author and affiliation (set in the byline, never sent to a model), venue, length, one or two referee rounds, your part (autonomous, assisted, propose), how citations are chosen, whether to include a systematic literature review and a Monte Carlo simulation (each in support, or as the paper's main contribution), the seats and models, and whether literature search has an OpenAlex key.
 4. **Start.** Every step the paper will go through, who does it and about how long it takes, and exactly what leaves your machine.
 
 The manuscript arrives in the same document list as `<your-document>-paper` once it is typeset. Press ▷ again on the seed to see where the paper stands: its stage, what is being done right now (or whose usage quota it is waiting out, and when that resets), and its claims, evidence, sections, review and cost so far. The window refreshes every 10 seconds and, once the paper is typeset, opens the manuscript. The run log is `papers/<your-document>-paper/run.log`.
@@ -125,6 +125,17 @@ A paper can rest on your own material besides the literature. Datasets, document
 - **Measure, then argue.** Before the argument is planned, the author names the analyses the claims need (counts, means, medians, proportions, group means, correlations, mean differences with Welch's t), and galley computes them on your machine. Every number the paper states about your data is a placeholder (`{{data.A1}}`) filled in from those results, never a figure a model wrote. The results, with the exact analysis behind each, go into the evidence package (`measurements.json`) and onto the sign-off sheet for you to check.
 - **A shared dataset** shows the models its first 15 rows as well.
 - **Documents and links** are read by the models that write and review the paper.
+
+## What the paper rests on
+
+The systematic review and the simulation can each be added in one of two parts, chosen in the start dialog (Supporting or Main contribution) or with the flag's value:
+
+| Part | Systematic review | Simulation |
+| --- | --- | --- |
+| Supporting (`yes`) | A review section after the introduction; the paper's own contribution stands beside it. The review runs alongside the rest. | Its results support the argument where they help. |
+| Main contribution (`load-bearing`) | The paper is the systematic review: the plan waits for the review, the thesis states what it establishes, its findings are the contribution claims, and the outline takes a review's structure (introduction, methods, results by theme, discussion, limitations, conclusion). | The thesis rests on what the simulation shows: the contribution claims are claims about its results, load-bearing and written with placeholders; the outline specifies the model, reports the results, says how they depend on the assumptions, and charts them. |
+
+Both can be added, and both can be load-bearing.
 
 ## Systematic literature review
 

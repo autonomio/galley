@@ -58,10 +58,10 @@ export interface PaperConfig {
   declarations?: { availability?: string; competing_interests?: string; funding?: string }
   /** The authors' own datasets, documents and links, copied into the paper's materials folder when it starts. */
   materials?: Material[]
-  /** Include a systematic review of the literature, run by Canary, as its own section. */
-  literatureReview?: boolean
-  /** Include a Monte Carlo simulation the author designs and galley runs on this machine. */
-  simulation?: boolean
+  /** Include a systematic review of the literature, run by Canary: as its own section, or (load-bearing) as the paper's main contribution. */
+  literatureReview?: boolean | 'load-bearing'
+  /** Include a Monte Carlo simulation the author designs and galley runs on this machine: in support, or (load-bearing) as what the main contribution rests on. */
+  simulation?: boolean | 'load-bearing'
 }
 
 export const DEFAULT_REFEREES: RefereeSeat[] = [

@@ -5,6 +5,7 @@ import { fillPlaceholders, productionRecord } from '../record.js'
 import { systemBlock } from '../self.js'
 import { materialsBlock, measurementsBlock } from '../materials.js'
 import { simulationsBlock } from '../simulations.js'
+import { literatureBlock } from '../literature.js'
 import { authorYear, citationKey } from '../text.js'
 import type { Citation, Claim, ClaimStatus, Family, Seat, Work } from '../types.js'
 
@@ -75,7 +76,9 @@ export function briefBlock(paper: Paper): string {
   ]
   const chosen = selectedDirection && directions.find((d) => d.id === selectedDirection.id)
   if (chosen) lines.push(`Selected direction: ${chosen.title}: ${chosen.question} (shift: ${chosen.shift})`)
-  const extra = [materialsBlock(paper), measurementsBlock(paper), simulationsBlock(paper), systemBlock(paper)].filter(Boolean)
+  // A paper that is a systematic review carries the review's protocol into every prompt.
+  const review = paper.config.literatureReview === 'load-bearing' ? literatureBlock(paper) : ''
+  const extra = [materialsBlock(paper), measurementsBlock(paper), review, simulationsBlock(paper), systemBlock(paper)].filter(Boolean)
   return [lines.filter(Boolean).join('\n'), ...extra].join('\n\n')
 }
 

@@ -42,6 +42,13 @@ function flags(name: string): string[] {
   return args.flatMap((a, i) => a === `--${name}` && args[i + 1] !== undefined ? [args[i + 1]] : [])
 }
 
+/** yes adds an option in support, load-bearing makes it what the paper's contribution rests on. */
+function option(value: string | undefined): true | 'load-bearing' | undefined {
+  if (!value) return undefined
+  if (/^load[-_ ]?bearing$|^main$|^central$/i.test(value)) return 'load-bearing'
+  return /^(yes|true|on|systematic)$/i.test(value) ? true : undefined
+}
+
 function positional(): string[] {
   const out: string[] = []
   for (let i = 0; i < args.length; i++) {
@@ -241,8 +248,8 @@ async function main(): Promise<void> {
         ...(flag('editor') ? { editorDir: resolve(flag('editor')!) } : {}),
         ...(flag('citations') ? { citations: flag('citations') as 'auto' | 'choose' | 'mixed' } : {}),
         ...(flag('dial') ? { dial: flag('dial') as 'autonomous' | 'assisted' | 'propose' } : {}),
-        ...(/^(yes|true|on|systematic)$/i.test(flag('literature-review') ?? '') ? { literatureReview: true } : {}),
-        ...(/^(yes|true|on)$/i.test(flag('simulation') ?? '') ? { simulation: true } : {}),
+        ...(option(flag('literature-review')) !== undefined ? { literatureReview: option(flag('literature-review')) } : {}),
+        ...(option(flag('simulation')) !== undefined ? { simulation: option(flag('simulation')) } : {}),
       })
       console.log(`Paper created in ${dir}`)
       if (command === 'write') await run(dir)

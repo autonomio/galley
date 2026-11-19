@@ -43,8 +43,10 @@ test('the paper wizard walks through seed, materials and settings, and starts th
   await wizard.getByRole('button', { name: 'Next: Settings' }).click()
   await wizard.getByLabel('Name').fill('Ada Lovelace')
   await wizard.getByRole('radio', { name: '1 round' }).click()
-  await wizard.getByLabel('Systematic literature review').check()
-  await wizard.getByLabel('Monte Carlo simulation').check()
+  await wizard.getByRole('checkbox', { name: /Systematic literature review/ }).check()
+  await wizard.getByRole('checkbox', { name: /Monte Carlo simulation/ }).check()
+  await wizard.getByRole('radiogroup', { name: 'Systematic literature review: its part in the paper' }).getByRole('radio', { name: 'Main contribution' }).click()
+  await expect(wizard).toContainText('The paper is the systematic review')
   await expect(wizard).toContainText('key found: two searches per claim')
 
   await wizard.getByRole('button', { name: 'Next: Start' }).click()
@@ -52,11 +54,12 @@ test('the paper wizard walks through seed, materials and settings, and starts th
   await expect(wizard).toContainText('Systematic review')
   await expect(wizard).toContainText('Review question')
   await expect(wizard.locator('.gw-plan')).toContainText('Simulate')
+  await expect(wizard.locator('.gw-plan')).toContainText('the plan waits for it')
   await expect(wizard).toContainText('never leave this machine')
   await wizard.getByRole('button', { name: 'Start the paper' }).click()
   await expect(wizard.getByRole('heading', { name: 'Writing the paper' })).toBeVisible()
 
-  expect(posted!.settings).toMatchObject({ author: 'Ada Lovelace', rounds: 1, dial: 'autonomous', citations: 'auto', literatureReview: true, simulation: true })
+  expect(posted!.settings).toMatchObject({ author: 'Ada Lovelace', rounds: 1, dial: 'autonomous', citations: 'auto', literatureReview: true, reviewRole: 'load-bearing', simulation: true, simulationRole: 'supporting' })
   expect(posted!.materials).toEqual([
     expect.objectContaining({ name: 'trees.csv', private: true }),
     { name: 'https://example.org/survey', url: 'https://example.org/survey' },

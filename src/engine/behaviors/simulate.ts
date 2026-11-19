@@ -37,7 +37,7 @@ You are the author. This paper includes a Monte Carlo simulation, run on the aut
 - Outputs are the quantities the paper will argue from; events are the thresholds it cares about.
 - Keep the model as small as the argument allows.
 - purpose: what the simulation shows for the paper, in one or two sentences.
-
+${paper.config.simulation === 'load-bearing' ? '- The paper\'s main contribution rests on this simulation: design it to answer the paper\'s question decisively, with the baseline and the comparisons the argument needs, and enough draws or particles that the numbers the thesis rests on pass their precision checks.\n' : ''}
 ${specGuide()}
 
 ${briefBlock(paper)}

@@ -119,7 +119,7 @@ ${text}
 """
 
 Claims and evidence for this section:
-${claimsBlock(paper, section.claimIds) || '(none)'}${section.id === REVIEW_SECTION ? `\n\nThis section reports a systematic review. Each citation's passage is an excerpt of the full text the review read, and the review's independent audit checked every finding against those texts: report a miscite only when a passage is about something else or contradicts the sentence, not because the excerpt leaves out a detail the finding states. Besides its findings the section may state the review's method, disagreements and open questions as given here:\n${literatureBlock(paper)}` : ''}`,
+${claimsBlock(paper, section.claimIds) || '(none)'}${section.id === REVIEW_SECTION || (paper.config.literatureReview === 'load-bearing' && paper.state.literature?.status === 'done') ? `\n\nThis section reports a systematic review. Each citation's passage is an excerpt of the full text the review read, and the review's independent audit checked every finding against those texts: report a miscite only when a passage is about something else or contradicts the sentence, not because the excerpt leaves out a detail the finding states. Besides its findings the section may state the review's method, disagreements and open questions as given here:\n${literatureBlock(paper)}` : ''}`,
             schema: obj({ issues: arr(obj({ problem: enm(['overclaim', 'unsupported', 'miscite', 'contradiction', 'style']), severity: enm(['minor', 'material']), old: str(), new: str() })) }),
           })
           let next = text
