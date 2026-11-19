@@ -68,6 +68,13 @@ const unfinished = (name: string, nonfinite: number, n: number): Check => ({
   detail: `${nonfinite} of ${n + nonfinite} samples of ${name} were not finite numbers (such as a division by 0) and are left out of its summary`,
 })
 
+/** The JavaScript engine running this code, for provenance: the engine also runs in a browser, where there is no process. */
+function runtime(): string {
+  const node = typeof process !== 'undefined' ? process.versions?.node : undefined
+  if (node) return `node v${node}`
+  return typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown'
+}
+
 /** Runs a simulation spec. The same spec and seed give the same numbers, on the same JavaScript engine. */
 export function simulate(raw: unknown): Outcome {
   const started = performance.now()
@@ -115,6 +122,7 @@ export function simulate(raw: unknown): Outcome {
       seed,
       size: draws.size,
       fingerprint: fingerprint(canonical(ran)),
+      runtime: runtime(),
       runtimeMs: Math.round(performance.now() - started),
       ok: checks.every((c) => c.ok),
       checks,

@@ -1,10 +1,12 @@
 // The simulation engine against what is known exactly: the moments and quantiles of distributions,
 // a stated rank correlation, the Kalman filter, and the seed. Every run is seeded, so a bound that
 // holds once holds every time.
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { atPrecision, placeholders, simulate, specSchema, validate, type SimulationResult } from '../../src/engine/simulation/index.js'
+import { atPrecision, placeholders, simulate, specSchema, validate, writeReproduction, type Expected, type SimulationResult } from '../../src/engine/simulation/index.js'
 
 const run = (spec: object): SimulationResult => {
   const out = simulate(spec)
@@ -143,6 +145,34 @@ describe('simulation engine', () => {
     expect(values['sim.S1.n.mean']).toBe(atPrecision(known.outputs.n.mean, known.outputs.n.mcse.mean))
     expect(values['sim.S1.never.p']).toBe('< 0.02%')
     expect([atPrecision(12436.27, 41), atPrecision(0.31234, 0.0033), atPrecision(2015, null), atPrecision(-0.0004, 0.003)]).toEqual(['12,440', '0.312', '2015', '0.000'])
+  })
+
+  it('publishes a reproduction package that reruns with Node alone and verifies what the paper cites', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'galley-reproduction-'))
+    try {
+      const walk = run({
+        ...base, id: 'W2', method: 'sequential', draws: null, outputs: ['x'], events: [{ name: 'far', when: 'abs(x) > 3' }],
+        sequential: { states: [{ name: 'x', init: '0', next: 'normal(x, 1)' }], observations: [], steps: 10, particles: 200, replicates: 2, resample: null, threshold: null },
+      })
+      const files = writeReproduction(dir, [
+        { id: 'S1', title: 'Known distributions', purpose: 'Checks the engine.', assumptions: [{ name: 'n', basis: 'a textbook normal' }], result: known },
+        { id: 'W2', title: 'A random walk', purpose: 'Spreads with time.', assumptions: [], result: walk },
+      ], { title: 'A test paper' })
+      expect(files.map((f) => relative(dir, f)).sort()).toEqual(['README.md', 'SPEC.md', 'engine.mjs', 'expected/S1.json', 'expected/W2.json', 'index.html', 'simulate.mjs', 'specs/S1.json', 'specs/W2.json'])
+      expect(readFileSync(join(dir, 'README.md'), 'utf8')).toMatch(/and every number matched/)
+      const node = (...args: string[]) => spawnSync(process.execPath, [join(dir, 'simulate.mjs'), ...args], { encoding: 'utf8' })
+      expect(node('--verify').status).toBe(0)
+      // A number the paper states otherwise fails the check, and the difference is shown.
+      const file = join(dir, 'expected', 'S1.json')
+      const expected = JSON.parse(readFileSync(file, 'utf8')) as Expected
+      expected.numbers.find((n) => n.key === 'sim.S1.n.mean')!.value = '10.50'
+      writeFileSync(file, JSON.stringify(expected))
+      const failed = node('--verify')
+      expect(failed.status).toBe(1)
+      expect(failed.stdout).toMatch(/\{\{sim\.S1\.n\.mean\}\}\s+10\.50\s+9\.99/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('keeps its spec schema in the strict dialect every provider accepts', () => {

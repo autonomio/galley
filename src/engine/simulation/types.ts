@@ -186,6 +186,8 @@ export interface Provenance {
   size: RunSize
   /** Of the normalized spec: the same spec always has the same fingerprint. */
   fingerprint: string
+  /** The JavaScript engine that ran it, such as "node v23.10.0". */
+  runtime: string
   runtimeMs: number
   /** Whether every check passed. */
   ok: boolean
