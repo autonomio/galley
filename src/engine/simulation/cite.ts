@@ -39,7 +39,8 @@ function written(x: number, decimals: number, trim: boolean): string {
   return /^-0(\.0*)?$/.test(s) ? s.slice(1) : s
 }
 
-const notFinite = (x: number): Shown => ({ text: x !== x ? 'not a number' : x > 0 ? 'infinite' : '−infinite', step: null })
+// A run stored as JSON comes back with null where it held NaN, which is the value it stands for.
+const notFinite = (x: number | null): Shown => ({ text: x === null || x !== x ? 'not a number' : x > 0 ? 'infinite' : '−infinite', step: null })
 
 function precise(x: number, mcse: number | null): Shown {
   if (!Number.isFinite(x)) return notFinite(x)

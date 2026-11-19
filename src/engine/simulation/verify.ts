@@ -47,15 +47,21 @@ const numeric = (text: string): number | null => {
   return /^-?\d+(\.\d+)?$/.test(t) ? Number(t) : null
 }
 
+// A stored run comes back from JSON with null where it held NaN or an infinity, so a value that is
+// not finite agrees with any other that is not.
+const NOT_FINITE = new Set(['not a number', 'infinite', '−infinite'])
+
 // Equal text agrees. Otherwise the rerun's own number must round to the cited value at the cited
-// step, so a last-digit difference between JavaScript engines never fails a check, and nothing
-// coarser passes one.
+// step: the allowance is half a step, widened only by a billionth of a step for rounding in the
+// subtraction, so a last-digit difference between JavaScript engines never fails a check and
+// nothing coarser passes one, however large the number.
 function agrees(paper: Expected['numbers'][number], rerun: { value: string; number: number }): boolean {
   if (rerun.value === paper.value) return true
+  if (NOT_FINITE.has(rerun.value) && NOT_FINITE.has(paper.value)) return true
   const cited = numeric(paper.value)
   if (paper.step === null || cited === null || numeric(rerun.value) === null) return false
   const shown = rerun.value.endsWith('%') ? 100 * rerun.number : rerun.number
-  return Math.abs(shown - cited) <= (paper.step / 2) * (1 + 1e-9) + 1e-12 * Math.abs(cited)
+  return Math.abs(shown - cited) <= (paper.step / 2) * (1 + 1e-9)
 }
 
 /** Compares a rerun with what the paper cites, number by number, at the cited precision. */
@@ -77,6 +83,8 @@ export interface Io {
   specs: { name: string; text: string }[]
   /** The expected numbers for a spec file (expected/<name>), or null when there are none. */
   expected(name: string): string | null
+  /** Every file in expected/, when the whole package runs: a published simulation whose spec is gone fails the check. */
+  published?: string[]
   print(line: string): void
 }
 
@@ -166,6 +174,12 @@ export function main(flags: string[], io: Io): number {
     }
   }
   if (!verify) return broken ? 1 : 0
+  const present = new Set(io.specs.map((f) => f.name))
+  for (const name of io.published ?? []) {
+    if (present.has(name)) continue
+    io.print(`${name.replace(/\.json$/, '')}  expected/${name} has no spec in specs/, so the paper's numbers for it cannot be checked`)
+    broken++
+  }
   const faults = [
     differing ? `${differing} of ${numbers} numbers differ from the paper` : '',
     changed ? `${changed} spec${changed > 1 ? 's are' : ' is'} not the one the paper ran` : '',

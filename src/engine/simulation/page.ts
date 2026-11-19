@@ -52,7 +52,36 @@ function card(h: Make, run: PageRun): { node: HTMLElement; go: () => void } {
   const basis = new Map(run.assumptions.map((a) => [a.name, a.basis]))
   const parse = (): SimulationSpec | null => { try { return JSON.parse(editor.value) as SimulationSpec } catch { return null } }
 
-  const go = () => {
+  // Each field edits the input of its name, wherever the whole spec now lists it; after every run the
+  // fields show what the spec holds, and a field whose input is gone is disabled.
+  const fields = run.spec.inputs.map((input) => {
+    const field = h('input', { type: 'text', spellcheck: 'false', 'aria-label': `${input.name} in ${run.id}` }) as HTMLInputElement
+    field.value = input.dist
+    field.addEventListener('change', () => {
+      const spec = parse()
+      const target = Array.isArray(spec?.inputs) ? spec.inputs.find((x) => x?.name === input.name) : undefined
+      if (!spec || !target) {
+        status.className = 'status bad'
+        status.textContent = spec ? `The spec no longer has an input called ${input.name}; change it in the whole spec.` : 'The spec is not JSON; fix it in the whole spec first.'
+        return
+      }
+      target.dist = field.value
+      editor.value = JSON.stringify(spec, null, 2)
+      go()
+    })
+    const why = basis.get(input.name)
+    return { name: input.name, field, label: h('label', {}, h('span', { class: 'name' }, input.name), field, ...(why ? [h('small', {}, why)] : [])) }
+  })
+  const sync = (spec: unknown) => {
+    const inputs = (spec as { inputs?: unknown })?.inputs
+    for (const f of fields) {
+      const x = Array.isArray(inputs) ? (inputs as { name?: unknown; dist?: unknown }[]).find((i) => i?.name === f.name) : undefined
+      f.field.disabled = !x
+      if (x) f.field.value = String(x.dist ?? '')
+    }
+  }
+
+  function go() {
     status.className = 'status'
     status.textContent = 'Running…'
     // Let “Running…” paint before a long run.
@@ -65,6 +94,7 @@ function card(h: Make, run: PageRun): { node: HTMLElement; go: () => void } {
         status.textContent = `The spec is not JSON: ${(error as Error).message}`
         return
       }
+      sync(spec)
       const out = simulate(spec)
       if (!out.ok) {
         status.className = 'status bad'
@@ -98,22 +128,8 @@ function card(h: Make, run: PageRun): { node: HTMLElement; go: () => void } {
     }, 20)
   }
 
-  const fields = run.spec.inputs.map((input, i) => {
-    const field = h('input', { type: 'text', spellcheck: 'false', 'aria-label': `${input.name} in ${run.id}` }) as HTMLInputElement
-    field.value = input.dist
-    field.addEventListener('change', () => {
-      const spec = parse()
-      if (!spec?.inputs?.[i]) return
-      spec.inputs[i].dist = field.value
-      editor.value = JSON.stringify(spec, null, 2)
-      go()
-    })
-    const why = basis.get(input.name)
-    return h('label', {}, h('span', { class: 'name' }, input.name), field, ...(why ? [h('small', {}, why)] : []))
-  })
   const reset = () => {
     editor.value = published
-    run.spec.inputs.forEach((input, i) => { (fields[i].querySelector('input') as HTMLInputElement).value = input.dist })
     go()
   }
   const button = (label: string, action: () => void, primary = false) => {
@@ -124,7 +140,7 @@ function card(h: Make, run: PageRun): { node: HTMLElement; go: () => void } {
   const node = h('section', {},
     h('h2', {}, `${run.id} · ${run.title}`),
     h('p', {}, run.purpose),
-    ...(fields.length ? [h('div', { class: 'inputs' }, ...fields)] : []),
+    ...(fields.length ? [h('div', { class: 'inputs' }, ...fields.map((f) => f.label))] : []),
     h('details', {}, h('summary', {}, 'The whole spec'), editor),
     h('div', { class: 'actions' }, button('Run', go, true), button('Back to the paper’s spec', reset)),
     status,
