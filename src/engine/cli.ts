@@ -59,7 +59,7 @@ function slugFromSeed(seed: string, file: string): string {
 
 /** What each behavior is doing, in words a person reads in the status view. */
 const DOING: Record<string, string> = {
-  extract: 'Reading the seed', position: 'Searching the literature for prior art', 'review-idea': 'Reviewing the idea on seven factors', 'literature-review': 'Systematic review of the literature (Canary)',
+  extract: 'Reading the seed', position: 'Searching the literature for prior art', 'review-idea': 'Reviewing the idea on seven factors', 'literature-review': 'Systematic review of the literature (Canary)', simulate: 'Designing and running the simulation',
   reformulate: 'Writing three directions', 'select-direction': 'Choosing a direction', analyze: 'Measuring your data', plan: 'Planning the argument',
   outline: 'Outlining', 'find-evidence': 'Finding evidence', verify: 'Verifying citations', reassess: 'Reassessing the thesis', calibrate: 'Calibrating the verifier',
   draft: 'Drafting', figure: 'Drawing figures', fidelity: 'Checking sections against their claims', frame: 'Writing the title and abstract',
@@ -79,6 +79,7 @@ function statusData(paper: Paper): Record<string, unknown> {
     ['seed', 'Seed', !!s.brief],
     ['aim', 'Aim', !!s.plan || !!s.selectedDirection || s.ideaReview?.verdict === 'worth_writing'],
     ...(datasets ? [['data', 'Data', !!s.measurements] as [string, string, boolean]] : []),
+    ...(paper.config.simulation ? [['simulation', 'Simulation', !!s.simulations] as [string, string, boolean]] : []),
     ['plan', 'Plan', !!s.outline],
     ['evidence', 'Evidence', evidenceDone],
     ...(paper.config.literatureReview ? [['literature', 'Literature', s.literature?.status === 'done' || s.literature?.status === 'failed'] as [string, string, boolean]] : []),
@@ -241,6 +242,7 @@ async function main(): Promise<void> {
         ...(flag('citations') ? { citations: flag('citations') as 'auto' | 'choose' | 'mixed' } : {}),
         ...(flag('dial') ? { dial: flag('dial') as 'autonomous' | 'assisted' | 'propose' } : {}),
         ...(/^(yes|true|on|systematic)$/i.test(flag('literature-review') ?? '') ? { literatureReview: true } : {}),
+        ...(/^(yes|true|on)$/i.test(flag('simulation') ?? '') ? { simulation: true } : {}),
       })
       console.log(`Paper created in ${dir}`)
       if (command === 'write') await run(dir)
@@ -319,7 +321,7 @@ async function main(): Promise<void> {
         openalexKey: openalexKeyed(),
         seats: Object.fromEntries(Object.entries(config.seats).map(([seat, family]) => [seat, { family, name: FAMILY_NAMES[family], model: FAMILY_MODELS[family].model }])),
         referees: config.referees.map((r) => r.seat),
-        defaults: { venue: config.venue, words: config.words, rounds: config.rounds, dial: config.dial, citations: config.citations, literatureReview: false },
+        defaults: { venue: config.venue, words: config.words, rounds: config.rounds, dial: config.dial, citations: config.citations, literatureReview: false, simulation: false },
         review: REVIEW_SETTINGS,
       }))
       return

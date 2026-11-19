@@ -8,6 +8,7 @@ import { findEvidence, reassess, verify } from './truth.js'
 import { draft, fidelity, figure, frame as firstFrame } from './write.js'
 import { analyzeData } from './data.js'
 import { literatureReview } from './literature.js'
+import { simulateModel } from './simulate.js'
 
 // One behavior writes the frame: once when the draft is checked, and again from the reviewed text.
 const frame: Behavior = { ...firstFrame, ready: (paper) => [...firstFrame.ready(paper), ...finalFrame(paper)] }
@@ -21,6 +22,8 @@ export const LADDER: Behavior[] = [
   literatureReview,
   // With the authors' data: measure, then argue.
   analyzeData,
+  // When asked for: the Monte Carlo simulation the argument needs, run on this machine.
+  simulateModel,
   plan, outline,
   // Truth: every external claim gets a verified passage, or is hedged.
   findEvidence, verify, reassess, calibrate,

@@ -31,7 +31,7 @@ node dist/engine/cli.js run papers/my-seed
 | `ladder` | every behavior, in order |
 | `doctor` | check that each model, tool and source answers |
 
-`write` and `new` take `--author`, `--affiliation`, `--venue`, `--words`, `--rounds 1|2`, `--citations auto|choose|mixed`, `--dial autonomous|assisted|propose`, `--literature-review yes` (a systematic review of the literature as its own section, below), `--editor <dir>` (where the manuscript's editor document goes), and `--material <file or link>` and `--shared-material <dataset>` for your own materials (below), each as often as needed. Everything else is in the paper's `paper.json` (below).
+`write` and `new` take `--author`, `--affiliation`, `--venue`, `--words`, `--rounds 1|2`, `--citations auto|choose|mixed`, `--dial autonomous|assisted|propose`, `--literature-review yes` (a systematic review of the literature as its own section, below), `--simulation yes` (a Monte Carlo simulation the argument rests on, below), `--editor <dir>` (where the manuscript's editor document goes), and `--material <file or link>` and `--shared-material <dataset>` for your own materials (below), each as often as needed. Everything else is in the paper's `paper.json` (below).
 
 ## What comes out
 
@@ -81,25 +81,26 @@ Behaviors are atomic: each reads the paper's state, does one thing, and writes i
 | 5 | select-direction | aim | directions exist | picks one (never the challenger's family) |
 | 6 | literature-review | substance | asked for, the direction is chosen | the review question; Canary's systematic review in the background; its upheld findings join the ledger with verified passages |
 | 7 | analyze | truth | a dataset was given, the direction is chosen | the analyses the claims need, computed on your machine |
-| 8 | plan | skeleton | the aim is settled | thesis, the paper's noun, the full claim graph |
-| 9 | outline | skeleton | planned | sections, figures, style, glossary |
-| 10 | find-evidence | truth | external claims are open | searches, then verbatim passages from abstracts |
-| 11 | verify | truth | citations are selected | supported, narrower (the claim is narrowed) or rejected |
-| 12 | reassess | truth | a load-bearing claim lost its evidence | the thesis stands, narrows, or fails |
-| 13 | calibrate | truth | citations are verified | plants defects and measures what the verifier catches |
-| 14 | draft | skeleton | a section's evidence is settled | the section, citing only verified keys |
-| 15 | figure | substance | a figure is planned | Typst source, compiled |
-| 16 | fidelity | truth | a section is drafted | fixes sentences that say more than their evidence |
-| 17 | frame | manuscript | every section is checked, and again once the ledger is reconciled | title, abstract, keywords; rewritten from the reviewed text |
-| 18 | referee | referees | framed, nothing open | four seats review the whole manuscript |
-| 19 | close-round | referees | every seat reported | ends the round |
-| 20 | respond | referees | a material finding is open | fixed, rebutted, or stated as a limitation |
-| 21 | verify-disposition | referees | an answer is unverified | the referee who raised it judges the answer |
-| 22 | adjudicate | referees | a finding is still disputed at the cap | the third family decides |
-| 23 | reconcile | close | the review is done | a family other than the author's reads the final text against every claim: confirmed, narrowed to the text's wording, or dropped as no longer stated |
-| 24 | reprofile | close | the review is done | the finished paper against the seven factors |
-| 25 | typeset | skeleton | the text changed | PDF, LaTeX, Word, editor document, evidence package, sign-off |
-| 26 | ready | close | every gate holds on one revision | ready for submission |
+| 8 | simulate | substance | asked for, the aim is settled (and the data measured) | the author's Monte Carlo spec with the basis of every input, run on your machine until it runs clean; the plan argues from its results |
+| 9 | plan | skeleton | the aim is settled | thesis, the paper's noun, the full claim graph |
+| 10 | outline | skeleton | planned | sections, figures, style, glossary |
+| 11 | find-evidence | truth | external claims are open | searches, then verbatim passages from abstracts |
+| 12 | verify | truth | citations are selected | supported, narrower (the claim is narrowed) or rejected |
+| 13 | reassess | truth | a load-bearing claim lost its evidence | the thesis stands, narrows, or fails |
+| 14 | calibrate | truth | citations are verified | plants defects and measures what the verifier catches |
+| 15 | draft | skeleton | a section's evidence is settled | the section, citing only verified keys |
+| 16 | figure | substance | a figure is planned | Typst source, compiled |
+| 17 | fidelity | truth | a section is drafted | fixes sentences that say more than their evidence |
+| 18 | frame | manuscript | every section is checked, and again once the ledger is reconciled | title, abstract, keywords; rewritten from the reviewed text |
+| 19 | referee | referees | framed, nothing open | four seats review the whole manuscript |
+| 20 | close-round | referees | every seat reported | ends the round |
+| 21 | respond | referees | a material finding is open | fixed, rebutted, or stated as a limitation |
+| 22 | verify-disposition | referees | an answer is unverified | the referee who raised it judges the answer |
+| 23 | adjudicate | referees | a finding is still disputed at the cap | the third family decides |
+| 24 | reconcile | close | the review is done | a family other than the author's reads the final text against every claim: confirmed, narrowed to the text's wording, or dropped as no longer stated |
+| 25 | reprofile | close | the review is done | the finished paper against the seven factors |
+| 26 | typeset | skeleton | the text changed | PDF, LaTeX, Word, editor document, evidence package, sign-off |
+| 27 | ready | close | every gate holds on one revision | ready for submission |
 
 The skeleton (extract, plan, outline, draft, frame, typeset, ready) is what makes a paper exist. Everything else is an improver: it can make the paper better but can never stop it. An improver that fails twice is settled as skipped, its effect is written down (a claim without evidence is hedged; a figure is left out), and the paper moves on. A model provider at a usage limit is waited out for up to about six hours (a subscription's window), never counted as a failure; when the provider says when its quota resets, the call is tried again just after that; only a longer limit pauses the run, and running it again resumes it. A search index that is unavailable (OpenAlex pauses keyless search under heavy load) is waited out for up to three hours, retrying less often as the wait grows; after that the search is given up and the claims it was for are hedged.
 
@@ -111,7 +112,7 @@ Run the editor (`npm run dev`), write or paste your rant as a document, and pres
 
 1. **Seed.** Your words, as they are; nothing is added to them.
 2. **Materials.** Drop datasets (CSV, TSV, JSON) and documents (Markdown, text, Word, PDF), or add links. Each dataset is private unless you switch it to shared.
-3. **Settings.** Author and affiliation (set in the byline, never sent to a model), venue, length, one or two referee rounds, your part (autonomous, assisted, propose), how citations are chosen, whether to include a systematic literature review, the seats and models, and whether literature search has an OpenAlex key.
+3. **Settings.** Author and affiliation (set in the byline, never sent to a model), venue, length, one or two referee rounds, your part (autonomous, assisted, propose), how citations are chosen, whether to include a systematic literature review and a Monte Carlo simulation, the seats and models, and whether literature search has an OpenAlex key.
 4. **Start.** Every step the paper will go through, who does it and about how long it takes, and exactly what leaves your machine.
 
 The manuscript arrives in the same document list as `<your-document>-paper` once it is typeset. Press ▷ again on the seed to see where the paper stands: its stage, what is being done right now (or whose usage quota it is waiting out, and when that resets), and its claims, evidence, sections, review and cost so far. The window refreshes every 10 seconds and, once the paper is typeset, opens the manuscript. The run log is `papers/<your-document>-paper/run.log`.
@@ -135,6 +136,16 @@ Tick **Systematic literature review** in the start dialog (or pass `--literature
 4. The review section is reserved after the introduction from the start (the outline then has no separate related-work section). It is drafted once the findings are in: how the review was done, with every count a placeholder filled from Canary's record ({{lit.reviewed}} and the rest), what the studies establish by theme, where they disagree and what they leave open, and where this paper stands. The fidelity check, the referees and the ledger reconciliation treat it like every other section.
 
 Canary's full research bundle is kept in the paper folder (`canary/review-bundle.json`); the evidence package adds `literature-review.json` (question, protocol, counts, models), and the sign-off sheet names the run so you can open it in Canary. The production record table and the AI statement say which citations Canary's audit checked rather than galley's verifier. If a review ends without an answer twice, the paper goes on without the section and the sign-off sheet says so.
+
+## Monte Carlo simulation
+
+Tick **Monte Carlo simulation** in the start dialog (or pass `--simulation yes`) and the argument rests on a simulation galley runs for the paper:
+
+1. Once the aim is settled (and your data measured, when you brought a dataset), the author designs the simulation the argument needs, choosing plain Monte Carlo for independent uncertain inputs, correlated Monte Carlo when inputs move together, or sequential Monte Carlo when the system evolves over time. It gives the basis of every input's distribution: the seed, your materials, published ranges, or its own judgment, said as such.
+2. Galley runs the specification on your machine with its simulation engine ([Simulations](SIMULATION.md)): deterministic for a seed, with the Monte Carlo error of every number and checks on precision. When the engine cannot run a specification, its problems go back to the author until it can.
+3. The plan is made from the results. A claim about a simulation names it, says only what the results show under its assumptions, and writes every number as a placeholder such as `{{sim.S1.profit.p95}}`, filled in at typesetting to the precision its Monte Carlo error supports; a model never types a simulated figure. Figures may chart a run's distributions or a sequential run's bands from the run itself.
+
+The sign-off sheet lists each simulation's inputs with their bases for you to check, the AI statement says how each ran, and the evidence package holds every specification with its results (`simulations/S1.json`), so anyone can rerun it and get the same numbers.
 
 ## When you want to be in it
 

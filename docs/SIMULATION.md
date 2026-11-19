@@ -313,11 +313,13 @@ A spec holds up to 64 inputs, 64 model lines, 16 outputs, 16 events, 32 states a
 series. Draws, particles and replicates beyond their bounds are held to them with a note; going
 past a structural limit is a problem.
 
+## In a paper
+
+When a paper asks for a simulation (`--simulation yes`, or the start dialog), the `simulate` behavior runs before the argument is planned: the author writes the specs from `specGuide()` against `specSchema`, with the basis of every input; `simulate` runs each one, and its problems go back to the author until every spec runs. `src/engine/simulations.ts` is the paper's side: the block every prompt reads (model, assumptions, checks, and each citable number under its placeholder), the placeholders the production record fills, and the series a figure may chart. See [Papers](PAPERS.md).
+
 ## Not built yet
 
 - Sensitivity indices (Sobol) and Latin hypercube or quasi-Monte Carlo methods: each would be one
   more method.
 - Known per-step inputs (covariates) in the sequential method, and rejuvenation of its static
   parameters.
-- The paper's use of a run: a `simulate` behavior in the ladder, its prompt, its placeholders in the
-  production record, and its figure.

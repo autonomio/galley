@@ -290,6 +290,8 @@ export const plan: Behavior = {
     if (!live(paper) || !s.brief?.hasSubject || s.plan || !aimSettled(paper)) return []
     // With a dataset, the argument is planned on what it shows.
     if ((paper.config.materials ?? []).some((m) => m.kind === 'dataset') && !s.measurements && !paper.config.off.includes('analyze')) return []
+    // With a simulation, the argument is planned on what it shows.
+    if (paper.config.simulation && !s.simulations && !paper.config.off.includes('simulate')) return []
     return [{
       key: 'plan:argument', label: 'the argument',
       run: async () => {
@@ -307,7 +309,7 @@ Plan the argument of the paper. The seed is the person's; keep its concern and i
 - opens: 3 to 6 concrete next papers strangers could write because this one exists.
 - claims: the complete set of claims the argument needs. For each seed claim give its id and action keep, reword or drop (with the reason). Add the claims the argument needs that the seed lacks (id null, action add): background claims about prior work and the state of the field that the paper must establish with citations, and contribution claims that state exactly what this paper delivers. kind is contribution, background, method, novelty or common_knowledge. need is external (must be cited: other people's published work), internal (backed by the authors' own work: what this paper presents, and systems, tools or results the authors themselves built, as the seed's "we" and "our" show) or none (common knowledge or a definition). load_bearing is true when the thesis falls if the claim falls. depends_on lists the ids of claims this one rests on (no cycles).
 Lift the weakest factor where the evidence allows it, but never claim more than can be supported.
-A claim about the authors' data rests on the measurements: it names the ones it uses (A1, A2), has need internal, says only what they show, and writes any number from them as its placeholder ({{data.A1}}). Aim for about ${Math.max(8, Math.min(40, Math.round(paper.config.words / 230)))} claims in total, scaled to a paper of about ${paper.config.words} words.
+A claim about the authors' data rests on the measurements: it names the ones it uses (A1, A2), has need internal, says only what they show, and writes any number from them as its placeholder ({{data.A1}}). A claim about a simulation rests on its results: it names the simulation (S1), has need internal, says only what the results show under the simulation's assumptions, and writes any number from them as its placeholder ({{sim.S1.profit.p95}}). Aim for about ${Math.max(8, Math.min(40, Math.round(paper.config.words / 230)))} claims in total, scaled to a paper of about ${paper.config.words} words.
 
 ${briefBlock(paper)}
 ${review}
@@ -364,7 +366,7 @@ ${STYLE}
 
 Outline the paper for ${paper.config.venue} in the host field (${s.brief!.field}), about ${paper.config.words} words in total.
 - sections: in order. Each has an id (S1, S2, …), a title, its purpose in one or two sentences, the ids of the claims it establishes, and its word budget. Every load-bearing claim is placed in exactly one section; other claims where they help, or nowhere. Use the host field's conventional structure. ${paper.config.literatureReview && s.literature?.status !== 'failed' ? 'A systematic literature review section is placed after the introduction for you: do not include a separate related-work section; position the paper against prior work in the introduction and the discussion.' : 'Include a section on related work.'} Include a section stating the limitations, and a closing section that names what this opens. Do not include an abstract or a references section; those are written later.
-- figures: at most three in the whole paper, each in the section it belongs to, with an id (fig1, …), a caption, and a spec precise enough to draw it. A figure is a diagram of a structure the paper describes (a pipeline, a set of roles, a lifecycle) or a chart of numbers the paper states. Never a figure that needs data the paper does not have.
+- figures: at most three in the whole paper, each in the section it belongs to, with an id (fig1, …), a caption, and a spec precise enough to draw it. A figure is a diagram of a structure the paper describes (a pipeline, a set of roles, a lifecycle) or a chart of numbers the paper states. Never a figure that needs data the paper does not have.${s.simulations && Object.keys(s.simulations).length ? ' A simulation\'s results can be charted from its run: the distribution of an output, or a sequential run\'s bands over time.' : ''}
 - style: notes on register and conventions for this venue and field.
 - glossary: the terms the paper defines, as "term: definition", including the paper's noun.
 

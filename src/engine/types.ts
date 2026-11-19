@@ -284,6 +284,8 @@ export interface PaperState {
   measurements?: Record<string, import('./materials.js').Measurement>
   /** The systematic review of the literature, when the paper has one. */
   literature?: LiteratureReview
+  /** The Monte Carlo simulations galley ran for the paper, by id (S1 …). */
+  simulations?: Record<string, import('./simulations.js').SimulationRun>
   profileAfter?: IdeaReview
   /** Behavior targets that are settled: done, skipped, or exhausted. */
   settled: Record<string, 'done' | 'skipped'>

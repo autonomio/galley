@@ -60,6 +60,8 @@ export interface PaperConfig {
   materials?: Material[]
   /** Include a systematic review of the literature, run by Canary, as its own section. */
   literatureReview?: boolean
+  /** Include a Monte Carlo simulation the author designs and galley runs on this machine. */
+  simulation?: boolean
 }
 
 export const DEFAULT_REFEREES: RefereeSeat[] = [

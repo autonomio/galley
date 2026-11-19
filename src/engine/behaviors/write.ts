@@ -11,6 +11,7 @@ import type { Passage, Section } from '../types.js'
 import { briefBlock, claimsBlock, keyFor, live, manuscriptBlock, now, seatFamily, sectionText } from './common.js'
 import { verifyCitationsSettled } from './truth.js'
 import { literatureBlock, REVIEW_SECTION, REVIEW_SECTION_RULES } from '../literature.js'
+import { simulationSeries } from '../simulations.js'
 
 function knownKeys(paper: Paper): Set<string> {
   return new Set(paper.state.citations.filter((c) => c.status === 'verified').map((c) => keyFor(paper, paper.state.works[c.workId])))
@@ -167,6 +168,7 @@ Specification: ${fig.spec}
 Section it illustrates: ${paper.state.outline!.sections.find((sec) => sec.id === fig.sectionId)?.title}
 Relevant claims:
 ${claimsBlock(paper, paper.state.outline!.sections.find((sec) => sec.id === fig.sectionId)?.claimIds ?? [])}
+${simulationSeries(paper) ? `\n${simulationSeries(paper)}\nChart a simulation only from these values, and label the axes with the quantities and units the paper uses.` : ''}
 ${lastError ? `\nThe previous attempt failed to compile with: ${lastError}\nFix that.` : ''}
 
 Return typst (the complete document source).`,
