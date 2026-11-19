@@ -1,11 +1,14 @@
 // The header's action buttons. Built-in and host actions are the same shape,
 // so the toolbar is just a list rendered in order.
 import { el, escapeHtml } from './dom.js'
+import { attachTooltip } from './tooltip.js'
 
 export interface ToolbarAction<Context> {
   id: string
-  /** Accessible name and tooltip. */
+  /** Accessible name, and the first line of the tooltip. */
   label: string
+  /** What the control does, in a sentence: shown under the label when the pointer rests on it. */
+  description?: string
   /** Trusted SVG markup. */
   icon: string
   /** Shown after the label in the tooltip, e.g. `⌘N`. */
@@ -33,14 +36,13 @@ export function createToolbar<Context>(actions: ToolbarAction<Context>[], contex
   const buttons = new Map<string, HTMLButtonElement>()
 
   for (const action of actions) {
-    const tip = action.shortcut ? `${action.label} (${action.shortcut})` : action.label
     const button = el('button', {
       type: 'button',
       class: `galley-bar-btn${action.danger ? ' is-danger' : ''}${action.keepInWriterMode ? ' is-kept' : ''}`,
       'data-action': action.id,
       'aria-label': action.label,
-      title: tip,
     }, action.icon)
+    attachTooltip(button, () => ({ label: action.label, shortcut: action.shortcut, description: action.description }))
     button.addEventListener('click', () => {
       if (button.disabled) return
       Promise.resolve()

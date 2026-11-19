@@ -257,6 +257,8 @@ export interface PaperState {
   findings: Finding[]
   round: number
   calibration?: Calibration
+  /** What galley computed in the authors' datasets, by analysis id (A1, A2 …). */
+  measurements?: Record<string, import('./materials.js').Measurement>
   profileAfter?: IdeaReview
   /** Behavior targets that are settled: done, skipped, or exhausted. */
   settled: Record<string, 'done' | 'skipped'>

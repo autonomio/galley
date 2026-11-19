@@ -375,7 +375,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
   const selectionItems = (options.selectionActions ?? ['comment'])
     .filter((item) => item !== 'comment' || comments)
     .map((item): ClusterAction => {
-      if (item === 'comment') return { id: 'comment', label: 'Comment', icon: icons.comment, run: addComment }
+      if (item === 'comment') return { id: 'comment', label: 'Comment', description: 'Add a note to the selected text. A note becomes a thread for the agents on the next run; start it with @humans to keep it for people.', icon: icons.comment, run: addComment }
       return {
         id: item.id,
         label: item.label,
@@ -407,21 +407,23 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     writer: {
       id: 'writer',
       label: 'Writer mode',
+      description: 'Hide everything but the page, to write without distraction. Press again to bring the rest back.',
       icon: icons.focusEnter,
       pressedIcon: icons.focusExit,
       keepInWriterMode: true,
       pressed: () => writer,
       run: () => setWriterMode(!writer),
     },
-    new: { id: 'new', label: 'New document', shortcut: '⌘N', icon: icons.plus, run: () => create() },
-    import: { id: 'import', label: 'Import a Markdown file', icon: icons.import, run: () => fileInput.click() },
+    new: { id: 'new', label: 'New document', description: 'Start a new, empty document in this list.', shortcut: '⌘N', icon: icons.plus, run: () => create() },
+    import: { id: 'import', label: 'Import a Markdown file', description: 'Open a Markdown file from your computer as a new document.', icon: icons.import, run: () => fileInput.click() },
     copy: {
       id: 'copy',
       label: 'Copy the document',
+      description: "Copy this document's text, as Markdown, to the clipboard.",
       icon: icons.copy,
       run: async (_editor, button) => { if (await copy()) confirmOn(button, icons.check) },
     },
-    delete: { id: 'delete', label: 'Delete the document', icon: icons.trash, danger: true, run: () => remove() },
+    delete: { id: 'delete', label: 'Delete the document', description: 'Delete this document. You are asked before anything is removed.', icon: icons.trash, danger: true, run: () => remove() },
   }
   const actions = (options.toolbar ?? ['writer', 'new', 'import', 'copy', 'delete'])
     .map((item) => (typeof item === 'string' ? builtins[item] : item))

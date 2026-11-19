@@ -1,3 +1,27 @@
+/* The demo page around the editor. Only the host's own chrome lives here. */
+html, body { height: 100%; margin: 0; }
+html { background: #161A20; color-scheme: dark; }
+html[data-theme="light"] { background: #FBFBFA; color-scheme: light; }
+body { display: flex; flex-direction: column; font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif; }
+#editor { flex: 1 1 auto; min-height: 0; }
+
+.demo-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 16px 6px;
+  font-size: 12px;
+  color: #8E959E;
+}
+html[data-theme="light"] .demo-bar { color: #6E747B; }
+.demo-name { font-family: "Zen Maru Gothic", "IBM Plex Sans", sans-serif; font-weight: 700; font-size: 15px; color: #DEE2E6; letter-spacing: 0.02em; }
+html[data-theme="light"] .demo-name { color: #23272D; }
+.demo-spacer { flex: 1; }
+.demo-link { padding: 0; border: none; background: none; font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.demo-link:hover { color: #DEE2E6; }
+html[data-theme="light"] .demo-link:hover { color: #23272D; }
+body.is-writing .demo-bar { display: none; }
+
 <serena.repl.api.fs_api.FileContent object at 0x10ae87a80>
 /* Proposed changes from a galley paper's agents. */
 .demo-proposals { position: fixed; right: 16px; top: 56px; width: 360px; max-height: calc(100vh - 80px); overflow: auto; padding: 12px; border-radius: 10px; background: #1F242B; color: #DEE2E6; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.35); z-index: 10; }

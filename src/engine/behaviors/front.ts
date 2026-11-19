@@ -287,6 +287,8 @@ export const plan: Behavior = {
   ready: (paper) => {
     const s = paper.state
     if (!live(paper) || !s.brief?.hasSubject || s.plan || !aimSettled(paper)) return []
+    // With a dataset, the argument is planned on what it shows.
+    if ((paper.config.materials ?? []).some((m) => m.kind === 'dataset') && !s.measurements && !paper.config.off.includes('analyze')) return []
     return [{
       key: 'plan:argument', label: 'the argument',
       run: async () => {
@@ -303,7 +305,8 @@ Plan the argument of the paper. The seed is the person's; keep its concern and i
 - noun: the name the paper gives its central idea, method or artifact, if it has one (else an empty string).
 - opens: 3 to 6 concrete next papers strangers could write because this one exists.
 - claims: the complete set of claims the argument needs. For each seed claim give its id and action keep, reword or drop (with the reason). Add the claims the argument needs that the seed lacks (id null, action add): background claims about prior work and the state of the field that the paper must establish with citations, and contribution claims that state exactly what this paper delivers. kind is contribution, background, method, novelty or common_knowledge. need is external (must be cited: other people's published work), internal (backed by the authors' own work: what this paper presents, and systems, tools or results the authors themselves built, as the seed's "we" and "our" show) or none (common knowledge or a definition). load_bearing is true when the thesis falls if the claim falls. depends_on lists the ids of claims this one rests on (no cycles).
-Lift the weakest factor where the evidence allows it, but never claim more than can be supported. Aim for about ${Math.max(8, Math.min(40, Math.round(paper.config.words / 230)))} claims in total, scaled to a paper of about ${paper.config.words} words.
+Lift the weakest factor where the evidence allows it, but never claim more than can be supported.
+A claim about the authors' data rests on the measurements: it names the ones it uses (A1, A2), has need internal, says only what they show, and writes any number from them as its placeholder ({{data.A1}}). Aim for about ${Math.max(8, Math.min(40, Math.round(paper.config.words / 230)))} claims in total, scaled to a paper of about ${paper.config.words} words.
 
 ${briefBlock(paper)}
 ${review}

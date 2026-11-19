@@ -1,5 +1,6 @@
 // Who plays which seat, and the dials a paper can turn. A paper's paper.json
 // overrides any of these; nothing else does.
+import type { Material } from './materials.js'
 import type { ModelSpec } from './models.js'
 import type { Family, Seat } from './types.js'
 
@@ -55,6 +56,8 @@ export interface PaperConfig {
   editorDir?: string
   /** Statements only the authors can make; each one left empty is a sign-off item. */
   declarations?: { availability?: string; competing_interests?: string; funding?: string }
+  /** The authors' own datasets, documents and links, copied into the paper's materials folder when it starts. */
+  materials?: Material[]
 }
 
 export const DEFAULT_REFEREES: RefereeSeat[] = [

@@ -16,6 +16,7 @@ export const DOES: Record<string, string> = {
   'review-idea': 'scores the idea on the seven impact factors before anything is written, names the weakest and gives a verdict: worth writing, reformulate, or no contribution',
   reformulate: 'when the idea should be reframed, proposes exactly three structurally different directions that keep the seed\'s explicit commitments',
   'select-direction': 'chooses the original idea or one direction; never the family that proposed the directions',
+  analyze: "when the authors bring a dataset, the author names the analyses the claims need before the argument is planned, and galley computes them on the authors' machine; every number the paper states about the data is filled in from these results",
   plan: "sets the thesis, the paper's noun and the full claim graph, each claim marked as needing external evidence, the authors' own work, or a premise",
   outline: 'sections with word budgets and their claims, planned figures, the style sheet and a glossary',
   'find-evidence': "writes literature searches for each claim that needs evidence, runs them through Canary's search over OpenAlex, and selects candidate passages copied verbatim from the abstracts found",

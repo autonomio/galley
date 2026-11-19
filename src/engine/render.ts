@@ -321,6 +321,10 @@ ${list(s.findings.filter((f) => f.assignee === 'humans' && f.status === 'open').
 ## Steps skipped along the way
 ${list(s.notes.filter((n) => / was skipped /.test(n.text)).map((n) => `${n.behavior}: ${n.text}`), 'None.')}
 
+## Your materials
+${list((paper.config.materials ?? []).map((m) => `${m.id} ${m.kind} ${m.url ?? m.name}${m.kind === 'dataset' ? (m.private ? ': private, the models saw only its profile and the measurements' : ': shared, the models saw its profile and first rows') : ''}`), 'None.')}
+${Object.values(s.measurements ?? {}).length ? `\nMeasurements galley computed from your data (check each against your own analysis):\n${Object.values(s.measurements ?? {}).map((m) => `- ${m.id}: ${m.summary}`).join('\n')}\n` : ''}
+
 ## Production record
 ${Object.entries(record).map(([k, v]) => `- ${PLACEHOLDERS[k] ?? k}: ${v}`).join('\n')}
 `
@@ -370,7 +374,10 @@ function exportEvidence(paper: Paper): void {
     const uncertainty = c.status === 'supported' && cites.length >= 2 ? 'low' : c.status === 'supported' || c.status === 'narrowed' || c.status === 'internal' ? 'medium' : 'high'
     writeFileSync(join(root, 'claims', `${cid}.yaml`), yaml({ id: cid, class: claimClass(c), statement: c.text, uncertainty, evidence_ids: evidenceIds, state: 'active' }))
   }
-  writeFileSync(join(root, 'README.md'), `# Evidence package\n\nThe claims of this manuscript, the evidence each rests on, and the verbatim passages of its sources, as Resolvent records (claims/, evidence/, sources/). Copy them into a Resolvent world model to admit them there.\n`)
+  // Measurements carry their exact specification, so anyone holding the data can recompute every number.
+  const measurements = Object.values(s.measurements ?? {})
+  if (measurements.length) writeFileSync(join(root, 'measurements.json'), JSON.stringify(measurements.map((m) => ({ id: m.id, dataset: (paper.config.materials ?? []).find((x) => x.id === m.spec.dataset)?.name ?? m.spec.dataset, spec: m.spec, result: m.summary, n: m.n })), null, 2) + '\n')
+  writeFileSync(join(root, 'README.md'), `# Evidence package\n\nThe claims of this manuscript, the evidence each rests on, and the verbatim passages of its sources, as Resolvent records (claims/, evidence/, sources/). Copy them into a Resolvent world model to admit them there.${measurements.length ? '\n\nmeasurements.json holds every number the manuscript states about the authors\' data, with the analysis that produced it.' : ''}\n`)
 }
 
 // ---------------------------------------------------------------- typeset

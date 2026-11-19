@@ -17,6 +17,7 @@ import { DOES, systemBlock } from '../../src/engine/self.js'
 import { cleanCsl, openalexKey, searchWait } from '../../src/engine/evidence.js'
 import type { Citation, Finding } from '../../src/engine/types.js'
 import { calibrationItems } from '../../src/engine/behaviors/close.js'
+import { analyze, parseTable, profileDataset, profileText, type AnalysisSpec } from '../../src/engine/materials.js'
 
 describe('text rules', () => {
   it('applies an edit only where its old text is unique', () => {
@@ -109,6 +110,32 @@ describe('searching', () => {
     expect(searchWait(1, 0)).toBe(60_000)
     expect(searchWait(2, 0)).toBe(120_000)
     expect(searchWait(9, 0)).toBe(300_000)
+  })
+})
+
+describe('materials', () => {
+  const spec = (over: Partial<AnalysisSpec>): AnalysisSpec => ({ id: 'A1', dataset: 'M1', op: 'mean', column: null, column2: null, by: null, value: null, where: null, ...over })
+
+  it('reads quoted fields and tabs, and profiles a dataset without showing any row of it', () => {
+    const rows = parseTable('name,arm,score\n"Doe, Jane",treatment,4\nJohn Roe,control,2\nAda Poe,treatment,6\nBo Loe,control,3\n')
+    expect(rows[0]).toEqual({ name: 'Doe, Jane', arm: 'treatment', score: '4' })
+    expect(parseTable('a\tb\n1\t2\n')).toEqual([{ a: '1', b: '2' }])
+    const text = profileText(profileDataset(rows))
+    expect(text).toContain('4 rows, 3 columns')
+    expect(text).toContain('score (number): mean 3.75')
+    expect(text).toContain('arm (category): 2 distinct values: treatment (2), control (2)')
+    expect(text).not.toContain('Jane')
+  })
+
+  it('computes the analyses a paper cites, matching textbook values', () => {
+    const rows = [1, 2, 3, 4, 5].map((x) => ({ g: 'a', x: String(x), y: '' })).concat([3, 4, 5, 6, 7].map((x) => ({ g: 'b', x: String(x), y: '' })))
+    // Welch's t for 1..5 against 3..7: t = -2, df = 8, two-sided p = 0.0805.
+    expect(analyze(rows, spec({ op: 'mean_difference', column: 'x', by: 'g', value: 'a|b' })).summary).toContain('Welch t = -2.00, df = 8.0, p = 0.081')
+    const xy = [[1, 2], [2, 4], [3, 5], [4, 4], [5, 5]].map(([x, y]) => ({ x: String(x), y: String(y) }))
+    expect(analyze(xy, spec({ op: 'correlation', column: 'x', column2: 'y' })).summary).toContain('r = 0.775, n = 5')
+    expect(analyze(rows, spec({ op: 'proportion', column: 'g', value: 'a' })).value).toBe('50%')
+    expect(analyze(rows, spec({ op: 'mean', column: 'x', where: { column: 'g', op: 'eq', value: 'b' } })).value).toBe('5')
+    expect(analyze(rows, spec({ op: 'mean', column: 'nope' })).error).toBeTruthy()
   })
 })
 

@@ -47,12 +47,14 @@ export function productionRecord(paper: Paper): Record_ {
     'run.rounds': s.round,
     'run.calibration': s.calibration ? `${s.calibration.caught} of ${s.calibration.planted}` : 'none to check',
     'run.calibration_controls': s.calibration ? `${s.calibration.details.filter((d) => d.kind === 'control' && d.caught).length} of ${s.calibration.details.filter((d) => d.kind === 'control').length}` : 'none to check',
+    // Numbers from the authors' data, as galley computed them.
+    ...Object.fromEntries(Object.values(s.measurements ?? {}).map((m) => [`data.${m.id}`, m.value])),
   }
 }
 
 export function fillPlaceholders(text: string, record: Record_): { text: string; unknown: string[] } {
   const unknown: string[] = []
-  const filled = text.replace(/\{\{\s*([a-z_.]+)\s*\}\}/g, (whole, key: string) => {
+  const filled = text.replace(/\{\{\s*([A-Za-z0-9_.]+)\s*\}\}/g, (whole, key: string) => {
     if (key in record) return String(record[key])
     unknown.push(key)
     return '[not recorded]'

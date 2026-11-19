@@ -31,7 +31,7 @@ node dist/engine/cli.js run papers/my-seed
 | `ladder` | every behavior, in order |
 | `doctor` | check that each model, tool and source answers |
 
-`write` and `new` take `--author`, `--affiliation`, `--venue`, `--words`, `--citations auto|choose|mixed`, `--dial autonomous|assisted|propose` and `--editor <dir>` (where the manuscript's editor document goes). Everything else is in the paper's `paper.json` (below).
+`write` and `new` take `--author`, `--affiliation`, `--venue`, `--words`, `--rounds 1|2`, `--citations auto|choose|mixed`, `--dial autonomous|assisted|propose`, `--editor <dir>` (where the manuscript's editor document goes), and `--material <file or link>` and `--shared-material <dataset>` for your own materials (below), each as often as needed. Everything else is in the paper's `paper.json` (below).
 
 ## What comes out
 
@@ -79,25 +79,26 @@ Behaviors are atomic: each reads the paper's state, does one thing, and writes i
 | 3 | review-idea | aim | positioned | scores the idea on the seven impact factors |
 | 4 | reformulate | aim | the idea should be reframed | exactly three directions |
 | 5 | select-direction | aim | directions exist | picks one (never the challenger's family) |
-| 6 | plan | skeleton | the aim is settled | thesis, the paper's noun, the full claim graph |
-| 7 | outline | skeleton | planned | sections, figures, style, glossary |
-| 8 | find-evidence | truth | external claims are open | searches, then verbatim passages from abstracts |
-| 9 | verify | truth | citations are selected | supported, narrower (the claim is narrowed) or rejected |
-| 10 | reassess | truth | a load-bearing claim lost its evidence | the thesis stands, narrows, or fails |
-| 11 | calibrate | truth | citations are verified | plants defects and measures what the verifier catches |
-| 12 | draft | skeleton | a section's evidence is settled | the section, citing only verified keys |
-| 13 | figure | substance | a figure is planned | Typst source, compiled |
-| 14 | fidelity | truth | a section is drafted | fixes sentences that say more than their evidence |
-| 15 | frame | manuscript | every section is checked, and again once the ledger is reconciled | title, abstract, keywords; rewritten from the reviewed text |
-| 16 | referee | referees | framed, nothing open | four seats review the whole manuscript |
-| 17 | close-round | referees | every seat reported | ends the round |
-| 18 | respond | referees | a material finding is open | fixed, rebutted, or stated as a limitation |
-| 19 | verify-disposition | referees | an answer is unverified | the referee who raised it judges the answer |
-| 20 | adjudicate | referees | a finding is still disputed at the cap | the third family decides |
-| 21 | reconcile | close | the review is done | a family other than the author's reads the final text against every claim: confirmed, narrowed to the text's wording, or dropped as no longer stated |
-| 22 | reprofile | close | the review is done | the finished paper against the seven factors |
-| 23 | typeset | skeleton | the text changed | PDF, LaTeX, Word, editor document, evidence package, sign-off |
-| 24 | ready | close | every gate holds on one revision | ready for submission |
+| 6 | analyze | truth | a dataset was given, the direction is chosen | the analyses the claims need, computed on your machine |
+| 7 | plan | skeleton | the aim is settled | thesis, the paper's noun, the full claim graph |
+| 8 | outline | skeleton | planned | sections, figures, style, glossary |
+| 9 | find-evidence | truth | external claims are open | searches, then verbatim passages from abstracts |
+| 10 | verify | truth | citations are selected | supported, narrower (the claim is narrowed) or rejected |
+| 11 | reassess | truth | a load-bearing claim lost its evidence | the thesis stands, narrows, or fails |
+| 12 | calibrate | truth | citations are verified | plants defects and measures what the verifier catches |
+| 13 | draft | skeleton | a section's evidence is settled | the section, citing only verified keys |
+| 14 | figure | substance | a figure is planned | Typst source, compiled |
+| 15 | fidelity | truth | a section is drafted | fixes sentences that say more than their evidence |
+| 16 | frame | manuscript | every section is checked, and again once the ledger is reconciled | title, abstract, keywords; rewritten from the reviewed text |
+| 17 | referee | referees | framed, nothing open | four seats review the whole manuscript |
+| 18 | close-round | referees | every seat reported | ends the round |
+| 19 | respond | referees | a material finding is open | fixed, rebutted, or stated as a limitation |
+| 20 | verify-disposition | referees | an answer is unverified | the referee who raised it judges the answer |
+| 21 | adjudicate | referees | a finding is still disputed at the cap | the third family decides |
+| 22 | reconcile | close | the review is done | a family other than the author's reads the final text against every claim: confirmed, narrowed to the text's wording, or dropped as no longer stated |
+| 23 | reprofile | close | the review is done | the finished paper against the seven factors |
+| 24 | typeset | skeleton | the text changed | PDF, LaTeX, Word, editor document, evidence package, sign-off |
+| 25 | ready | close | every gate holds on one revision | ready for submission |
 
 The skeleton (extract, plan, outline, draft, frame, typeset, ready) is what makes a paper exist. Everything else is an improver: it can make the paper better but can never stop it. An improver that fails twice is settled as skipped, its effect is written down (a claim without evidence is hedged; a figure is left out), and the paper moves on. A model provider at a usage limit is waited out for up to about six hours (a subscription's window), never counted as a failure; only a longer limit pauses the run, and running it again resumes it. A search index that is unavailable (OpenAlex pauses keyless search under heavy load) is waited out for up to three hours, retrying less often as the wait grows; after that the search is given up and the claims it was for are hedged.
 
@@ -105,7 +106,23 @@ Three things end a paper without a manuscript, each with a report: the seed has 
 
 ## Start a paper from the editor
 
-Run the editor (`npm run dev`), write or paste your rant as a document, and press the speech-bubble button, **Write a paper from this document**. Galley asks whether you want to pick the sources for the load-bearing claims yourself, then runs in the background. The manuscript arrives in the same document list as `<your-document>-paper` once it is typeset. Press the button again on the seed to see where the paper stands; its run log is `papers/<your-document>-paper/run.log`.
+Run the editor (`npm run dev`), write or paste your rant as a document, and press the speech-bubble button, **Write a paper from this document**. A four-step dialog opens; nothing starts until its last step:
+
+1. **Seed.** Your words, as they are; nothing is added to them.
+2. **Materials.** Drop datasets (CSV, TSV, JSON) and documents (Markdown, text, Word, PDF), or add links. Each dataset is private unless you switch it to shared.
+3. **Settings.** Author and affiliation (set in the byline, never sent to a model), venue, length, one or two referee rounds, your part (autonomous, assisted, propose), how citations are chosen, the seats and models, and whether literature search has an OpenAlex key.
+4. **Start.** Every step the paper will go through, who does it and about how long it takes, and exactly what leaves your machine.
+
+The manuscript arrives in the same document list as `<your-document>-paper` once it is typeset. Press the button again on the seed to see where the paper stands; its run log is `papers/<your-document>-paper/run.log`.
+
+## Your own materials and private data
+
+A paper can rest on your own material besides the literature. Datasets, documents and links are copied into the paper's `materials/` folder when it starts; links are read once then, so every step reads the same page.
+
+- **A private dataset never leaves your machine.** The models see a profile of it (rows, columns, each column's type, missing values, summary statistics, and the values of repeating categories, never a value that occurs once) and the results galley computes.
+- **Measure, then argue.** Before the argument is planned, the author names the analyses the claims need (counts, means, medians, proportions, group means, correlations, mean differences with Welch's t), and galley computes them on your machine. Every number the paper states about your data is a placeholder (`{{data.A1}}`) filled in from those results, never a figure a model wrote. The results, with the exact analysis behind each, go into the evidence package (`measurements.json`) and onto the sign-off sheet for you to check.
+- **A shared dataset** shows the models its first 15 rows as well.
+- **Documents and links** are read by the models that write and review the paper.
 
 ## When you want to be in it
 

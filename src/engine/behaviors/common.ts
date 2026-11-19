@@ -3,6 +3,7 @@
 import type { Paper } from '../paper.js'
 import { fillPlaceholders, productionRecord } from '../record.js'
 import { systemBlock } from '../self.js'
+import { materialsBlock, measurementsBlock } from '../materials.js'
 import { authorYear, citationKey } from '../text.js'
 import type { Citation, Claim, ClaimStatus, Family, Seat, Work } from '../types.js'
 
@@ -72,8 +73,8 @@ export function briefBlock(paper: Paper): string {
   ]
   const chosen = selectedDirection && directions.find((d) => d.id === selectedDirection.id)
   if (chosen) lines.push(`Selected direction: ${chosen.title}: ${chosen.question} (shift: ${chosen.shift})`)
-  const system = systemBlock(paper)
-  return lines.filter(Boolean).join('\n') + (system ? `\n\n${system}` : '')
+  const extra = [materialsBlock(paper), measurementsBlock(paper), systemBlock(paper)].filter(Boolean)
+  return [lines.filter(Boolean).join('\n'), ...extra].join('\n\n')
 }
 
 export function sectionText(paper: Paper, sectionId: string): string {
@@ -111,7 +112,7 @@ export function ledgerAppendix(paper: Paper): string {
 
 /** For prompts that edit stored text: what each placeholder in it stands for right now. */
 export function placeholderLegend(paper: Paper, text: string): string {
-  const keys = [...new Set([...text.matchAll(/\{\{\s*([a-z_.]+)\s*\}\}/g)].map((m) => m[1]))]
+  const keys = [...new Set([...text.matchAll(/\{\{\s*([A-Za-z0-9_.]+)\s*\}\}/g)].map((m) => m[1]))]
   if (!keys.length) return ''
   const record = productionRecord(paper)
   return `Text like {{run.calls}} is a placeholder for a number from this manuscript's own production record; it is filled in wherever the paper is shown and typeset. Keep placeholders as they are in edits. Current values: ${keys.map((k) => `{{${k}}} = ${record[k] ?? 'not recorded'}`).join('; ')}.`

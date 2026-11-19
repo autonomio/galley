@@ -17,7 +17,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { LADDER } from './behaviors/index.js'
 import { answerChoice } from './behaviors/truth.js'
-import { FAMILY_MODELS } from './config.js'
+import { defaultConfig, FAMILY_MODELS, FAMILY_NAMES } from './config.js'
 import { budgetLine, canaryPython, canarySearch, openalexBudget, openalexKeyed, SEARCH_CREDITS } from './evidence.js'
 import { callModel, codexBin } from './models.js'
 import { Paper } from './paper.js'
@@ -25,6 +25,7 @@ import { editorDir, importEditorEdits, importHumanNotes, importProposalDecisions
 import { runPaper, Stalled } from './scheduler.js'
 import { obj, bool } from './schema.js'
 import { DOES } from './self.js'
+import { addMaterials } from './materials.js'
 import type { Family } from './types.js'
 
 const [command, ...args] = process.argv.slice(2)
@@ -32,6 +33,11 @@ const [command, ...args] = process.argv.slice(2)
 function flag(name: string): string | undefined {
   const i = args.indexOf(`--${name}`)
   return i >= 0 ? args[i + 1] : undefined
+}
+
+/** Every value of a flag that may repeat. */
+function flags(name: string): string[] {
+  return args.flatMap((a, i) => a === `--${name}` && args[i + 1] !== undefined ? [args[i + 1]] : [])
 }
 
 function positional(): string[] {
@@ -147,7 +153,13 @@ async function main(): Promise<void> {
       const seed = readFileSync(seedFile, 'utf8')
       const dir = resolve(command === 'write' ? (b ?? `papers/${slugFromSeed(seed, seedFile)}`) : a)
       const author = flag('author')
+      // The authors' own materials: datasets stay private unless named shared.
+      const sources = [...flags('material').map((source) => ({ source })), ...flags('shared-material').map((source) => ({ source, shared: true }))]
+      const materials = sources.length ? await addMaterials(dir, sources) : []
+      for (const m of materials) console.log(`Material ${m.id}: ${m.kind} ${m.url ?? m.name}${m.kind === 'dataset' ? (m.private ? ' (private)' : ' (shared)') : m.text ? '' : ' (its text could not be read)'}`)
       Paper.create(dir, seed, {
+        ...(materials.length ? { materials } : {}),
+        ...(flag('rounds') ? { rounds: Math.max(1, Number(flag('rounds'))) } : {}),
         ...(author ? { authors: [{ name: author, ...(flag('affiliation') ? { affiliation: flag('affiliation') } : {}) }] } : {}),
         ...(flag('venue') ? { venue: flag('venue')! } : {}),
         ...(flag('words') ? { words: Number(flag('words')) } : {}),
@@ -221,6 +233,17 @@ async function main(): Promise<void> {
       const paper = Paper.open(resolve(dir))
       const editor = editorDir(paper)
       console.log(`The manuscript and its notes are in ${editor}. Open them in the editor with:\n\n  GALLEY_DIR=${editor} npm run dev\n\nthen visit http://localhost:5174. Your edits and notes go back into the paper on the next "galley run ${dir}".`)
+      return
+    }
+    case 'context': {
+      // What a host shows before a paper starts: who sits where, the defaults, and whether literature search has a key.
+      const config = defaultConfig()
+      console.log(JSON.stringify({
+        openalexKey: openalexKeyed(),
+        seats: Object.fromEntries(Object.entries(config.seats).map(([seat, family]) => [seat, { family, name: FAMILY_NAMES[family], model: FAMILY_MODELS[family].model }])),
+        referees: config.referees.map((r) => r.seat),
+        defaults: { venue: config.venue, words: config.words, rounds: config.rounds, dial: config.dial, citations: config.citations },
+      }))
       return
     }
     case 'ladder':

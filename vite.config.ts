@@ -54,6 +54,13 @@ function papersPlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use('/api/galley-papers', (req, res) => {
         const [slugPart, sub] = decodeURIComponent((req.url || '').replace(/^\//, '').split('?')[0]).split('/')
+        if (slugPart === '_context') {
+          // What the wizard shows before a paper starts: seats, models, defaults, and whether OpenAlex has a key.
+          if (!existsSync(cli)) { res.statusCode = 503; res.end('build galley first: npm run build'); return }
+          res.setHeader('Content-Type', 'application/json')
+          res.end(execFileSync(process.execPath, [cli, 'context']).toString())
+          return
+        }
         const slug = slugPart
         if (!/^[a-z0-9][a-z0-9-]*$/i.test(slug)) { res.statusCode = 400; res.end('bad document name'); return }
         const paperDir = resolve('papers', `${slug}-paper`)
@@ -108,14 +115,34 @@ function papersPlugin(): Plugin {
         let body = ''
         req.on('data', (chunk) => { body += chunk })
         req.on('end', () => {
-          const { text } = JSON.parse(body || '{}')
-          const seed = join(tmpdir(), `galley-seed-${slug}-${Date.now()}.md`)
+          const { text, settings = {}, materials = [], citations } = JSON.parse(body || '{}')
+          const stamp = Date.now()
+          const seed = join(tmpdir(), `galley-seed-${slug}-${stamp}.md`)
           writeFileSync(seed, String(text || ''))
+          // The wizard's settings become the engine's flags; each value is checked against what the engine accepts.
+          const s = settings as Record<string, unknown>
+          const args: string[] = []
+          const add = (name: string, value: unknown, ok: (v: string) => boolean) => { const v = String(value ?? '').trim(); if (v && ok(v)) args.push(`--${name}`, v) }
+          add('author', s.author, (v) => v.length <= 200)
+          add('affiliation', s.affiliation, (v) => v.length <= 300)
+          add('venue', s.venue, (v) => v.length <= 200)
+          add('words', s.words, (v) => /^\d{3,5}$/.test(v))
+          add('rounds', s.rounds, (v) => /^[12]$/.test(v))
+          add('dial', s.dial, (v) => ['autonomous', 'assisted', 'propose'].includes(v))
+          add('citations', s.citations ?? citations, (v) => ['auto', 'choose', 'mixed'].includes(v))
+          // Uploaded files are written under their own names for the engine to copy into the paper; links pass as they are.
+          const inbox = join(tmpdir(), `galley-materials-${slug}-${stamp}`)
+          for (const m of materials as { name?: string; url?: string; data?: string; private?: boolean }[]) {
+            if (m.url && /^https?:\/\//i.test(m.url)) { args.push('--material', m.url); continue }
+            if (!m.data || !m.name) continue
+            mkdirSync(inbox, { recursive: true })
+            const file = join(inbox, m.name.replace(/[^\w.-]+/g, '_'))
+            writeFileSync(file, Buffer.from(m.data, 'base64'))
+            args.push(m.private === false ? '--shared-material' : '--material', file)
+          }
           mkdirSync(paperDir, { recursive: true })
           const log = openSync(join(paperDir, 'run.log'), 'a')
-          const { citations } = JSON.parse(body || '{}')
-          const extra = citations === 'mixed' || citations === 'choose' ? ['--citations', citations] : []
-          spawn(process.execPath, [cli, 'write', seed, paperDir, '--editor', dir, ...extra], { detached: true, stdio: ['ignore', log, log] }).unref()
+          spawn(process.execPath, [cli, 'write', seed, paperDir, '--editor', dir, ...args], { detached: true, stdio: ['ignore', log, log] }).unref()
           res.statusCode = 202
           res.end(JSON.stringify({ dir: paperDir }))
         })
