@@ -4,7 +4,8 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { claim, keyFor, ledgerAppendix } from './behaviors/common.js'
 import { FAMILY_NAMES } from './config.js'
 import { cleanCsl, cslForDoi, cslFromWork } from './evidence.js'
@@ -146,7 +147,9 @@ function findingComment(paper: Paper, f: Finding): string {
 }
 
 const editorSlug = (paper: Paper) => paper.state.slug.toLowerCase().replace(/[^a-z0-9-]+/g, '-')
-const editorDir = (paper: Paper) => paper.config.editorDir || paper.path('editor')
+/** The editor's own document folder, the one `npm run dev` lists, so every paper's manuscript shows up there. */
+const EDITOR_DOCUMENTS = resolve(process.env.GALLEY_DIR || join(dirname(fileURLToPath(import.meta.url)), '..', '..', '.galley-data'))
+export const editorDir = (paper: Paper) => paper.config.editorDir || EDITOR_DOCUMENTS
 // In the editor the title is #, sections are ##, and a section's own subheadings sit one level lower.
 const demote = (text: string) => text.replace(/^(#{1,5}) /gm, '#$1 ')
 const promote = (text: string) => text.replace(/^#(#{1,5}) /gm, '$1 ')

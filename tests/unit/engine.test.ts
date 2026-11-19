@@ -130,7 +130,7 @@ describe('the editor round trip', () => {
 
   it('turns what a person changed in the editor into their revision, and leaves the rest alone', async () => {
     dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
-    const paper = Paper.create(join(dir, 'p'), 'seed', { authors: [{ name: 'Ada' }] })
+    const paper = Paper.create(join(dir, 'p'), 'seed', { authors: [{ name: 'Ada' }], editorDir: join(dir, 'p', 'editor') })
     const s = paper.state
     s.frame = { title: 'T', abstract: 'A.', keywords: [], limitations: '', opens: '' }
     s.outline = { sections: [{ id: 'S1', title: 'One', purpose: '', claimIds: [], words: 1, figureIds: [] }, { id: 'S2', title: 'Two', purpose: '', claimIds: [], words: 1, figureIds: [] }], style: '', glossary: [] }

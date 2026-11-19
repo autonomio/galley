@@ -21,7 +21,7 @@ import { FAMILY_MODELS } from './config.js'
 import { budgetLine, canaryPython, canarySearch, openalexBudget, openalexKeyed, SEARCH_CREDITS } from './evidence.js'
 import { callModel, codexBin } from './models.js'
 import { Paper } from './paper.js'
-import { importEditorEdits, importHumanNotes, importProposalDecisions, productionRecord, typeset } from './render.js'
+import { editorDir, importEditorEdits, importHumanNotes, importProposalDecisions, productionRecord, typeset } from './render.js'
 import { runPaper, Stalled } from './scheduler.js'
 import { obj, bool } from './schema.js'
 import { DOES } from './self.js'
@@ -219,7 +219,7 @@ async function main(): Promise<void> {
     case 'open': {
       const [dir] = positional()
       const paper = Paper.open(resolve(dir))
-      const editor = paper.config.editorDir || paper.path('editor')
+      const editor = editorDir(paper)
       console.log(`The manuscript and its notes are in ${editor}. Open them in the editor with:\n\n  GALLEY_DIR=${editor} npm run dev\n\nthen visit http://localhost:5174. Your edits and notes go back into the paper on the next "galley run ${dir}".`)
       return
     }

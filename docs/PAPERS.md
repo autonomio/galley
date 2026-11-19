@@ -109,10 +109,10 @@ Run the editor (`npm run dev`), write or paste your rant as a document, and pres
 
 ## When you want to be in it
 
-The editor shows the manuscript's source, with a note on every material referee finding and how it was resolved:
+Every paper's manuscript lands in the editor's own document list (`.galley-data/`, or `GALLEY_DIR` when set), so the editor shows all of them, each with a note on every material referee finding and how it was resolved. `--editor <dir>` puts a paper's manuscript somewhere else.
 
 ```bash
-GALLEY_DIR=papers/<slug>/editor npm run dev
+npm run dev
 ```
 
 - **Edit anything.** What you change becomes your revision of the paper on the next run.
