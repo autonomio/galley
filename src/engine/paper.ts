@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { defaultConfig, specFor, type PaperConfig } from './config.js'
+import { defaultConfig, lightSpecFor, specFor, type PaperConfig } from './config.js'
 import { callModel, ModelFailure, RateLimited, resetHintMs, type CallResult } from './models.js'
 import type { Schema } from './schema.js'
 import type { Family, Note, PaperState, Seat } from './types.js'
@@ -46,6 +46,8 @@ export interface AskOptions {
   prompt: string
   schema: Schema
   effort?: string
+  /** Settle a single referee finding on the lighter settings (LIGHT_MODELS). */
+  light?: boolean
 }
 
 /** A model call or search in flight, for heartbeats and `galley status`. */
@@ -170,7 +172,7 @@ export class Paper {
 
   /** Ask one family for one structured answer, within its concurrency limit, waiting out provider limits. */
   async ask<T = any>(options: AskOptions): Promise<T> {
-    const spec = { ...specFor(this.config, options.family), ...(options.effort ? { effort: options.effort } : {}) }
+    const spec = options.light ? lightSpecFor(this.config, options.family) : { ...specFor(this.config, options.family), ...(options.effort ? { effort: options.effort } : {}) }
     const seq = ++this.callSeq
     const file = `${String(Date.now()).slice(-9)}-${seq}-${options.behavior}-${options.family}.json`
     for (let wait = 0; ; wait++) {

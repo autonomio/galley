@@ -17,6 +17,23 @@ export const FAMILY_NAMES: Record<Family, string> = {
   gemini: 'Gemini 4 Carbon',
 }
 
+/** Lighter settings for settling single referee findings (answering one, judging an answer, deciding a dispute): the same families, less reasoning. */
+export const LIGHT_MODELS: Record<Family, { model: string; effort: string }> = {
+  claude: { model: 'claude-opus-5-5', effort: 'medium' },
+  gpt: { model: 'gpt-6.2-sol', effort: 'medium' },
+  gemini: { model: 'gemini-4-hydrogen-medium', effort: 'medium' },
+}
+
+const LIGHT_NAMES: Record<string, string> = {
+  'claude-opus-5-5': 'Claude Opus 5.5', 'gpt-6.2-sol': 'GPT-6.2 Sol', 'gemini-4-hydrogen-medium': 'Gemini 4 Hydrogen', 'gemini-4-carbon-high': 'Gemini 4 Carbon',
+}
+
+/** A light setting as the AI statement names it: Gemini 4 Hydrogen, or Claude Opus 5.5 at medium effort. */
+export function lightName(spec: ModelSpec): string {
+  const name = LIGHT_NAMES[spec.model] ?? spec.model
+  return spec.family === 'gemini' ? name : `${name} at ${spec.effort} effort`
+}
+
 export interface RefereeSeat {
   seat: string
   family: Family
@@ -48,6 +65,8 @@ export interface PaperConfig {
   seats: Record<Exclude<Seat, 'referee' | 'adjudicator'>, Family>
   referees: RefereeSeat[]
   models: Partial<Record<Family, { model: string; effort: string }>>
+  /** The lighter settings that answer, judge and settle single referee findings; defaults to LIGHT_MODELS. */
+  lightModels?: Partial<Record<Family, { model: string; effort: string }>>
   /** Behaviors switched off for this paper. */
   off: string[]
   /** Append the claim ledger (every claim, its standing and its sources) to the manuscript. Default true. */
@@ -111,6 +130,11 @@ export function defaultConfig(): PaperConfig {
 
 export function specFor(config: PaperConfig, family: Family): ModelSpec {
   const chosen = config.models[family] ?? FAMILY_MODELS[family]
+  return { family, model: chosen.model, effort: chosen.effort }
+}
+
+export function lightSpecFor(config: PaperConfig, family: Family): ModelSpec {
+  const chosen = config.lightModels?.[family] ?? LIGHT_MODELS[family]
   return { family, model: chosen.model, effort: chosen.effort }
 }
 

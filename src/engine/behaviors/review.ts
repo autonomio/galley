@@ -153,7 +153,7 @@ export const respond: Behavior = {
         const section = s.outline?.sections.find((sec) => sec.id === sectionId)
         const text = section ? `Section ${section.id} ${section.title}:\n"""\n${sectionText(paper, section.id)}\n"""` : `The whole manuscript:\n${manuscriptBlock(paper)}`
         const reply = await paper.ask<any>({
-          behavior: 'respond', target: findings.map((f) => f.id).join(','), seat: 'author', family,
+          behavior: 'respond', light: true, target: findings.map((f) => f.id).join(','), seat: 'author', family,
           prompt: `${HOUSE}
 
 ${STYLE}
@@ -238,7 +238,7 @@ export const verifyDisposition: Behavior = {
       key: `verify-disposition:${findings.map((f) => `${f.id}.${f.dispositions.length}`).join(',')}`, label: `${findings.length} answer(s) for ${family}`,
       run: async () => {
         const reply = await paper.ask<any>({
-          behavior: 'verify-disposition', target: findings.map((f) => f.id).join(','), seat: 'referee', family,
+          behavior: 'verify-disposition', light: true, target: findings.map((f) => f.id).join(','), seat: 'referee', family,
           prompt: `${HOUSE}
 
 You raised these findings as a referee. The author answered each. Judge each answer against the current text.
@@ -287,7 +287,7 @@ export const adjudicate: Behavior = {
           // The whole manuscript: a disputed finding often spans sections.
           const current = manuscriptBlock(paper)
           const reply = await paper.ask<any>({
-            behavior: 'adjudicate', target: f.id, seat: 'adjudicator', family,
+            behavior: 'adjudicate', light: true, target: f.id, seat: 'adjudicator', family,
             prompt: `${HOUSE}
 
 ${STYLE}

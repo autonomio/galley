@@ -246,3 +246,14 @@ describe('provider limits', () => {
     expect(resetHintMs('usage limit reached; try later')).toBeNull()
   })
 })
+
+describe('settling referee findings', () => {
+  it('answers, judges and settles single findings on the lighter settings: medium effort, and Gemini 4 Hydrogen', async () => {
+    const { lightSpecFor, lightName, defaultConfig } = await import('../../src/engine/config.js')
+    const config = defaultConfig()
+    expect(lightSpecFor(config, 'gemini')).toEqual({ family: 'gemini', model: 'gemini-4-hydrogen-medium', effort: 'medium' })
+    expect(lightSpecFor(config, 'gpt').effort).toBe('medium')
+    expect(lightName(lightSpecFor(config, 'gemini'))).toBe('Gemini 4 Hydrogen')
+    expect(lightName(lightSpecFor(config, 'claude'))).toBe('Claude Opus 5.5 at medium effort')
+  })
+})

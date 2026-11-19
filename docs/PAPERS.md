@@ -64,6 +64,8 @@ Three model families take different seats, and no family reviews its own work.
 | Referees | GPT-6.2 Sol and Gemini 4 Carbon | methods, field, citations and editor seats; families rotate between rounds and never include the author's |
 | Adjudicator | the third family | settles a finding the author and referee could not agree on |
 
+Every seat runs at full reasoning (Claude and GPT at xhigh, Gemini as Carbon at high), except the three steps that settle single referee findings: the author's answer, the referee's judgment of it and the adjudicator's decision run on lighter settings, Claude and GPT at medium effort and Gemini as Hydrogen (`gemini-4-hydrogen-medium`). The families and the rule that no family judges its own work stay the same; the AI statement names both settings.
+
 Each family runs through its own CLI with no tools and no delegation: Claude through `claude`, GPT through Codex (the CLI the ChatGPT app ships, which knows Sol 6.2), Gemini through `agy`. Literature search runs through Canary's search runtime over OpenAlex; bibliographic records come from the DOI registries.
 
 When the seed is about galley itself (extract decides), every seat that writes or judges the manuscript also reads galley's description of itself: the ladder this run executes and what each behavior does (as `galley ladder` prints it), the seats and models, the run's settings and the rules the code enforces, generated from the code and the paper's configuration (`src/engine/self.ts`). A paper about galley therefore describes the system as it is, with nothing added to its seed. Every paper's production statement names the exact software that produced it.
@@ -187,6 +189,7 @@ Comment and edit between runs, not while one is running.
 | `fixAttempts` | 3 | answers per finding before adjudication |
 | `seats` | as above | e.g. `{ "author": "claude" }` |
 | `models` | as above | e.g. `{ "gpt": { "model": "gpt-6.2-sol", "effort": "xhigh" } }` |
+| `lightModels` | medium effort; Gemini 4 Hydrogen | the settings that answer, judge and settle single referee findings, e.g. `{ "gemini": { "model": "gemini-4-hydrogen-high", "effort": "high" } }` |
 | `off` | none | behaviors to switch off, by id |
 | `declarations` | none | `availability`, `competing_interests`, `funding` |
 
