@@ -84,7 +84,8 @@ function proposalsPlugin(): Plugin {
 // detached, writes its progress to papers/<slug>/run.log, takes the seed into
 // the project, and writes the living paper into the document it started from.
 function papersPlugin(): Plugin {
-  const cli = resolve('dist/engine/cli.js')
+  // GALLEY_CLI stands a test's engine in for the real one; nothing else sets it.
+  const cli = resolve(process.env.GALLEY_CLI || 'dist/engine/cli.js')
   return {
     name: 'galley-papers',
     configureServer(server) {
