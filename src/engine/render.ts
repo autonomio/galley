@@ -112,7 +112,8 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
     }
   }
   const decl = paper.config.declarations ?? {}
-  if (paper.config.ledgerAppendix !== false) body.push(`# Appendix A: Claim ledger {.unnumbered}\n\n${ledgerAppendix(paper)}`)
+  // The ledger quotes claims as they stand, placeholders included, so it is filled like every other part of the text.
+  if (paper.config.ledgerAppendix !== false) body.push(`# Appendix A: Claim ledger {.unnumbered}\n\n${fillPlaceholders(ledgerAppendix(paper), record).text}`)
   body.push(`# Use of AI and production record {.unnumbered}\n\n${disclosure(paper, record)}`)
   const evidencePackage = 'Every claim in this manuscript, the evidence it rests on and the verbatim passages of its sources are available as an evidence package accompanying it (claims, evidence and sources in the Resolvent format).'
   const reproduction = runsOf(paper).length ? ` The simulations can be rerun, and every simulated number checked against this manuscript, with the reproduction package that accompanies it (simulation/: node simulate.mjs --verify, or index.html in a browser).` : ''

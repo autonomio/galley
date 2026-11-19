@@ -63,3 +63,21 @@ describe('a simulation paper as published', () => {
     expect(markdown).not.toContain('{{sim.')
   })
 })
+
+describe('the claim ledger as published', () => {
+  it('fills the numbers its claims carry, as the body does', async () => {
+    const { buildManuscript } = await import('../../src/engine/render.js')
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const paper = Paper.create(join(dir, 'p'), 'seed')
+    const s = paper.state
+    s.measurements = { A1: { id: 'A1', spec: { id: 'A1', dataset: 'M1', op: 'quantile', column: 'Delay ms', column2: null, by: null, value: '0.99', where: null }, value: '422.2', summary: '99th percentile of Delay ms: 422.2, n = 147', n: 147 } }
+    s.claims = [{ id: 'C1', text: 'The 99th-percentile switchover latency is {{data.A1}} ms.', kind: 'contribution', seedQuote: '', origin: 'system', need: 'internal', loadBearing: true, dependsOn: [], status: 'internal', history: [] }]
+    s.outline = { sections: [{ id: 'S1', title: 'Results', purpose: '', claimIds: ['C1'], words: 200, figureIds: [] }], style: '', glossary: [] }
+    s.passages = { S1: { sectionId: 'S1', text: 'The 99th percentile is {{data.A1}} ms.', revisions: [], checked: 'faithful' } }
+    s.frame = { title: 'Latency', abstract: 'a', keywords: [], limitations: '', opens: '' }
+    const { markdown } = await buildManuscript(paper)
+    const ledger = markdown.slice(markdown.indexOf('# Appendix A'))
+    expect(ledger).toContain('The 99th-percentile switchover latency is 422.2 ms.')
+    expect(markdown).not.toContain('{{data.')
+  })
+})

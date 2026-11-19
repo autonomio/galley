@@ -96,7 +96,7 @@ export function manuscriptBlock(paper: Paper, withAbstract = true, withLedger = 
   for (const section of outline?.sections ?? []) {
     parts.push(`[${section.id}] # ${section.title}\n\n${fillPlaceholders(sectionText(paper, section.id), record).text}`)
   }
-  if (outline && withLedger && paper.config.ledgerAppendix !== false) parts.push(`[Appendix A, generated from the claim ledger at typesetting: it changes when claims change, and is not edited directly] # Claim ledger\n\n${ledgerAppendix(paper)}`)
+  if (outline && withLedger && paper.config.ledgerAppendix !== false) parts.push(`[Appendix A, generated from the claim ledger at typesetting: it changes when claims change, and is not edited directly] # Claim ledger\n\n${fillPlaceholders(ledgerAppendix(paper), record).text}`)
   return parts.join('\n\n')
 }
 
