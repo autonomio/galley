@@ -134,6 +134,14 @@ function statusData(paper: Paper): Record<string, unknown> {
     review: { round: s.round, rounds: paper.config.rounds, findings: s.findings.length, open: s.findings.filter((f) => f.status === 'open').length },
     cost: { calls: record['run.calls'], tokensInM: record['run.tokens_in_m'], hours: record['run.hours'] },
     typeset: existsSync(paper.path('out', 'paper.pdf')),
+    // What the project was started with, shown in its settings: the seed is kept here once the document becomes the paper.
+    seed: s.seed.text,
+    settings: {
+      literatureReview: paper.config.literatureReview ?? false, simulation: paper.config.simulation ?? false,
+      rounds: paper.config.rounds, words: paper.config.words, venue: paper.config.venue,
+      authors: paper.config.authors.map((a) => a.affiliation ? `${a.name}, ${a.affiliation}` : a.name),
+      materials: (paper.config.materials ?? []).map((m) => `${m.name}${m.kind === 'dataset' ? (m.private ? ' (private dataset)' : ' (shared dataset)') : m.kind === 'link' ? ' (link)' : ''}`),
+    },
   }
 }
 

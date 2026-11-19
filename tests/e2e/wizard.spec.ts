@@ -33,6 +33,8 @@ test('the paper wizard walks through seed, materials and settings, and starts th
   await page.locator('[data-action="write-paper"]').click()
   const wizard = page.locator('dialog.gw')
   await expect(wizard.getByRole('heading', { name: 'Your seed' })).toBeVisible()
+  await expect(wizard.locator('details.gw-seed summary')).toHaveText('Your seed, as you wrote it')
+  await expect(wizard).toContainText('this document becomes the paper')
   await wizard.getByRole('button', { name: 'Next: Materials' }).click()
   await wizard.locator('input[type=file]').setInputFiles({ name: 'trees.csv', mimeType: 'text/csv', buffer: Buffer.from('id,site,alive\n1,pit,no\n2,park,yes\n3,pit,no\n') })
   await expect(wizard.locator('.gw-row')).toContainText('3 rows · 3 columns')
@@ -77,6 +79,8 @@ test('a seed that already has a paper shows where the paper stands, and opens th
     claims: { total: 12, supported: 3, narrowed: 1, own: 6, premises: 1, hypotheses: 1, open: 0 },
     evidence: { screened: 140, verified: 4, rejected: 9 }, sections: { drafted: 0, total: 8 },
     review: { round: 0, rounds: 2, findings: 0, open: 0 }, cost: { calls: 17, tokensInM: 0.7, hours: 0.8 },
+    seed: 'City trees die young in narrow pavement pits.',
+    settings: { literatureReview: true, simulation: false, rounds: 2, words: 7000, venue: 'preprint (arXiv)', authors: ['Ada Lovelace'], materials: ['trees.csv (private dataset)'] },
   }
   let data: Record<string, unknown> = {
     ...base, outcome: null, running: true, typeset: false,
@@ -98,6 +102,9 @@ test('a seed that already has a paper shows where the paper stands, and opens th
   await expect(status.locator('.gw-now')).toContainText('resets in 22 min')
   await expect(status.locator('.gw-now')).toContainText('next try in 14 min')
   await expect(status.getByRole('button', { name: 'Open the manuscript' })).toBeHidden()
+  await status.locator('details.gw-seed summary').click()
+  await expect(status.locator('details.gw-seed')).toContainText('City trees die young in narrow pavement pits.')
+  await expect(status.locator('details.gw-seed')).toContainText('yes, supporting')
   await status.getByRole('button', { name: 'Close' }).click()
   await expect(status).toHaveCount(0)
 

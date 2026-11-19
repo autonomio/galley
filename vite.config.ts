@@ -80,9 +80,9 @@ function proposalsPlugin(): Plugin {
   }
 }
 
-// A seed document becomes a paper: the engine runs detached, writes its
-// progress to papers/<slug>-paper/run.log, and puts the manuscript's editor
-// document beside the seed, so it shows up in the same document list.
+// A seed document becomes a paper, in the same document: the engine runs
+// detached, writes its progress to papers/<slug>/run.log, takes the seed into
+// the project, and writes the living paper into the document it started from.
 function papersPlugin(): Plugin {
   const cli = resolve('dist/engine/cli.js')
   return {
@@ -99,7 +99,10 @@ function papersPlugin(): Plugin {
         }
         const slug = slugPart
         if (!/^[a-z0-9][a-z0-9-]*$/i.test(slug)) { res.statusCode = 400; res.end('bad document name'); return }
-        const paperDir = join(papers, `${slug}-paper`)
+        // One document, one project: the paper is written into the document it starts from, so its folder takes the
+        // document's name. A project started before this keeps its <name>-paper folder and is still found.
+        const legacy = join(papers, `${slug}-paper`)
+        const paperDir = existsSync(join(legacy, 'state.json')) ? legacy : join(papers, slug)
         if (sub === 'choices') {
           // "For this claim, choose a, b or c": the open choices, and a person's answer to one.
           const statePath = join(paperDir, 'state.json')

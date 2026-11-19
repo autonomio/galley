@@ -11,6 +11,11 @@ interface Context {
   defaults: { venue: string; words: number; rounds: number; dial: string; citations: string; literatureReview?: boolean; simulation?: boolean }
   review?: { research: string; audit: string; papers: number }
 }
+/** The seed as the person wrote it, kept for reference and folded away. */
+function seedReference(text: string): HTMLElement {
+  return h('details', { class: 'gw-seed' }, h('summary', { text: 'Your seed, as you wrote it' }), h('blockquote', { class: 'gw-quote', text: text || '(empty)' }))
+}
+
 interface Item { name: string; kind: 'dataset' | 'document' | 'link'; url?: string; file?: File; detail: string; private: boolean }
 
 const STEPS = ['Seed', 'Materials', 'Settings', 'Start'] as const
@@ -104,13 +109,12 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
 
   // ---------------------------------------------------------------- 1. seed
   function seedStep(): (Node | null)[] {
-    const preview = text.length > 700 ? `${text.slice(0, 700).trimEnd()} …` : text
     return [
       h('h2', { id: 'gw-title', class: 'gw-title', text: 'Your seed' }),
       h('p', { class: 'gw-lead', text: `The paper starts from your words in “${title}”. Nothing is added to them: galley challenges the idea, researches it and writes from them.` }),
       h('p', { class: 'gw-facts' }, h('span', { class: 'gw-mono', text: n(words) }), ' words · ', h('span', { class: 'gw-mono', text: n(paragraphs) }), ` paragraph${paragraphs === 1 ? '' : 's'}`),
-      h('blockquote', { class: 'gw-quote', text: preview }),
-      h('p', { class: 'gw-note', text: `The paper appears in your documents as “${slug}-paper” as soon as it starts, and grows there as it is written.` }),
+      seedReference(text),
+      h('p', { class: 'gw-note', text: 'When the paper starts, these words move into its settings, where they stay for reference, and this document becomes the paper: it is written here and grows as the team works.' }),
     ]
   }
 
@@ -259,7 +263,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
         h('span', { class: 'gw-mono gw-plan-time', text: minutes(mins) })))),
       h('p', { class: 'gw-facts' }, 'About ', h('strong', { text: minutes(Math.max(60, total)) }), ` for ${n(settings.words)} words. Nothing needs you until the paper is ready${settings.dial === 'autonomous' && settings.citations === 'auto' ? '' : ', except the choices you asked for'}.`),
       h('div', { class: 'gw-box' }, h('div', { class: 'gw-label', text: 'What leaves this machine' }), h('dl', { class: 'gw-leaves' }, ...leaves.flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })]))),
-      h('p', { class: 'gw-note', text: `The paper appears in your documents as “${slug}-paper” as soon as it starts. It grows there, every referee finding becomes a thread under its passage, and you can edit and comment while the team works.` }),
+      h('p', { class: 'gw-note', text: 'Starting moves your seed into the paper\'s settings and turns this document into the paper. It grows here, every referee finding becomes a thread under its passage, and you can edit and comment while the team works.' }),
     ]
   }
 
@@ -281,14 +285,13 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       body.replaceChildren(
         h('h2', { id: 'gw-title', class: 'gw-title' }, h('span', { class: 'gw-lamp', 'aria-hidden': 'true' }), 'Writing the paper'),
         h('p', { class: 'gw-lead' }, `Started at ${at}. `, h('span', { class: 'gw-mono', text: context?.seats.author.model ?? 'The author' }), ' is reading your seed.'),
-        h('p', { class: 'gw-note', text: options.onStart
-          ? `The paper is “${slug}-paper” in your documents. Open it to watch it grow: the team writes it there, and you can edit and comment while they work.`
-          : `It appears in your documents as “${slug}-paper”. Press the paper button on this document any time to see where it stands.` }),
+        h('p', { class: 'gw-note', text: 'This document is now the paper: the team writes it here, and you can edit and comment while they work. Your seed is kept in the paper\'s settings; press the paper button any time to see it and where the paper stands.' }),
+        seedReference(text),
       )
       back.hidden = true
       next.disabled = false
       next.textContent = options.onStart ? 'Open the paper' : 'Close'
-      next.onclick = () => { dialog.close(); options.onStart?.(`${slug}-paper`) }
+      next.onclick = () => { dialog.close(); options.onStart?.(slug) }
       hint.textContent = ''
     } catch (error) {
       next.disabled = false
@@ -314,10 +317,24 @@ interface StatusData {
   review: { round: number; rounds: number; findings: number; open: number }
   cost: { calls: number; tokensInM: number; hours: number }
   typeset: boolean
+  seed: string
+  settings: { literatureReview: boolean | string; simulation: boolean | string; rounds: number; words: number; venue: string; authors: string[]; materials: string[] }
 }
 
 const clock = (iso: string | Date) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 const ago = (seconds: number) => seconds < 90 ? `${seconds} s` : seconds < 5400 ? `${Math.round(seconds / 60)} min` : `${Math.floor(seconds / 3600)} h ${Math.round((seconds % 3600) / 60)} min`
+
+/** What the project was started with: its options, people and materials. */
+function settingRows(d: StatusData): [string, string][] {
+  const part = (v: boolean | string) => v === 'load-bearing' ? 'yes, the main contribution' : v ? 'yes, supporting' : 'no'
+  return [
+    ['Literature review', part(d.settings.literatureReview)],
+    ['Simulation', part(d.settings.simulation)],
+    ['Length', `${d.settings.words.toLocaleString('en-US')} words · ${d.settings.rounds} referee round${d.settings.rounds === 1 ? '' : 's'} · ${d.settings.venue}`],
+    ['Authors', d.settings.authors.join('; ') || 'not set'],
+    ['Materials', d.settings.materials.join('; ') || 'none'],
+  ]
+}
 
 /** Where a paper stands, kept current while the window is open. */
 export function openPaperStatus(slug: string, open?: (manuscript: string) => void): void {
@@ -361,8 +378,12 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
         : d.running && d.waiting ? h('div', { class: 'gw-box' }, h('div', { class: 'gw-label', text: 'Now' }), h('p', { class: 'gw-now' }, h('span', { class: 'gw-now-what' }, h('strong', { text: `Waiting for ${d.waiting.name}` }), h('span', { class: 'gw-now-who', text: d.waiting.resetsIn === null ? 'Usage limit; it carries on by itself.' : d.waiting.resetsIn > 0 ? `Usage quota; resets in ${ago(d.waiting.resetsIn)}.` : 'Usage quota has reset.' })), h('span', { class: 'gw-mono gw-now-time', text: `next try in ${ago(d.waiting.seconds)}` })))
         : d.running ? h('div', { class: 'gw-box' }, h('div', { class: 'gw-label', text: 'Now' }), h('p', { class: 'gw-now' }, h('span', { class: 'gw-help', text: 'Between steps; the next one starts in a moment.' }))) : null,
       h('dl', { class: 'gw-figures' }, ...rows.flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])),
+      h('details', { class: 'gw-seed' }, h('summary', { text: 'Settings and seed' }),
+        h('dl', { class: 'gw-figures' }, ...settingRows(d).flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])),
+        h('blockquote', { class: 'gw-quote', text: d.seed || '(empty)' })),
     ].filter((x) => !!x) as HTMLElement[])
-    openButton.hidden = !(d.typeset && open)
+    // The paper is this document now; a project from before has its own document to open.
+    openButton.hidden = !(d.typeset && open) || d.slug === slug
     openButton.onclick = () => { dialog.close(); open?.(d.slug) }
     updated.textContent = done || !d.running ? `As of ${clock(new Date())}` : `Updated ${clock(new Date())} · refreshes every 10 s`
     if (done || !d.running) window.clearInterval(timer)

@@ -117,7 +117,7 @@ Run the editor (`npm run dev`), write or paste your rant as a document, and pres
 3. **Settings.** Author and affiliation (set in the byline, never sent to a model), venue, length, one or two referee rounds, your part (autonomous, assisted, propose), how citations are chosen, whether to include a systematic literature review and a Monte Carlo simulation (each in support, or as the paper's main contribution), the seats and models, and whether literature search has an OpenAlex key.
 4. **Start.** Every step the paper will go through, who does it and about how long it takes, and exactly what leaves your machine.
 
-**Open the paper** at the end of the dialog opens `<your-document>-paper`, which appears in your documents the moment the paper starts and grows there as it is written: the working title first, then the outline's sections, each section once it is drafted, and every revision after that. Press ▷ again on the seed for the stage window. The run log is `papers/<your-document>-paper/run.log`.
+One document is one project. When the paper starts, your seed moves into the project's settings, where it stays for reference (folded away in the dialog and in the project's settings), and the document itself becomes the paper: the seed's text gives way to the working title, then the outline's sections, each section once it is drafted, and every revision after that. Press ▷ on the document any time for its stage, settings and seed. The run log is `papers/<your-document>/run.log`. Projects started before this keep their `<your-document>-paper` document and folder.
 
 ## Your own materials and private data
 
