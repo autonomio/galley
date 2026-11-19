@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import type { Paper } from './paper.js'
+import { readWorkbook, sheetTable, toCsv } from './workbook.js'
 
 export type MaterialKind = 'dataset' | 'document' | 'link'
 
@@ -59,8 +60,9 @@ async function linkText(url: string): Promise<string | null> {
 export async function addMaterials(dir: string, sources: { source: string; shared?: boolean; name?: string }[]): Promise<Material[]> {
   mkdirSync(join(dir, 'materials'), { recursive: true })
   const out: Material[] = []
-  for (const [i, { source, shared, name }] of sources.entries()) {
-    const id = `M${i + 1}`
+  let count = 0
+  for (const { source, shared, name } of sources) {
+    const id = `M${++count}`
     const kind = kindOf(source)
     if (kind === 'link') {
       const text = await linkText(source)
@@ -71,6 +73,21 @@ export async function addMaterials(dir: string, sources: { source: string; share
     const shown = name || basename(source)
     const file = join('materials', `${id}-${shown.replace(/[^\w.-]+/g, '_')}`)
     copyFileSync(source, join(dir, file))
+    // A workbook becomes one dataset per sheet that holds data columns; the workbook itself stays in materials/.
+    if (extname(source).toLowerCase() === '.xlsx') {
+      let first = true
+      for (const sheet of readWorkbook(source)) {
+        const table = sheetTable(sheet)
+        if (!table) continue
+        const sheetId = first ? id : `M${++count}`
+        first = false
+        const csv = join('materials', `${sheetId}-${shown.replace(/\.xlsx$/i, '').replace(/[^\w.-]+/g, '_')}-${sheet.name.replace(/[^\w.-]+/g, '_')}.csv`)
+        writeFileSync(join(dir, csv), toCsv(table.columns, table.rows))
+        out.push({ id: sheetId, kind: 'dataset', name: `${shown} › ${sheet.name}`, file: csv, private: !shared })
+      }
+      if (first) out.push({ id, kind: 'document', name: shown, file, private: false })
+      continue
+    }
     if (kind === 'dataset') { out.push({ id, kind, name: shown, file, private: !shared }); continue }
     const text = documentText(join(dir, file))
     if (text) writeFileSync(join(dir, 'materials', `${id}.txt`), text)
@@ -96,7 +113,7 @@ export interface ColumnProfile {
 
 export interface DatasetProfile { rows: number; columns: ColumnProfile[] }
 
-const DATASET = new Set(['.csv', '.tsv', '.json'])
+const DATASET = new Set(['.csv', '.tsv', '.json', '.xlsx'])
 export const kindOf = (name: string): MaterialKind => /^https?:\/\//i.test(name) ? 'link' : DATASET.has(extname(name).toLowerCase()) ? 'dataset' : 'document'
 
 /** A delimited table, with quoted fields ("a, b") and doubled quotes inside them. */
@@ -226,7 +243,7 @@ export function measurementsBlock(paper: Paper): string {
 
 // ---------------------------------------------------------------- analyses
 
-export type Op = 'count' | 'mean' | 'median' | 'sd' | 'min' | 'max' | 'proportion' | 'group_count' | 'group_mean' | 'correlation' | 'mean_difference'
+export type Op = 'count' | 'mean' | 'median' | 'sd' | 'min' | 'max' | 'quantile' | 'share' | 'proportion' | 'group_count' | 'group_mean' | 'correlation' | 'mean_difference'
 
 export interface Filter { column: string; op: 'eq' | 'ne' | 'gt' | 'lt' | 'in'; value: string }
 
@@ -324,9 +341,33 @@ export function analyze(rows: Row[], spec: AnalysisSpec): Measurement {
       case 'mean': case 'median': case 'sd': case 'min': case 'max': {
         const xs = numbersOf(data, col)
         if (!xs.length) return fail(`no numeric values in ${col}${scope}`)
-        const v = spec.op === 'mean' ? mean(xs) : spec.op === 'median' ? median(xs) : spec.op === 'sd' ? sd(xs) : spec.op === 'min' ? Math.min(...xs) : Math.max(...xs)
+        // Loops, not spreads: a measurement column can hold hundreds of thousands of values.
+        const v = spec.op === 'mean' ? mean(xs) : spec.op === 'median' ? median(xs) : spec.op === 'sd' ? sd(xs) : spec.op === 'min' ? xs.reduce((a, x) => Math.min(a, x), Infinity) : xs.reduce((a, x) => Math.max(a, x), -Infinity)
         const extra = spec.op === 'mean' ? ` (sd ${fmt(sd(xs))})` : ''
         return { id: spec.id, spec, value: fmt(v), summary: `${spec.op} of ${col}${scope}: ${fmt(v)}${extra}, n = ${xs.length}`, n: xs.length }
+      }
+      case 'quantile': {
+        const xs = numbersOf(data, col).sort((a, b) => a - b)
+        const raw = Number(String(spec.value ?? '').replace('%', ''))
+        const p = raw > 1 ? raw / 100 : raw
+        if (!xs.length) return fail(`no numeric values in ${col}${scope}`)
+        if (!(p >= 0 && p <= 1)) return fail(`the probability ${spec.value} is not between 0 and 1`)
+        // Linear interpolation between order statistics (the usual sample quantile).
+        const h = (xs.length - 1) * p
+        const v = xs[Math.floor(h)] + (h - Math.floor(h)) * ((xs[Math.ceil(h)] ?? xs[Math.floor(h)]) - xs[Math.floor(h)])
+        const label = `${fmt(100 * p)}th percentile`
+        return { id: spec.id, spec, value: fmt(v), summary: `${label} of ${col}${scope}: ${fmt(v)}, n = ${xs.length}`, n: xs.length }
+      }
+      case 'share': {
+        const m = String(spec.value ?? '').trim().match(/^(<=|>=|<|>|=)\s*([-+]?\d*\.?\d+(?:e[-+]?\d+)?)$/i)
+        if (!m) return fail(`the threshold ${spec.value} is not like <700 or >=1300`)
+        const xs = numbersOf(data, col)
+        if (!xs.length) return fail(`no numeric values in ${col}${scope}`)
+        const limit = Number(m[2])
+        const meets = (x: number) => m[1] === '<' ? x < limit : m[1] === '<=' ? x <= limit : m[1] === '>' ? x > limit : m[1] === '>=' ? x >= limit : x === limit
+        const hits = xs.filter(meets).length
+        const pct = (100 * hits) / xs.length
+        return { id: spec.id, spec, value: `${fmt(pct)}%`, summary: `share of ${col} ${m[1]} ${m[2]}${scope}: ${fmt(pct)}% (${hits} of ${xs.length})`, n: xs.length }
       }
       case 'proportion': {
         const present = data.filter((r) => !isMissing(r[col]))

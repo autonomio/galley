@@ -8,7 +8,7 @@ import type { Behavior } from '../scheduler.js'
 import { arr, enm, nobj, nstr, obj, str } from '../schema.js'
 import { briefBlock, live, seatFamily } from './common.js'
 
-const OPS = ['count', 'mean', 'median', 'sd', 'min', 'max', 'proportion', 'group_count', 'group_mean', 'correlation', 'mean_difference'] as const
+const OPS = ['count', 'mean', 'median', 'sd', 'min', 'max', 'quantile', 'share', 'proportion', 'group_count', 'group_mean', 'correlation', 'mean_difference'] as const
 
 export const analyzeData: Behavior = {
   id: 'analyze', stage: 'truth', improver: true, title: 'Measure the data',
@@ -29,6 +29,8 @@ export const analyzeData: Behavior = {
 You are the author. Before the argument is planned, name the analyses of the authors' datasets that the paper needs: the measurements its claims will rest on. Galley computes each one on the authors' machine, and the plan is made from the results. Ask for what tests the seed's claims in the chosen direction, including what could contradict them. Use only these operations:
 - count: rows.
 - mean, median, sd, min, max: of a numeric column.
+- quantile: the value of a numeric column at a probability given in value (0.95 for the 95th percentile, 0.99, 0.999).
+- share: the share of a numeric column's values that meet the threshold in value (<700, <=1300, >2000).
 - proportion: share of rows where column equals value.
 - group_count: rows per value of by.
 - group_mean: mean of column per value of by.

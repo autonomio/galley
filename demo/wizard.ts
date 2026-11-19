@@ -14,7 +14,7 @@ interface Context {
 interface Item { name: string; kind: 'dataset' | 'document' | 'link'; url?: string; file?: File; detail: string; private: boolean }
 
 const STEPS = ['Seed', 'Materials', 'Settings', 'Start'] as const
-const DATASET = /\.(csv|tsv|json)$/i
+const DATASET = /\.(csv|tsv|json|xlsx)$/i
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...children: (Node | string | null | false | undefined)[]): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag)
@@ -36,6 +36,7 @@ const minutes = (m: number) => m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m
 async function describe(file: File): Promise<string> {
   const size = file.size > 1e6 ? `${(file.size / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(file.size / 1e3))} kB`
   if (!DATASET.test(file.name)) return `${file.name.split('.').pop()?.toUpperCase() ?? 'File'} · ${size}`
+  if (/\.xlsx$/i.test(file.name)) return `Excel workbook · ${size} · each sheet's data columns become a dataset`
   try {
     const text = await file.text()
     if (/\.json$/i.test(file.name)) {
@@ -115,7 +116,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
 
   // ---------------------------------------------------------------- 2. materials
   function materialsStep(): (Node | null)[] {
-    const picker = h('input', { type: 'file', multiple: true, class: 'gw-file', 'aria-label': 'Choose files', accept: '.csv,.tsv,.json,.md,.txt,.tex,.docx,.odt,.html,.pdf' })
+    const picker = h('input', { type: 'file', multiple: true, class: 'gw-file', 'aria-label': 'Choose files', accept: '.csv,.tsv,.json,.xlsx,.md,.txt,.tex,.docx,.odt,.html,.pdf' })
     picker.addEventListener('change', () => add([...(picker.files ?? [])]))
     const drop = h('label', { class: 'gw-drop' },
       picker,
