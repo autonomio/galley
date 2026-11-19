@@ -2,7 +2,7 @@
 
 A calm markdown writing surface that any web app can adopt as its own editor.
 
-Markdown is drawn as you type and every marker stays in the text, so what is saved is exactly what was written. Documents are plain `.md` files. Notes attach to passages and follow them as the text changes. Saving is versioned, so a change made somewhere else is never overwritten. Galley started as the Editor in [Poise](https://github.com/autonomio/poise) and keeps its look.
+Markdown is drawn as you type and every marker stays in the text, so what is saved is exactly what was written. Documents are plain `.md` files. Notes attach to passages and follow them as the text changes. Saving is versioned: a change made somewhere else, in another tab or by an agent, is merged with yours, and where you both changed the same lines yours stands and you are told. Galley started as the Editor in [Poise](https://github.com/autonomio/poise) and keeps its look.
 
 ## Write a paper
 
@@ -16,7 +16,7 @@ npm install && npm run build
 node dist/engine/cli.js write my-seed.md --author "Your Name"
 ```
 
-The manuscript then opens in this editor, with a note on every referee finding; your edits and notes go back into the paper on the next run. A paper can also rest on your own datasets and documents (private datasets never leave your machine), include a systematic literature review that Canary carries out for it (`--literature-review yes`), and rest on a Monte Carlo simulation galley runs on your machine (`--simulation yes`). See [Papers](docs/PAPERS.md) for the ladder, the seats, the outputs and the editor loop.
+The paper opens in this editor the moment it starts and grows there while it is written: a strip shows who is working on it and what each is doing, every referee finding is a thread under its passage, and your edits, notes and replies are taken in within seconds. A paper can also rest on your own datasets and documents (private datasets never leave your machine), include a systematic literature review that Canary carries out for it (`--literature-review yes`), and rest on a Monte Carlo simulation galley runs on your machine (`--simulation yes`). See [Papers](docs/PAPERS.md) for the ladder, the seats, the outputs and the editor loop.
 
 The first paper galley wrote introduces galley itself, from a seed of the author's own words with nothing added: `papers/galley/` (*Scope-Elastic Manuscript Compilation Narrows or Hedges Unsupported Claims Instead of Blocking Drafts*; `out/paper.pdf`, its sign-off sheet, evidence package and production journal). One untouched run took it from seed to manuscript in 2.8 hours: 121 model calls, 81 referee findings settled over two rounds, 11 citations verified against verbatim passages and 11 rejected, and 6 of 6 planted defects caught by the verifier.
 
@@ -99,7 +99,9 @@ createEditor(el, {
 
 - **Toolbar actions**: `{ id, label, icon, run(editor, button) }`, optionally `pressed`, `disabled`, `shortcut`, `danger`. The built-ins are the same shape, named by id.
 - **Selection actions**: `{ id, label, icon, run(passage, editor) }`. The `passage` carries its source text, its range and its on-screen rect.
-- **Plugins**: `(editor) => cleanup`. They use `editor.on('open' | 'change' | 'status' | 'documents' | 'layout' | 'annotations' | 'writer-mode' | 'notice', …)`, draw in `editor.layer(name)` with `editor.rects(start, end)`, and redraw on `layout`.
+- **Plugins**: `(editor) => cleanup`. They use `editor.on('open' | 'change' | 'status' | 'documents' | 'layout' | 'annotations' | 'writer-mode' | 'notice', …)`, draw in `editor.layer(name)` with `editor.rects(start, end)`, and redraw on `layout`. `editor.slot('header')` is a strip under the toolbar and `editor.slot('top')` a block above the text, for the host's own content.
+- **Threads**: a note can carry an `author`, `replies`, `labels` and `resolved`; its panel then shows the conversation and takes replies. `options.me` names the writer in threads.
+- **Other writers**: `editor.receive(slug, content, version)` and `editor.annotations.receive(notes, version)` bring a change made elsewhere (an agent, another tab) into the open document, merged with the writer's own work and without moving the caret. A save refused because someone else wrote first merges the same way (`src/core/merge.ts`).
 - **Suggested edits** (for agents): `editor.edits.highlight(edit)`, `editor.edits.accept(edit, slug)`. An edit is bound to the document it was proposed for, applied with a conflict check, and withdrawn if it cannot be saved.
 - **The surface alone**: `createSurface(element, { onChange })` is the writing surface with no documents, storage or chrome.
 

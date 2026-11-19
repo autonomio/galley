@@ -4,9 +4,11 @@ import '../src/styles/tokens.css'
 import '../src/styles/galley.css'
 import './demo.css'
 import './wizard.css'
+import './living.css'
 import welcome from './welcome.md?raw'
 import { createEditor, createHttpStore, createLocalStore, icons, type EditorAction } from '../src/index.js'
 import { choicesAction } from './choices.js'
+import { livingPaper } from './living.js'
 import { writePaperAction } from './paper.js'
 import { proposalsAction } from './proposals.js'
 
@@ -39,6 +41,8 @@ const editor = createEditor(document.getElementById('editor')!, {
   placeholder: 'Start writing…',
   toolbar: ['writer', 'new', 'import', 'copy', download, ...(local ? [] : [writePaperAction(), choicesAction(), proposalsAction()]), 'delete'],
   storagePrefix: local ? 'galley-local' : 'galley',
+  // A paper's document is written by its team while you work in it: who is at work, its notes and its history.
+  plugins: local ? [] : [livingPaper(store, document.getElementById('history')!)],
 })
 
 editor.on('writer-mode', ({ on }) => document.body.classList.toggle('is-writing', on))

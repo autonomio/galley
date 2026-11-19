@@ -13,6 +13,7 @@ import { reAnchor, sameRange } from '../core/anchoring.js'
 import { applyEdit, findEditRange } from '../core/edits.js'
 import { HistoryTooLargeError, readHistory, writeHistory, type HistoryEntry, type HistoryStore } from '../core/history.js'
 import { IMPORT_MAX_BYTES, decodeMarkdownImport } from '../core/import.js'
+import { merge3 } from '../core/merge.js'
 import { randomId } from '../core/slug.js'
 import { countWords, locateLine } from '../core/text.js'
 import { UNTITLED } from '../markdown/title.js'
@@ -23,7 +24,7 @@ import { Emitter, el } from './dom.js'
 import { createDocPicker, type DocPicker } from './doc-picker.js'
 import { icons } from './icons.js'
 import { drawHighlight, pageRects, renderAnnotationMarks } from './marks.js'
-import { createNotePanel } from './notes.js'
+import { createNotePanel, type ThreadView } from './notes.js'
 import { createSelectionCluster, type ClusterAction, type SelectedPassage } from './selection.js'
 import { DocumentSession, type Notice, type SaveState } from './session.js'
 import { createNoticeStack, createStatusLine } from './status.js'
@@ -93,6 +94,8 @@ export interface EditorOptions {
   placeholder?: string
   /** Debounce before a save, in ms. Default 500. */
   saveDelay?: number
+  /** The writer's name in threads. Default `You`. */
+  me?: string
 }
 
 export interface Editor {
@@ -124,11 +127,27 @@ export interface Editor {
   setFrozen(frozen: boolean): void
   /** The store changed the open document itself; show its text and adopt its version. */
   adopt(slug: string, content: string, version: Version): void
+  /**
+   * Another writer changed the open document (an agent, another tab): merge
+   * their text into the page without moving the caret, as one undo step.
+   * False while a save of ours is pending; that save merges the change itself.
+   */
+  receive(slug: string, content: string, version: Version): boolean
+  /** The versions the open document and its notes were last read or saved at. */
+  versions(): { doc: Version | null, annotations: Version | null }
+  /**
+   * Room for the host inside the editor: `header` is a strip under the
+   * toolbar that stays put; `top` sits above the text and scrolls with it.
+   * Created on first use.
+   */
+  slot(where: 'header' | 'top'): HTMLElement
   notify(notice: Notice): void
   annotations: {
     list(): Annotation[]
     open(id: string): void
     remove(id: string): void
+    /** Notes changed elsewhere: merge them in, as `receive` does for text. */
+    receive(annotations: Annotation[], version: Version): boolean
   }
   /** Suggested edits, as an agent proposes them. */
   edits: {
@@ -225,7 +244,21 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       renderPicker()
       events.emit('documents', { documents: session.docs })
     },
+    rebased: (slug, ours, merged) => {
+      if (slug !== session.slug) return
+      // Typing that happened while the merged save was on its way stays on top of it.
+      const current = surface.getText()
+      const next = current === ours ? merged : merge3(ours, current, merged).text
+      if (next !== current) applyExternal(next)
+      if (next !== merged) session.scheduleSave(next)
+    },
+    notesRebased: () => {
+      renderOverlay()
+      refreshOpenNote()
+      events.emit('annotations', { annotations: session.annotations })
+    },
   }, { save: options.saveDelay ?? 500, annotations: 400 })
+  const me = options.me ?? 'You'
 
   const surface = createSurface(docEl, {
     onChange: afterEdit,
@@ -257,6 +290,42 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
 
   const notes = comments ? createNotePanel(page, docEl, () => renderOverlay()) : null
   let rendering = false
+
+  // A note someone answered, or one an agent opened, is shown as a thread.
+  function threadOf(a: Annotation): ThreadView | null {
+    if (!a.author && !a.replies?.length) return null
+    return { author: a.author ?? null, comment: a.comment, created_at: a.created_at, replies: a.replies ?? [], labels: a.labels ?? [], resolved: !!a.resolved, me }
+  }
+
+  function refreshOpenNote(): void {
+    const id = notes?.current()
+    const a = id ? session.annotations.find((x) => x.id === id) : null
+    const thread = a ? threadOf(a) : null
+    if (id && thread) notes!.update(id, thread)
+  }
+
+  // Text that arrives from elsewhere goes in without moving the writer: the
+  // caret stays on its line, found again by its text when lines above it
+  // moved, and the arrival is one step the writer can undo.
+  function applyExternal(text: string): void {
+    const caret = surface.isFocused() ? surface.caret() : null
+    const caretLine = caret ? (surface.lines()[caret.line]?.textContent ?? '') : ''
+    surface.history.record()
+    surface.setText(text)
+    if (caret) {
+      const lines = text.split('\n')
+      let target = caret.line
+      if (lines[target] !== caretLine) {
+        for (let d = 1; d < 60; d++) {
+          if (lines[caret.line + d] === caretLine) { target = caret.line + d; break }
+          if (caret.line - d >= 0 && lines[caret.line - d] === caretLine) { target = caret.line - d; break }
+        }
+      }
+      surface.setCaret(Math.min(target, lines.length - 1), caret.offset)
+    }
+    updateWords()
+    renderOverlay()
+  }
 
   function renderOverlay(): void {
     // A redraw can move the note panel, whose move redraws; once is enough.
@@ -317,11 +386,34 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
         : { start: 0, end: 0 },
       value: a.comment,
       orphaned: !located,
+      thread: threadOf(a),
       onInput: (value) => {
         if (a.comment === value) return
         a.comment = value
         a.updated_at = new Date().toISOString()
         session.scheduleAnnotationsSave()
+      },
+      // The note is looked up again on every answer: a merge may have replaced it since it opened.
+      onReply: (text) => {
+        const note = session.annotations.find((x) => x.id === id)
+        if (!note) return
+        const now = new Date().toISOString()
+        note.replies = [...(note.replies ?? []), { id: `rep-${randomId().replace(/-/g, '').slice(0, 10)}`, author: { name: me, kind: 'human' }, text, created_at: now }]
+        note.updated_at = now
+        session.scheduleAnnotationsSave()
+        refreshOpenNote()
+        events.emit('annotations', { annotations: session.annotations })
+      },
+      onResolve: (resolved) => {
+        const note = session.annotations.find((x) => x.id === id)
+        if (!note) return
+        if (resolved) note.resolved = true
+        else delete note.resolved
+        note.updated_at = new Date().toISOString()
+        session.scheduleAnnotationsSave()
+        renderOverlay()
+        refreshOpenNote()
+        events.emit('annotations', { annotations: session.annotations })
       },
       onDelete: () => removeNote(id),
       onClose: (returnCaret) => noteClosed(id, returnCaret),
@@ -375,7 +467,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
   const selectionItems = (options.selectionActions ?? ['comment'])
     .filter((item) => item !== 'comment' || comments)
     .map((item): ClusterAction => {
-      if (item === 'comment') return { id: 'comment', label: 'Comment', description: 'Add a note to the selected text. A note becomes a thread for the agents on the next run; start it with @humans to keep it for people.', icon: icons.comment, run: addComment }
+      if (item === 'comment') return { id: 'comment', label: 'Comment', description: 'Add a note to the selected text. Anyone working on the document can answer it, and you can resolve it when it is settled.', icon: icons.comment, run: addComment }
       return {
         id: item.id,
         label: item.label,
@@ -812,11 +904,45 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       updateWords()
       renderOverlay()
     },
+    receive(slug, content, version) {
+      if (destroyed || session.slug !== slug || session.frozen) return false
+      if (session.version(slug) === version) return true
+      if (session.isDirty()) return false
+      const base = session.base(slug) ?? content
+      const current = surface.getText()
+      const next = current === base ? content : merge3(base, current, content).text
+      session.adopt(slug, version, content)
+      if (next !== current) applyExternal(next)
+      if (next !== content) session.scheduleSave(next)
+      return true
+    },
+    versions() {
+      const slug = session.slug
+      return { doc: slug ? session.version(slug) ?? null : null, annotations: slug ? session.annotationsVersion(slug) ?? null : null }
+    },
+    slot(where) {
+      const existing = root.querySelector<HTMLElement>(`.galley-slot[data-slot="${where}"]`)
+      if (existing) return existing
+      const slot = el('div', { class: 'galley-slot', 'data-slot': where })
+      if (where === 'header') root.insertBefore(slot, main)
+      else page.insertBefore(slot, docEl)
+      return slot
+    },
     notify,
     annotations: {
       list: () => session.annotations.slice(),
       open: openNote,
       remove: removeNote,
+      receive(list, version) {
+        const slug = session.slug
+        if (!slug) return false
+        if (session.annotationsVersion(slug) === version) return true
+        if (!session.receiveAnnotations(slug, list, version)) return false
+        renderOverlay()
+        refreshOpenNote()
+        events.emit('annotations', { annotations: session.annotations })
+        return true
+      },
     },
     edits: {
       locate: (edit) => findEditRange(surface.getText(), edit),

@@ -6,9 +6,45 @@ import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
+import { liveView } from './src/engine/live.js'
 import { galleyVitePlugin } from './src/server/vite.js'
 
 const dir = resolve(process.env.GALLEY_DIR || '.galley-data')
+// Where papers are written; the end-to-end tests point it at a folder of their own.
+const papers = resolve(process.env.GALLEY_PAPERS || 'papers')
+
+// The paper an editor document belongs to: papers/<doc>, or the paper whose
+// slug makes that document's name.
+function paperForDocument(doc: string): string | null {
+  const direct = join(papers, doc)
+  if (existsSync(join(direct, 'state.json'))) return direct
+  if (!existsSync(papers)) return null
+  for (const name of readdirSync(papers)) {
+    if (name.toLowerCase().replace(/[^a-z0-9-]+/g, '-') === doc.toLowerCase() && existsSync(join(papers, name, 'state.json'))) return join(papers, name)
+  }
+  return null
+}
+
+// A paper being written, as the editor shows it beside the text: who is
+// working on what right now, its working notes and what has happened.
+// Read from the paper's files; it never touches the run.
+function livePlugin(): Plugin {
+  return {
+    name: 'galley-live',
+    configureServer(server) {
+      server.middlewares.use('/api/galley-live', (req, res) => {
+        const doc = decodeURIComponent((req.url || '').replace(/^\//, '').split('?')[0])
+        if (!/^[a-z0-9][a-z0-9-]*$/i.test(doc)) { res.statusCode = 400; res.end(); return }
+        const paperDir = paperForDocument(doc)
+        const view = paperDir ? liveView(paperDir) : null
+        if (!view) { res.statusCode = 404; res.end(); return }
+        res.setHeader('Content-Type', 'application/json')
+        res.setHeader('Cache-Control', 'no-store')
+        res.end(JSON.stringify(view))
+      })
+    },
+  }
+}
 
 // The demo host's side of galley papers: the changes agents propose for a
 // document live beside it as <slug>.proposals.json, and Accept or Decline
@@ -63,7 +99,7 @@ function papersPlugin(): Plugin {
         }
         const slug = slugPart
         if (!/^[a-z0-9][a-z0-9-]*$/i.test(slug)) { res.statusCode = 400; res.end('bad document name'); return }
-        const paperDir = resolve('papers', `${slug}-paper`)
+        const paperDir = join(papers, `${slug}-paper`)
         if (sub === 'choices') {
           // "For this claim, choose a, b or c": the open choices, and a person's answer to one.
           const statePath = join(paperDir, 'state.json')
@@ -164,7 +200,7 @@ export default defineConfig(({ command }) => {
   }
   return {
     root: 'demo',
-    plugins: [galleyVitePlugin({ dir }), proposalsPlugin(), papersPlugin()],
+    plugins: [galleyVitePlugin({ dir }), proposalsPlugin(), papersPlugin(), livePlugin()],
     server: {
       port: Number(process.env.PORT || 5174),
       strictPort: !!process.env.PORT,

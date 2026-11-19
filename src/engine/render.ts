@@ -3,11 +3,11 @@
 // the production record and a Resolvent evidence package.
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { claim, keyFor, ledgerAppendix } from './behaviors/common.js'
-import { FAMILY_NAMES } from './config.js'
+import { FAMILY_NAMES, lightName, lightSpecFor } from './config.js'
 import { cleanCsl, cslForDoi, cslFromWork } from './evidence.js'
 import type { Paper } from './paper.js'
 import { LIT_PLACEHOLDERS, modelName } from './literature.js'
@@ -17,7 +17,7 @@ import { PLACEHOLDERS } from './prompts.js'
 import { fillPlaceholders, productionRecord, type Record_ } from './record.js'
 import { software, sourceStatement } from './self.js'
 import { escapeUnknownCitations, squash } from './text.js'
-import type { Annotation } from '../types.js'
+import type { Annotation, AnnotationAuthor, AnnotationLabel, AnnotationReply } from '../types.js'
 import type { Claim, Family, Finding } from './types.js'
 
 function exec(cmd: string, args: string[], cwd: string): Promise<string> {
@@ -54,10 +54,13 @@ function disclosure(paper: Paper, record: Record_): string {
   const referees = [...new Set(paper.config.referees.map((r) => r.family))].map((f) => FAMILY_NAMES[f]).join(' and ')
   const lit = paper.state.literature?.status === 'done' ? paper.state.literature : null
   const everyCitation = lit ? 'every citation outside the systematic review' : 'every citation'
+  // Answering, judging and settling single findings run on the lighter settings; the statement names them.
+  const settling = [...new Set([seats.author, ...paper.config.referees.map((r) => r.family)])].map((f) => lightName(lightSpecFor(paper.config, f)))
+  const settled = paper.state.round >= 1 ? ` Answering findings, judging the answers and settling disputes ran on lighter reasoning settings (${settling.join(', ')}).` : ''
   const sims = runsOf(paper)
   const simulated = sims.length ? ` The Monte Carlo simulation${sims.length > 1 ? 's' : ''} (${sims.map((r) => `${r.id}, ${methodWords(r.result.method)} with ${sizeOf(r.result)}, seed ${r.result.provenance.seed}`).join('; ')}) ran on the authors' machine with galley's simulation engine, from a specification ${FAMILY_NAMES[seats.author]} wrote; every simulated number in the text is filled in from that run at the precision its Monte Carlo error supports, and the evidence package holds each specification with its results, so every number can be reproduced.` : ''
   const review = lit ? ` The systematic review ${paper.config.literatureReview === 'load-bearing' ? 'this paper reports' : 'reported in its own section'} was carried out with Canary: ${modelName(lit.models?.research)} planned the search of OpenAlex, screened the candidates, read the full texts and quoted the passages behind each finding, and ${modelName(lit.models?.audit)} audited every finding against those passages; the review's citations rest on them.` : ''
-  return `This manuscript was produced with ${software()} from a seed text written by the author. ${FAMILY_NAMES[seats.author]} extracted the seed's claims, planned the argument, drafted every section and answered the referees. ${FAMILY_NAMES[seats.checker]} wrote the literature searches, selected candidate passages and checked each section against its claims. ${seats.challenger === seats.verifier ? `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting and verified ${everyCitation} against the passage it rests on.` : `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting, and ${FAMILY_NAMES[seats.verifier]} verified ${everyCitation} against the passage it rests on.`} Referee reports came from ${referees}, never from the family that drafted the text, and each answer to a material finding was verified by the referee family that raised it. Literature search ran through Canary over OpenAlex; bibliographic records come from the DOI registries.${review}${simulated} No model reviewed its own work. The production journal that accompanies this manuscript records every step, model call, verdict and decision with its time, and the evidence package holds each claim with the verbatim passage and verdict behind every citation.
+  return `This manuscript was produced with ${software()} from a seed text written by the author. ${FAMILY_NAMES[seats.author]} extracted the seed's claims, planned the argument, drafted every section and answered the referees. ${FAMILY_NAMES[seats.checker]} wrote the literature searches, selected candidate passages and checked each section against its claims. ${seats.challenger === seats.verifier ? `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting and verified ${everyCitation} against the passage it rests on.` : `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting, and ${FAMILY_NAMES[seats.verifier]} verified ${everyCitation} against the passage it rests on.`} Referee reports came from ${referees}, never from the family that drafted the text, and each answer to a material finding was verified by the referee family that raised it.${settled} Literature search ran through Canary over OpenAlex; bibliographic records come from the DOI registries.${review}${simulated} No model reviewed its own work. The production journal that accompanies this manuscript records every step, model call, verdict and decision with its time, and the evidence package holds each claim with the verbatim passage and verdict behind every citation.
 
 | Production record | |
 |---|---|
@@ -141,18 +144,87 @@ function annotationFor(lines: string[], quote: string, fallbackHeading: string):
   return { start_line: heading, start_offset: 0, end_line: heading, end_offset: lines[heading]?.length ?? 0, snippet: lines[heading] ?? '' }
 }
 
-function findingComment(paper: Paper, f: Finding): string {
-  const model = f.origin === 'human' ? 'you' : `${FAMILY_NAMES[f.family]}`
-  const last = f.dispositions.at(-1)
-  const lines = [
-    `${f.origin === 'human' ? 'Your note' : `${f.seat} referee, ${model}`} · ${f.severity} · ${f.status}`,
-    f.question,
-    f.decision ? `Asked: ${f.decision}` : '',
-    last ? `Author (${FAMILY_NAMES[last.family]}), ${last.kind}: ${last.text}` : '',
-    last?.verification ? `Referee: ${last.verification.outcome}. ${last.verification.reason}` : '',
-    f.adjudication ? `Settled by ${FAMILY_NAMES[f.adjudication.family]}: ${f.adjudication.decision}` : '',
-  ]
-  return lines.filter(Boolean).join('\n')
+// In the editor every seat is a named colleague: the role, and the model behind it.
+const TONES: Record<Family, AnnotationAuthor['tone']> = { claude: 'a', gpt: 'b', gemini: 'c' }
+const agentAuthor = (name: string, family: Family): AnnotationAuthor => ({ name, kind: 'agent', detail: FAMILY_NAMES[family], tone: TONES[family] })
+const refereeAuthor = (seat: string, family: Family) => agentAuthor(`${seat.charAt(0).toUpperCase()}${seat.slice(1)} referee`, family)
+const ANSWER: Record<string, string> = { fixed: 'Fixed.', rebutted: 'Rebutted.', limitation: 'Stated as a limitation.', needs_evidence: 'Needs evidence.' }
+const VERDICT: Record<string, string> = { verified: 'Verified the answer.', disagrees: 'Disagrees.', uncertain: 'Not sure yet.' }
+const SETTLED: Record<string, string> = { fixed: 'Fixed', rebutted: 'Rebutted', limitation: 'Limitation', adjudicated: 'Settled', applied: 'Applied', noted: 'Noted', dropped: 'Dropped' }
+const later = (iso: string | undefined, ms: number) => new Date((iso ? Date.parse(iso) : Date.now()) + ms).toISOString()
+const byTime = (a: AnnotationReply, b: AnnotationReply) => a.created_at.localeCompare(b.created_at)
+/** Replies galley did not write: a person's, which are never rewritten. */
+const theirOwn = (replies: AnnotationReply[] = []) => replies.filter((r) => !r.id.startsWith('galley-'))
+
+/** A finding's answers as replies in its thread: each answer, the referee's verdict on it, and a third family's decision. */
+function answers(f: Finding): AnnotationReply[] {
+  const out: AnnotationReply[] = []
+  f.dispositions.forEach((d, k) => {
+    const lead = ANSWER[d.kind]
+    const text = d.text.trim()
+    const opens = !!lead && text.toLowerCase().startsWith(lead.slice(0, -1).toLowerCase())
+    out.push({ id: `galley-${f.id}-d${k}`, author: agentAuthor('Author', d.family), text: opens ? text.replace(/^([^.]+\.)/, '**$1**') : lead ? `**${lead}** ${text}` : text, created_at: d.at })
+    if (d.verification) {
+      const judge = f.origin === 'human' ? agentAuthor('Referee', d.verification.family) : refereeAuthor(f.seat, d.verification.family)
+      out.push({ id: `galley-${f.id}-v${k}`, author: judge, text: `**${VERDICT[d.verification.outcome] ?? d.verification.outcome}** ${d.verification.reason}`, created_at: later(d.at, 1) })
+    }
+  })
+  if (f.adjudication) out.push({ id: `galley-${f.id}-adj`, author: agentAuthor('Adjudicator', f.adjudication.family), text: f.adjudication.decision, created_at: later(f.dispositions.at(-1)?.at ?? f.at, 2) })
+  return out
+}
+
+/** What the agents answered to a person's replies in a thread. */
+function childAnswers(paper: Paper, parentId: string): AnnotationReply[] {
+  return paper.state.findings.filter((c) => c.parent === parentId).flatMap((c) => answers(c))
+}
+
+function findingLabels(paper: Paper, f: Finding, resolved: boolean): AnnotationLabel[] {
+  const waiting = (paper.state.proposals ?? []).some((p) => p.findingId === f.id && p.state === 'pending')
+  const labels: AnnotationLabel[] = [f.severity === 'critical' ? { text: f.severity, tone: 'failed' } : { text: f.severity }]
+  if (waiting) labels.push({ text: 'change waits for you', tone: 'attention' })
+  else if (resolved) labels.push({ text: SETTLED[f.status] ?? f.status, tone: 'done' })
+  else if (f.assignee !== 'agents') labels.push({ text: 'needs you', tone: 'attention' })
+  else labels.push({ text: f.dispositions.length ? 'answered' : 'open' })
+  return labels
+}
+
+/** A referee's finding as a thread: the question opens it, every answer follows, and a person's replies keep their place. */
+function findingThread(paper: Paper, f: Finding, lines: string[], fallbackHeading: string, existing: Annotation | undefined): Annotation {
+  const waiting = (paper.state.proposals ?? []).some((p) => p.findingId === f.id && p.state === 'pending')
+  const resolved = !!SETTLED[f.status] && !waiting
+  // A note the editor has placed keeps its place: the editor re-finds passages as the text changes.
+  const place = existing
+    ? { range: existing.range, snippet: existing.snippet }
+    : (({ snippet, ...range }) => ({ range, snippet }))(annotationFor(lines, f.quote, fallbackHeading))
+  // Findings from older runs carry no time of their own: the first answer bounds it.
+  const at = existing?.created_at ?? f.at ?? (f.dispositions[0] ? later(f.dispositions[0].at, -60_000) : new Date().toISOString())
+  const replies = [...answers(f), ...childAnswers(paper, f.id), ...theirOwn(existing?.replies)].sort(byTime)
+  const note: Annotation = {
+    id: `galley-${f.id}`, ...place,
+    comment: f.alternatives ? `${f.question}\n\n${f.alternatives}` : f.question,
+    created_at: at, updated_at: replies.at(-1)?.created_at ?? at,
+    author: refereeAuthor(f.seat, f.family),
+    labels: findingLabels(paper, f, resolved),
+  }
+  if (replies.length) note.replies = replies
+  if (resolved) note.resolved = true
+  return note
+}
+
+/** A person's own note, with what the agents answered. Its words, place and resolution stay theirs. */
+function withAnswers(paper: Paper, note: Annotation): Annotation {
+  const own = paper.state.findings.find((f) => f.id === `H-${note.id}`)
+  const replies = [...theirOwn(note.replies), ...(own ? answers(own) : []), ...childAnswers(paper, `H-${note.id}`)].sort(byTime)
+  const out: Annotation = { ...note }
+  delete out.replies
+  delete out.labels
+  if (replies.length) out.replies = replies
+  if (own) {
+    out.labels = [own.assignee === 'humans' ? { text: 'yours' }
+      : SETTLED[own.status] ? { text: 'answered', tone: 'done' }
+      : own.assignee === 'both' ? { text: 'agents propose, you decide' } : { text: 'with the agents' }]
+  }
+  return out
 }
 
 const editorSlug = (paper: Paper) => paper.state.slug.toLowerCase().replace(/[^a-z0-9-]+/g, '-')
@@ -170,36 +242,83 @@ export function writeReplacing(path: string, text: string): void {
 }
 
 /** The editor shows the manuscript's source: what a person changes there is what the paper says. */
-function writeEditorDocument(paper: Paper): void {
+/** The editor's copy of the paper as it stands: the title from the start, sections once outlined, each section's text once someone has written it. */
+function editorCopy(paper: Paper): { text: string, base: Record<string, string> } {
   const s = paper.state
-  const dir = editorDir(paper)
-  mkdirSync(dir, { recursive: true })
-  const title = paper.config.title || s.frame?.title || 'Untitled'
+  const title = paper.config.title || s.titleByHuman || s.frame?.title || s.plan?.workingTitle || 'Untitled paper'
   const base: Record<string, string> = { title, abstract: s.frame?.abstract ?? '' }
-  const blocks = [`# ${title}`, `## Abstract\n\n${base.abstract}`]
+  const blocks = [`# ${title}`]
+  if (s.frame) blocks.push(`## Abstract\n\n${base.abstract}`)
   for (const section of s.outline?.sections ?? []) {
     const passage = s.passages[section.id]?.text ?? ''
     base[section.id] = passage
-    blocks.push(`## ${section.title}\n\n${demote(passage)}`)
+    blocks.push(passage ? `## ${section.title}\n\n${demote(passage)}` : `## ${section.title}`)
   }
-  const text = blocks.join('\n\n') + '\n'
-  writeReplacing(join(dir, `${editorSlug(paper)}.md`), text)
+  return { text: blocks.join('\n\n') + '\n', base }
+}
+
+const fileText = (path: string): string | null => { try { return readFileSync(path, 'utf8') } catch { return null } }
+const touchedWithin = (path: string, ms: number) => { try { return Date.now() - statSync(path).mtimeMs < ms } catch { return false } }
+const digest = (text: string | null) => (text === null ? '' : createHash('sha256').update(text).digest('hex'))
+
+/**
+ * Write the editor's copy and its notes. `seen` is what the files held when
+ * galley last read them: if a person saved since, that file is left alone
+ * now, and the next pass takes their change in first.
+ */
+function writeEditorDocument(paper: Paper, seen?: { doc: string | null, notes: string | null }): void {
+  const s = paper.state
+  const dir = editorDir(paper)
+  mkdirSync(dir, { recursive: true })
+  const docPath = join(dir, `${editorSlug(paper)}.md`)
+  const notesPath = join(dir, `${editorSlug(paper)}.annotations.json`)
+  const { text, base } = editorCopy(paper)
+  const docOnDisk = fileText(docPath)
+  if (seen && docOnDisk !== seen.doc) return
+  if (docOnDisk !== text) writeReplacing(docPath, text)
   s.editorBase = base
+  const notesOnDisk = fileText(notesPath)
+  let notes = notesOnDisk
+  if (!seen || notesOnDisk === seen.notes) {
+    const existing: Annotation[] = notesOnDisk ? (JSON.parse(notesOnDisk).annotations ?? []) : []
+    const placed = new Map(existing.map((a) => [a.id, a]))
+    const lines = text.split('\n')
+    const human = existing.filter((a) => !a.id.startsWith('galley-')).map((a) => withAnswers(paper, a))
+    const ours = s.findings
+      .filter((f) => f.origin === 'agent' && !f.parent && (f.severity !== 'minor' || f.status === 'noted'))
+      .map((f) => findingThread(paper, f, lines, s.outline?.sections.find((sec) => sec.id === f.sectionId)?.title ?? base.title, placed.get(`galley-${f.id}`)))
+    notes = JSON.stringify({ annotations: [...human, ...ours] }, null, 2)
+    if (notes !== notesOnDisk) writeReplacing(notesPath, notes)
+  }
+  s.editorWritten = { doc: digest(text), notes: digest(notes) }
   paper.save()
-  const lines = text.split('\n')
-  const annotationsPath = join(dir, `${editorSlug(paper)}.annotations.json`)
-  const existing: Annotation[] = existsSync(annotationsPath) ? (JSON.parse(readFileSync(annotationsPath, 'utf8')).annotations ?? []) : []
-  const human = existing.filter((a) => !a.id.startsWith('galley-'))
-  const at = new Date().toISOString()
-  const ours: Annotation[] = s.findings
-    .filter((f) => f.origin === 'agent' && (f.severity !== 'minor' || f.status === 'noted'))
-    .map((f) => {
-      const section = s.outline?.sections.find((sec) => sec.id === f.sectionId)
-      const { snippet, ...range } = annotationFor(lines, f.quote, section?.title ?? title)
-      return { id: `galley-${f.id}`, range, snippet, comment: findingComment(paper, f), created_at: at, updated_at: at }
-    })
-  writeReplacing(annotationsPath, JSON.stringify({ annotations: [...human, ...ours] }, null, 2))
-  writeReplacing(join(dir, `${editorSlug(paper)}.proposals.json`), JSON.stringify({ proposals: (s.proposals ?? []).filter((p) => p.state === 'pending') }, null, 2))
+  const proposalsPath = join(dir, `${editorSlug(paper)}.proposals.json`)
+  const proposals = JSON.stringify({ proposals: (s.proposals ?? []).filter((p) => p.state === 'pending') }, null, 2)
+  if (fileText(proposalsPath) !== proposals) writeReplacing(proposalsPath, proposals)
+}
+
+// A note half typed is not yet a note: galley reads a person's changes once they pause.
+const PAUSE_MS = 4_000
+
+/**
+ * Keep the editor's copy in step with the paper, while it is being written:
+ * take in what a person changed there (edits, notes, replies, decisions on
+ * proposed changes), then write what the paper now says.
+ */
+export function syncEditor(paper: Paper): { edits: string[], notes: number, decisions: number } {
+  const s = paper.state
+  const dir = editorDir(paper)
+  const docPath = join(dir, `${editorSlug(paper)}.md`)
+  const notesPath = join(dir, `${editorSlug(paper)}.annotations.json`)
+  const seen = { doc: fileText(docPath), notes: fileText(notesPath) }
+  const docChanged = seen.doc !== null && digest(seen.doc) !== s.editorWritten?.doc
+  const notesChanged = seen.notes !== null && digest(seen.notes) !== s.editorWritten?.notes
+  if ((docChanged && touchedWithin(docPath, PAUSE_MS)) || (notesChanged && touchedWithin(notesPath, PAUSE_MS))) return { edits: [], notes: 0, decisions: 0 }
+  const decisions = importProposalDecisions(paper)
+  const edits = docChanged ? importEditorEdits(paper, seen.doc!) : []
+  const notes = seen.notes !== null ? importHumanNotes(paper, seen.notes) : 0
+  writeEditorDocument(paper, seen)
+  return { edits, notes, decisions }
 }
 
 /** Accept and Decline from the editor: an accepted change is already in the text; a declined one is closed. */
@@ -233,30 +352,40 @@ export function importProposalDecisions(paper: Paper): number {
 }
 
 /** Text a person changed in the editor since galley last wrote it becomes their revision of the paper. */
-export function importEditorEdits(paper: Paper): string[] {
+export function importEditorEdits(paper: Paper, text?: string): string[] {
   const s = paper.state
-  const path = join(editorDir(paper), `${editorSlug(paper)}.md`)
-  if (!existsSync(path) || !s.editorBase || !s.outline) return []
-  const text = readFileSync(path, 'utf8')
+  if (text === undefined) {
+    const path = join(editorDir(paper), `${editorSlug(paper)}.md`)
+    if (!existsSync(path)) return []
+    text = readFileSync(path, 'utf8')
+  }
+  if (!s.editorBase) return []
   const author = paper.config.authors[0]?.name ?? 'the author'
   const changed: string[] = []
   const titleLine = text.match(/^# (.+)$/m)?.[1]?.trim()
-  if (titleLine && titleLine !== s.editorBase.title && s.frame) { s.frame.title = titleLine; changed.push('title') }
+  if (titleLine && titleLine !== s.editorBase.title) {
+    s.titleByHuman = titleLine
+    if (s.frame) s.frame.title = titleLine
+    changed.push('title')
+  }
   const blocks = text.split(/^## /m).slice(1).map((block) => {
     const newline = block.indexOf('\n')
-    return { heading: block.slice(0, newline).trim(), body: block.slice(newline + 1).trim() }
+    return newline < 0 ? { heading: block.trim(), body: '' } : { heading: block.slice(0, newline).trim(), body: block.slice(newline + 1).trim() }
   })
   const abstract = blocks.find((b) => b.heading === 'Abstract')
   if (abstract && s.frame && abstract.body !== s.editorBase.abstract.trim()) { s.frame.abstract = abstract.body; changed.push('abstract') }
   const rest = blocks.filter((b) => b !== abstract)
-  s.outline.sections.forEach((section, i) => {
+  s.outline?.sections.forEach((section, i) => {
     const block = rest.find((b) => b.heading === section.title) ?? rest[i]
     if (!block) return
     const body = promote(block.body)
-    if (body !== (s.editorBase![section.id] ?? '').trim()) {
-      setPassageText(paper, section.id, body, author)
-      changed.push(section.id)
-    }
+    if (body === (s.editorBase![section.id] ?? '').trim()) return
+    if (s.passages[section.id]) setPassageText(paper, section.id, body, author)
+    else if (body) {
+      // A section a person writes before the Author reaches it is theirs: the Author drafts only sections no one has written.
+      s.passages[section.id] = { sectionId: section.id, text: body, revisions: [{ at: new Date().toISOString(), text: body, by: { kind: 'human', name: author }, reason: 'written in the editor' }], checked: 'unchecked' }
+    } else return
+    changed.push(section.id)
   })
   if (changed.length) {
     paper.journal({ event: 'human_edits', sections: changed })
@@ -273,28 +402,64 @@ function setPassageText(paper: Paper, sectionId: string, text: string, name: str
 }
 
 /** Notes a person wrote in the editor become threads; the agents answer them on the next run. */
-export function importHumanNotes(paper: Paper): number {
+export function importHumanNotes(paper: Paper, json?: string): number {
   const s = paper.state
-  const path = join(editorDir(paper), `${editorSlug(paper)}.annotations.json`)
-  if (!existsSync(path)) return 0
-  const annotations: Annotation[] = JSON.parse(readFileSync(path, 'utf8')).annotations ?? []
+  if (json === undefined) {
+    const path = join(editorDir(paper), `${editorSlug(paper)}.annotations.json`)
+    if (!existsSync(path)) return 0
+    json = readFileSync(path, 'utf8')
+  }
+  const annotations: Annotation[] = JSON.parse(json).annotations ?? []
+  const seen = new Set(s.repliesSeen ?? [])
+  const assigned = (text: string) => /@(humans?|me)\b/i.test(text) ? 'humans' as const : /@both\b/i.test(text) ? 'both' as const : 'agents' as const
+  const untagged = (text: string) => text.replace(/@(humans?|me|both|agents)\b/gi, '').trim()
+  const sectionOf = (snippet: string) => s.outline?.sections.find((sec) => squash(s.passages[sec.id]?.text ?? '').includes(squash(snippet).slice(0, 60)))?.id ?? null
   let added = 0
   for (const a of annotations) {
-    if (a.id.startsWith('galley-') || s.findings.some((f) => f.id === `H-${a.id}`)) continue
-    const comment = a.comment.trim()
-    if (!comment) continue
-    const assignee = /@(humans?|me)\b/i.test(comment) ? 'humans' : /@both\b/i.test(comment) ? 'both' : 'agents'
-    const section = s.outline?.sections.find((sec) => squash(s.passages[sec.id]?.text ?? '').includes(squash(a.snippet).slice(0, 60)))
-    s.findings.push({
-      id: `H-${a.id}`, round: s.round, seat: 'human', family: paper.config.seats.challenger, model: 'human',
-      severity: 'material', sectionId: section?.id ?? null, quote: a.snippet, question: comment.replace(/@(humans?|me|both|agents)\b/gi, '').trim(),
-      alternatives: '', evidence: '', decision: comment, edit: null, status: 'open', assignee, origin: 'human', dispositions: [],
-    })
-    added++
+    // A person's own note, once they have stopped typing it.
+    if (!a.id.startsWith('galley-') && !s.findings.some((f) => f.id === `H-${a.id}`)) {
+      const comment = a.comment.trim()
+      if (comment && Date.now() - Date.parse(a.updated_at) > NOTE_SETTLE_MS) {
+        s.findings.push({
+          id: `H-${a.id}`, at: a.created_at, round: s.round, seat: 'human', family: paper.config.seats.challenger, model: 'human',
+          severity: 'material', sectionId: sectionOf(a.snippet), quote: a.snippet, question: untagged(comment),
+          alternatives: '', evidence: '', decision: comment, edit: null, status: 'open', assignee: assigned(comment), origin: 'human', dispositions: [],
+        })
+        added++
+      }
+    }
+    // An answer a person gave in a thread, theirs or an agent's: the agents take it up there.
+    for (const r of a.replies ?? []) {
+      if (r.author.kind !== 'human' || seen.has(r.id)) continue
+      seen.add(r.id)
+      const parentId = a.id.startsWith('galley-') ? a.id.slice('galley-'.length) : `H-${a.id}`
+      const parent = s.findings.find((f) => f.id === parentId)
+      s.findings.push({
+        id: `H-${r.id}`, parent: parentId, at: r.created_at, round: s.round, seat: 'human', family: paper.config.seats.challenger, model: 'human',
+        severity: 'material', sectionId: parent?.sectionId ?? sectionOf(a.snippet), quote: a.snippet,
+        question: parent ? `On ${parentId} (${parent.question}): ${untagged(r.text)}` : untagged(r.text),
+        alternatives: '', evidence: '', decision: r.text, edit: null, status: 'open', assignee: assigned(r.text), origin: 'human', dispositions: [],
+      })
+      added++
+    }
+    // A thread a person resolved is settled: the agents stop working on it.
+    if (a.resolved && a.id.startsWith('galley-')) {
+      const f = s.findings.find((x) => x.id === a.id.slice('galley-'.length))
+      if (f && f.status === 'open') {
+        f.status = 'noted'
+        f.assignee = 'humans'
+        paper.note('editor', `You resolved ${f.id} in the editor: ${f.question}`)
+        added++
+      }
+    }
   }
+  s.repliesSeen = [...seen]
   if (added) paper.save()
   return added
 }
+
+// How long a note must sit unchanged before galley takes it as written.
+const NOTE_SETTLE_MS = 15_000
 
 // ---------------------------------------------------------------- sign-off
 
@@ -465,7 +630,7 @@ export async function typeset(paper: Paper): Promise<string[]> {
   }
   writeFileSync(join(out, 'signoff.md'), signoff(paper, record))
   // The editor's copy is a convenience: a failure to write it is noted, never a reason the paper stops.
-  try { writeEditorDocument(paper) } catch (error) { paper.note('typeset', `The editor copy of the manuscript was not written: ${(error as Error).message.slice(0, 200)}`) }
+  try { syncEditor(paper) } catch (error) { paper.note('typeset', `The editor copy of the manuscript was not written: ${(error as Error).message.slice(0, 200)}`) }
   try {
     rmSync(join(out, 'submission.zip'), { force: true })
     await exec('zip', ['-qr', 'submission.zip', ...made, 'manuscript.md', 'refs.json', 'evidence', 'production-journal.jsonl', ...(existsSync(join(out, 'figures')) ? ['figures'] : []), ...(existsSync(join(out, 'simulation')) ? ['simulation'] : [])], out)

@@ -3,9 +3,10 @@
 // and unload beacons. No DOM: the editor feeds it text and renders what it
 // reports, and tests drive it against a memory store.
 import { isConflict } from '../core/errors.js'
+import { merge3, mergeAnnotations } from '../core/merge.js'
 import { createSerializedSaveQueue, type SerializedSaveQueue } from '../core/save-queue.js'
 import { randomId } from '../core/slug.js'
-import type { Annotation, DocRead, DocSummary, Version } from '../types.js'
+import type { Annotation, AnnotationsWriteResult, DocRead, DocSummary, DocWriteResult, Version } from '../types.js'
 import type { DocumentStore } from '../stores/types.js'
 
 /** Where the open document's text stands. */
@@ -26,6 +27,13 @@ export interface SessionEvents {
   notice(notice: Notice): void
   /** The document list, or one of its entries, changed. */
   documents(): void
+  /**
+   * Someone else saved the open document first, and their change was merged
+   * into ours: `ours` is what we tried to save, `merged` what is saved now.
+   */
+  rebased?(slug: string, ours: string, merged: string): void
+  /** The open document's notes were merged with a change made elsewhere. */
+  notesRebased?(slug: string): void
 }
 
 export interface SessionDelays {
@@ -35,6 +43,8 @@ export interface SessionDelays {
 
 interface DocumentSnapshot {
   baseVersion: Version
+  /** The text `baseVersion` names: what this snapshot was edited from, for a merge. */
+  baseContent: string
   slug: string
   content: string
   revision: number
@@ -42,7 +52,11 @@ interface DocumentSnapshot {
 
 interface AnnotationsSnapshot {
   slug: string
+  /** The notes' version when this snapshot was taken; a merge happened since if it is no longer current. */
+  baseVersion: Version | undefined
   annotationsJson: string
+  /** The notes as last read or saved, for a merge. */
+  baseJson: string
   revision: number
 }
 
@@ -62,6 +76,10 @@ export class DocumentSession {
 
   private readonly docVersions = new Map<string, Version>()
   private readonly annotationVersions = new Map<string, Version>()
+  // The text and notes each version names, so a save refused because someone
+  // else wrote first can merge both changes instead of failing.
+  private readonly docBases = new Map<string, string>()
+  private readonly annotationBases = new Map<string, string>()
   private docRevision = 0
   private annotationsRevision = 0
   private saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -145,13 +163,42 @@ export class DocumentSession {
   open(data: DocRead): void {
     this.slug = data.slug
     this.docVersions.set(data.slug, data.version)
+    this.docBases.set(data.slug, data.content)
     this.annotations = []
     this.annotationsReadySlug = null
   }
 
   /** The store changed the open document itself (an import from elsewhere). */
-  adopt(slug: string, version: Version): void {
+  adopt(slug: string, version: Version, content?: string): void {
     this.docVersions.set(slug, version)
+    if (content !== undefined) this.docBases.set(slug, content)
+  }
+
+  /** The saved text the open document's edits are based on. */
+  base(slug: string): string | undefined {
+    return this.docBases.get(slug)
+  }
+
+  /** The version of the open document's notes, once read. */
+  annotationsVersion(slug: string): Version | undefined {
+    return this.annotationVersions.get(slug)
+  }
+
+  /**
+   * Notes changed elsewhere arrive: merge them into ours and adopt their
+   * version. False while a save of ours is pending; that save merges them.
+   */
+  receiveAnnotations(slug: string, theirs: Annotation[], version: Version): boolean {
+    if (this.slug !== slug || this.annotationsReadySlug !== slug) return false
+    if (this.annotationsQueue.isDirty() || this.annotationsTimer !== null) return false
+    const base = JSON.parse(this.annotationBases.get(slug) ?? '[]') as Annotation[]
+    const merged = mergeAnnotations(base, this.annotations, theirs).annotations
+    const changedHere = JSON.stringify(merged) !== JSON.stringify(theirs)
+    this.annotations = merged
+    this.annotationVersions.set(slug, version)
+    this.annotationBases.set(slug, JSON.stringify(theirs))
+    if (changedHere) this.scheduleAnnotationsSave()
+    return true
   }
 
   version(slug: string): Version | undefined {
@@ -187,7 +234,7 @@ export class DocumentSession {
       this.events.notice({ source: 'save', level: 'error', message: 'Not saved: the document version is unavailable. Reload it before editing.' })
       return
     }
-    this.documentQueue.enqueue({ baseVersion, slug, content, revision: ++this.docRevision })
+    this.documentQueue.enqueue({ baseVersion, baseContent: this.docBases.get(slug) ?? content, slug, content, revision: ++this.docRevision })
     this.events.status('editing')
     this.clearSaveTimer()
     this.saveTimer = setTimeout(() => {
@@ -211,11 +258,30 @@ export class DocumentSession {
 
   private async persistDocument(snapshot: DocumentSnapshot): Promise<void> {
     if (this.slug === snapshot.slug) this.events.status('saving')
-    const result = await this.store.write(snapshot.slug, snapshot.content, {
-      clientId: this.clientId,
-      revision: snapshot.revision,
-      baseVersion: snapshot.baseVersion,
-    })
+    let content = snapshot.content
+    let merged: { text: string, conflicts: number } | null = null
+    let result: DocWriteResult
+    try {
+      result = await this.store.write(snapshot.slug, content, {
+        clientId: this.clientId,
+        revision: snapshot.revision,
+        baseVersion: snapshot.baseVersion,
+      })
+    } catch (error) {
+      if (!isConflict(error)) throw error
+      // Someone else saved first: an agent writing from a paper run, or another
+      // tab. Their change and ours merge line by line; where both touched the
+      // same lines, ours stand. The refused write was never recorded, so the
+      // merge goes out under the same revision.
+      const remote = await this.store.read(snapshot.slug)
+      merged = merge3(snapshot.baseContent, snapshot.content, remote.content)
+      content = merged.text
+      result = await this.store.write(snapshot.slug, content, {
+        clientId: this.clientId,
+        revision: snapshot.revision,
+        baseVersion: remote.version,
+      })
+    }
     if (!isVersion(result?.version)) throw new Error('save response omitted document version')
     // A stale acknowledgement may describe a version written later by another
     // tab. Advancing our base from it would let unchanged local text
@@ -223,6 +289,12 @@ export class DocumentSession {
     // tracked by the store, so stale responses never advance the base.
     if (result.stale === true) return
     this.docVersions.set(snapshot.slug, result.version)
+    this.docBases.set(snapshot.slug, content)
+    if (merged) {
+      if (this.slug === snapshot.slug) this.events.rebased?.(snapshot.slug, snapshot.content, content)
+      // A notice of its own: the save that follows would clear a save notice at once.
+      if (merged.conflicts) this.events.notice({ source: 'merge', level: 'attention', message: 'Merged with a change made elsewhere. Where you both changed the same lines, your version stands.' })
+    }
     // Only a listed document moves to the top; one not listed yet arrives
     // with the next listing, and one just deleted must not come back.
     const idx = this.docs.findIndex((d) => d.slug === snapshot.slug)
@@ -232,7 +304,7 @@ export class DocumentSession {
         slug: snapshot.slug,
         title: String(result.title || entry.title),
         updated_at: String(result.updated_at || new Date().toISOString()),
-        size: Number(result.size || snapshot.content.length),
+        size: Number(result.size || content.length),
       })
     }
     this.events.documents()
@@ -254,6 +326,7 @@ export class DocumentSession {
       if (!Array.isArray(data?.annotations) || !isVersion(data.version)) throw new Error('malformed annotations response')
       this.annotations = data.annotations
       this.annotationVersions.set(slug, data.version)
+      this.annotationBases.set(slug, JSON.stringify(data.annotations))
       this.annotationsReadySlug = slug
       this.events.notice({ source: 'annotations', message: '' })
     } catch (error) {
@@ -274,7 +347,9 @@ export class DocumentSession {
     }
     this.annotationsQueue.enqueue({
       slug,
+      baseVersion: this.annotationVersions.get(slug),
       annotationsJson: JSON.stringify(this.annotations),
+      baseJson: this.annotationBases.get(slug) ?? '[]',
       revision: ++this.annotationsRevision,
     })
     this.clearAnnotationsTimer()
@@ -290,15 +365,40 @@ export class DocumentSession {
   }
 
   private async persistAnnotations(snapshot: AnnotationsSnapshot): Promise<void> {
-    const baseVersion = this.annotationVersions.get(snapshot.slug)
-    if (!isVersion(baseVersion)) throw new Error('the notes version is unavailable; reload before saving')
-    const result = await this.store.writeAnnotations(snapshot.slug, JSON.parse(snapshot.annotationsJson) as Annotation[], {
-      clientId: this.clientId,
-      revision: snapshot.revision,
-      baseVersion,
-    })
+    if (!isVersion(snapshot.baseVersion)) throw new Error('the notes version is unavailable; reload before saving')
+    let json = snapshot.annotationsJson
+    let result: AnnotationsWriteResult
+    try {
+      result = await this.store.writeAnnotations(snapshot.slug, JSON.parse(json) as Annotation[], {
+        clientId: this.clientId,
+        revision: snapshot.revision,
+        baseVersion: snapshot.baseVersion,
+      })
+    } catch (error) {
+      if (!isConflict(error)) throw error
+      // Notes changed elsewhere since we read them (an agent answered a thread,
+      // or another tab wrote): merge by note, and by reply within a thread.
+      const remote = await this.store.readAnnotations(snapshot.slug)
+      const merged = mergeAnnotations(JSON.parse(snapshot.baseJson) as Annotation[], JSON.parse(json) as Annotation[], remote.annotations).annotations
+      json = JSON.stringify(merged)
+      result = await this.store.writeAnnotations(snapshot.slug, merged, {
+        clientId: this.clientId,
+        revision: snapshot.revision,
+        baseVersion: remote.version,
+      })
+      if (isVersion(result?.version) && result.stale !== true && this.slug === snapshot.slug) {
+        // Edits made while the merge was on its way stay on top of it.
+        this.annotations = mergeAnnotations(JSON.parse(snapshot.annotationsJson) as Annotation[], this.annotations, merged).annotations
+        this.annotationVersions.set(snapshot.slug, result.version)
+        this.annotationBases.set(snapshot.slug, json)
+        this.events.notesRebased?.(snapshot.slug)
+      }
+    }
     if (!isVersion(result?.version)) throw new Error('save response omitted annotations version')
-    if (result.stale !== true) this.annotationVersions.set(snapshot.slug, result.version)
+    if (result.stale !== true) {
+      this.annotationVersions.set(snapshot.slug, result.version)
+      this.annotationBases.set(snapshot.slug, json)
+    }
     this.events.notice({ source: 'annotations', message: '' })
   }
 

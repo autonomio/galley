@@ -34,7 +34,15 @@ export interface RunOptions {
   /** Stop after this behavior has settled (for proving one rung at a time). */
   until?: string
   log?: (line: string) => void
+  /**
+   * Keep the editor's copy in step: take in what a person changed there, and
+   * write what the paper now says. Called after every settled target and every
+   * few seconds while work is in flight, so the paper grows in the editor.
+   */
+  sync?: (paper: Paper) => void
 }
+
+const SYNC_EVERY_MS = 8_000
 
 async function runTarget(paper: Paper, behavior: Behavior, target: Target, log: (line: string) => void): Promise<void> {
   const limit = behavior.attempts ?? (behavior.improver ? 2 : 3)
@@ -81,6 +89,11 @@ export async function runPaper(paper: Paper, behaviors: Behavior[], options: Run
   const log = options.log ?? ((line: string) => console.log(line))
   paper.say = log
   paper.ladder = behaviors.map(({ id, stage, improver, title }) => ({ id, stage, improver, title }))
+  // The editor's copy is a convenience: keeping it in step never stops a paper.
+  const sync = () => {
+    if (!options.sync) return
+    try { options.sync(paper) } catch (error) { log(`… the editor copy was not synced: ${(error instanceof Error ? error.message : String(error)).slice(0, 200)}`) }
+  }
   // A heartbeat: every minute, say what is in flight and for how long, so a long call is never a silent wait.
   const heartbeat = setInterval(() => {
     paper.writeProgress()
@@ -91,30 +104,38 @@ export async function runPaper(paper: Paper, behaviors: Behavior[], options: Run
     }
   }, 60_000)
   heartbeat.unref()
+  // A model call can take minutes; a person's note or edit is taken in meanwhile, not when it returns.
+  const syncing = options.sync ? setInterval(sync, SYNC_EVERY_MS) : null
+  syncing?.unref()
   try {
-    return await scan(paper, behaviors, options, log)
+    return await scan(paper, behaviors, options, log, sync)
   } finally {
     clearInterval(heartbeat)
+    if (syncing) clearInterval(syncing)
     paper.writeProgress()
+    sync()
   }
 }
 
-async function scan(paper: Paper, behaviors: Behavior[], options: RunOptions, log: (line: string) => void): Promise<string | undefined> {
+async function scan(paper: Paper, behaviors: Behavior[], options: RunOptions, log: (line: string) => void, sync: () => void): Promise<string | undefined> {
   // Background targets run alongside the scan; the paper waits for them only when nothing else is ready.
   const background = new Map<string, Promise<void>>()
   let failure: unknown = null
   for (;;) {
+    // What a person changed in the editor is state like any other: the next behavior sees it.
+    sync()
     let progressed = false
     for (const behavior of behaviors) {
       if (paper.config.off.includes(behavior.id)) continue
       const targets = behavior.ready(paper).filter((t) => !paper.isSettled(t.key) && !background.has(t.key))
       for (const target of targets.filter((t) => t.background)) {
-        background.set(target.key, runTarget(paper, behavior, target, log).catch((error) => { failure ??= error }).finally(() => background.delete(target.key)))
+        background.set(target.key, runTarget(paper, behavior, target, log).catch((error) => { failure ??= error }).finally(() => { background.delete(target.key); sync() }))
       }
       const now = targets.filter((t) => !t.background)
       if (!now.length) continue
       progressed = true
-      await Promise.all(now.map((target) => runTarget(paper, behavior, target, log)))
+      // Each target lands in the editor as it settles, not when the slowest of its batch does.
+      await Promise.all(now.map((target) => runTarget(paper, behavior, target, log).then(sync)))
       if (options.until === behavior.id) return paper.state.outcome
       break
     }

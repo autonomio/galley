@@ -21,7 +21,7 @@ import { defaultConfig, FAMILY_MODELS, FAMILY_NAMES } from './config.js'
 import { budgetLine, canaryPython, canarySearch, openalexBudget, openalexKeyed, SEARCH_CREDITS } from './evidence.js'
 import { callModel, codexBin, resetHintMs } from './models.js'
 import { Paper } from './paper.js'
-import { editorDir, importEditorEdits, importHumanNotes, importProposalDecisions, productionRecord, typeset } from './render.js'
+import { editorDir, productionRecord, syncEditor, typeset } from './render.js'
 import { runPaper, Stalled } from './scheduler.js'
 import { obj, bool } from './schema.js'
 import { DOES } from './self.js'
@@ -171,12 +171,11 @@ function status(paper: Paper): void {
 
 async function run(dir: string): Promise<void> {
   const paper = Paper.open(dir)
-  const decided = importProposalDecisions(paper)
-  if (decided) console.log(`${decided} proposal decision(s) from the editor recorded.`)
-  const edited = importEditorEdits(paper)
-  if (edited.length) console.log(`Your edits in the editor are now the paper's text: ${edited.join(', ')}.`)
-  const added = importHumanNotes(paper)
-  if (added) console.log(`${added} note(s) from the editor became threads for the agents.`)
+  // The paper lives in the editor from its first step: what a person did there is taken in, and the editor's copy is written now and kept in step.
+  const taken = syncEditor(paper)
+  if (taken.decisions) console.log(`${taken.decisions} proposal decision(s) from the editor recorded.`)
+  if (taken.edits.length) console.log(`Your edits in the editor are now the paper's text: ${taken.edits.join(', ')}.`)
+  if (taken.notes) console.log(`${taken.notes} note(s) and replies from the editor became threads for the agents.`)
   if (!paper.config.off.includes('find-evidence') && !openalexKeyed()) {
     // Said up front, so a short budget is never discovered as a skipped search hours later.
     const budget = await openalexBudget()
@@ -184,7 +183,7 @@ async function run(dir: string): Promise<void> {
   }
   const started = Date.now()
   try {
-    const outcome = await runPaper(paper, LADDER, { until: flag('until') })
+    const outcome = await runPaper(paper, LADDER, { until: flag('until'), sync: syncEditor })
     console.log(`\n${outcome ? `Outcome: ${outcome}` : 'Stopped'} after ${Math.round((Date.now() - started) / 60000)} min.`)
   } catch (error) {
     if (error instanceof Stalled) {
@@ -318,7 +317,7 @@ async function main(): Promise<void> {
       const [dir] = positional()
       const paper = Paper.open(resolve(dir))
       const editor = editorDir(paper)
-      console.log(`The manuscript and its notes are in ${editor}. Open them in the editor with:\n\n  GALLEY_DIR=${editor} npm run dev\n\nthen visit http://localhost:5174. Your edits and notes go back into the paper on the next "galley run ${dir}".`)
+      console.log(`The manuscript and its notes are in ${editor}. Open them in the editor with:\n\n  GALLEY_DIR=${editor} npm run dev\n\nthen visit http://localhost:5174. While the paper is being written, your edits, notes and replies are taken in within seconds; otherwise on the next "galley run ${dir}".`)
       return
     }
     case 'context': {

@@ -58,7 +58,7 @@ const base64 = (file: File) => new Promise<string>((resolve, reject) => {
   reader.readAsDataURL(file)
 })
 
-export function openPaperWizard(options: { slug: string; title: string; text: string }): void {
+export function openPaperWizard(options: { slug: string; title: string; text: string; onStart?: (paper: string) => void }): void {
   const { slug, title, text } = options
   const words = text.split(/\s+/).filter(Boolean).length
   const paragraphs = text.split(/\n\s*\n/).filter((p) => p.trim()).length
@@ -109,7 +109,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       h('p', { class: 'gw-lead', text: `The paper starts from your words in “${title}”. Nothing is added to them: galley challenges the idea, researches it and writes from them.` }),
       h('p', { class: 'gw-facts' }, h('span', { class: 'gw-mono', text: n(words) }), ' words · ', h('span', { class: 'gw-mono', text: n(paragraphs) }), ` paragraph${paragraphs === 1 ? '' : 's'}`),
       h('blockquote', { class: 'gw-quote', text: preview }),
-      h('p', { class: 'gw-note', text: `The manuscript appears in your documents as “${slug}-paper”.` }),
+      h('p', { class: 'gw-note', text: `The paper appears in your documents as “${slug}-paper” as soon as it starts, and grows there as it is written.` }),
     ]
   }
 
@@ -258,7 +258,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
         h('span', { class: 'gw-mono gw-plan-time', text: minutes(mins) })))),
       h('p', { class: 'gw-facts' }, 'About ', h('strong', { text: minutes(Math.max(60, total)) }), ` for ${n(settings.words)} words. Nothing needs you until the paper is ready${settings.dial === 'autonomous' && settings.citations === 'auto' ? '' : ', except the choices you asked for'}.`),
       h('div', { class: 'gw-box' }, h('div', { class: 'gw-label', text: 'What leaves this machine' }), h('dl', { class: 'gw-leaves' }, ...leaves.flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })]))),
-      h('p', { class: 'gw-note', text: `The manuscript appears in your documents as “${slug}-paper”, with a note on every referee finding.` }),
+      h('p', { class: 'gw-note', text: `The paper appears in your documents as “${slug}-paper” as soon as it starts. It grows there, every referee finding becomes a thread under its passage, and you can edit and comment while the team works.` }),
     ]
   }
 
@@ -280,12 +280,14 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       body.replaceChildren(
         h('h2', { id: 'gw-title', class: 'gw-title' }, h('span', { class: 'gw-lamp', 'aria-hidden': 'true' }), 'Writing the paper'),
         h('p', { class: 'gw-lead' }, `Started at ${at}. `, h('span', { class: 'gw-mono', text: context?.seats.author.model ?? 'The author' }), ' is reading your seed.'),
-        h('p', { class: 'gw-note', text: `It appears in your documents as “${slug}-paper” when it is typeset. Press the paper button on this document any time to see where it stands.` }),
+        h('p', { class: 'gw-note', text: options.onStart
+          ? `The paper is “${slug}-paper” in your documents. Open it to watch it grow: the team writes it there, and you can edit and comment while they work.`
+          : `It appears in your documents as “${slug}-paper”. Press the paper button on this document any time to see where it stands.` }),
       )
       back.hidden = true
       next.disabled = false
-      next.textContent = 'Close'
-      next.onclick = () => dialog.close()
+      next.textContent = options.onStart ? 'Open the paper' : 'Close'
+      next.onclick = () => { dialog.close(); options.onStart?.(`${slug}-paper`) }
       hint.textContent = ''
     } catch (error) {
       next.disabled = false

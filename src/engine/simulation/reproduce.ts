@@ -151,9 +151,12 @@ if (missing.length) {
   process.exit(1)
 }
 const read = (file) => readFileSync(file, 'utf8')
+const expected = join(here, 'expected')
 process.exitCode = main(args.filter((a) => a.startsWith('-')), {
   specs: files.map((file) => ({ name: basename(file), text: read(file) })),
-  expected: (name) => (existsSync(join(here, 'expected', name)) ? read(join(here, 'expected', name)) : null),
+  expected: (name) => (existsSync(join(expected, name)) ? read(join(expected, name)) : null),
+  // Run whole, the package checks every simulation it publishes, so a spec that went missing fails.
+  published: given.length || !existsSync(expected) ? undefined : readdirSync(expected).filter((f) => f.endsWith('.json')),
   print: (line) => console.log(line),
 })
 `
@@ -319,13 +322,35 @@ export function verifyReproduction(dir: string): { ok: boolean; output: string }
   return { ok: run.status === 0, output: [run.stdout, run.stderr, run.error ? String(run.error) : ''].filter(Boolean).join('\n').trim() }
 }
 
+/** The files of a package besides its specs and expected numbers. */
+const FILES = ['engine.mjs', 'simulate.mjs', 'index.html', 'README.md', 'SPEC.md']
+
+export interface ReproductionOptions {
+  /** The paper's title, for the README and the page. */
+  title?: string
+  /** Told how the package's own verification went, as a caller may want to note a failure. */
+  verified?: (check: { ok: boolean; output: string }) => void
+}
+
 /**
  * Writes the reproduction package for a paper's simulations into dir, and returns the files it
  * wrote. It verifies the package as a reader would and says in the README how that went; a failure
- * is reported there, never thrown.
+ * is reported there and to `verified`, never thrown. With no runs it removes what an earlier package
+ * left, so a paper that dropped its simulations publishes none.
  */
-export function writeReproduction(dir: string, runs: PublishedRun[], options: { title?: string } = {}): string[] {
-  if (!runs.length) return []
+export function writeReproduction(dir: string, runs: PublishedRun[], options: ReproductionOptions = {}): string[] {
+  // Only what a package writes is cleared, so a simulation the paper dropped leaves nothing behind.
+  for (const sub of ['specs', 'expected']) {
+    const folder = join(dir, sub)
+    if (!existsSync(folder)) continue
+    for (const name of readdirSync(folder)) if (name.endsWith('.json')) rmSync(join(folder, name))
+    if (!runs.length && !readdirSync(folder).length) rmSync(folder, { recursive: true })
+  }
+  if (!runs.length) {
+    for (const name of FILES) rmSync(join(dir, name), { force: true })
+    if (existsSync(dir) && !readdirSync(dir).length) rmSync(dir, { recursive: true })
+    return []
+  }
   const title = options.title ? `Reproducing the simulations of “${options.title}”` : 'Reproducing the simulations'
   const written: string[] = []
   const write = (path: string, text: string) => {
@@ -333,11 +358,6 @@ export function writeReproduction(dir: string, runs: PublishedRun[], options: { 
     mkdirSync(dirname(file), { recursive: true })
     writeFileSync(file, text)
     written.push(file)
-  }
-  // Only specs the package wrote are cleared, so a simulation the paper dropped leaves nothing behind.
-  for (const sub of ['specs', 'expected']) {
-    const folder = join(dir, sub)
-    if (existsSync(folder)) for (const name of readdirSync(folder)) if (name.endsWith('.json')) rmSync(join(folder, name))
   }
   const engine = bundleEngine()
   write('engine.mjs', engine)
@@ -351,6 +371,8 @@ export function writeReproduction(dir: string, runs: PublishedRun[], options: { 
     title,
     runs: runs.map((run) => ({ id: run.id, title: run.title, purpose: run.purpose, assumptions: run.assumptions, spec: run.result.spec, expected: expectedOf(run.result) })),
   }))
-  write('README.md', readme(runs, title, verifyReproduction(dir), engine))
+  const check = verifyReproduction(dir)
+  options.verified?.(check)
+  write('README.md', readme(runs, title, check, engine))
   return written
 }
