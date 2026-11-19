@@ -108,7 +108,8 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
     unknown.push(...filled.unknown)
     body.push(`# ${section.title}\n\n${filled.text}`)
     for (const fig of s.figures.filter((f) => f.sectionId === section.id && f.status === 'rendered' && f.file)) {
-      body.push(`![${fig.caption.replace(/\n/g, ' ')}](${fig.file}){#fig-${fig.id} width=95%}`)
+      // A caption can state a measured or simulated number, so it is filled like the text it sits in.
+      body.push(`![${fillPlaceholders(fig.caption, record).text.replace(/\n/g, ' ')}](${fig.file}){#fig-${fig.id} width=95%}`)
     }
   }
   const decl = paper.config.declarations ?? {}
