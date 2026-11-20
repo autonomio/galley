@@ -67,7 +67,7 @@ export function proposalsAction(): EditorAction {
     id: 'proposals',
     label: 'Proposed changes',
     description: 'Changes the agents propose for this paper, each with its reason and its before and after. Accept applies one; Decline closes it.',
-    icon: icons.check,
+    icon: icons.pencil,
     async run(editor) {
       if (panel) { close(); return }
       const slug = editor.slug

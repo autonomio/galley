@@ -89,7 +89,7 @@ Files are written atomically (temp file, fsync, rename). The default lock serial
 ```ts
 createEditor(el, {
   store,
-  toolbar: ['writer', 'new', 'import', 'copy', publishAction, 'delete'],
+  toolbar: ['writer', '|', 'new', 'import', 'copy', publishAction, '|', 'delete'],
   selectionActions: ['comment', createIssueAction],
   plugins: [reviewsPlugin],
   notify: (notice) => myToasts.show(notice),
@@ -97,11 +97,11 @@ createEditor(el, {
 })
 ```
 
-- **Toolbar actions**: `{ id, label, icon, run(editor, button) }`, optionally `pressed`, `disabled`, `shortcut`, `danger`. The built-ins are the same shape, named by id.
+- **Toolbar actions**: `{ id, label, icon, run(editor, button) }`, optionally `pressed`, `disabled`, `shortcut`, `danger`. The built-ins are the same shape, named by id; `'|'` draws a divider between groups. `icons` is the editor's own set (16×16, one stroke), and `iconButton({ label, description, icon, onClick })` makes a control that looks and behaves like a toolbar button, tip included, for anything a host puts in a slot.
 - **Selection actions**: `{ id, label, icon, run(passage, editor) }`. The `passage` carries its source text, its range and its on-screen rect.
-- **Plugins**: `(editor) => cleanup`. They use `editor.on('open' | 'change' | 'status' | 'documents' | 'layout' | 'annotations' | 'writer-mode' | 'notice', …)`, draw in `editor.layer(name)` with `editor.rects(start, end)`, and redraw on `layout`. `editor.slot('header')` is a strip under the toolbar and `editor.slot('top')` a block above the text, for the host's own content.
+- **Plugins**: `(editor) => cleanup`. They use `editor.on('open' | 'change' | 'status' | 'documents' | 'layout' | 'annotations' | 'writer-mode' | 'notice', …)`, draw in `editor.layer(name)` with `editor.rects(start, end)`, and redraw on `layout`. Slots are room for the host's own content: `editor.slot('bar-start')` and `editor.slot('bar-end')` open and close the toolbar's row (a host's name, its own controls), so the top of the page stays one row; `'header'` is a strip under it, `'top'` a block above the text, `'side'` a pane beside the page. All but `'top'` hide in writer mode.
 - **Threads**: a note can carry an `author`, `replies`, `labels` and `resolved`; its panel then shows the conversation and takes replies. `options.me` names the writer in threads.
-- **Other writers**: `editor.receive(slug, content, version)` and `editor.annotations.receive(notes, version)` bring a change made elsewhere (an agent, another tab) into the open document, merged with the writer's own work and without moving the caret. A save refused because someone else wrote first merges the same way (`src/core/merge.ts`).
+- **Other writers**: `editor.receive(slug, content, version)` and `editor.annotations.receive(notes, version)` bring a change made elsewhere (an agent, another tab) into the open document, merged with the writer's own work and without moving the caret. Only the lines that differ change (`surface.patchText`): the rest keep their elements, the line at the top of the screen stays where it is, and what changed on screen eases into place (`src/editor/motion.ts`, timed by the `--galley-dur-flow` tokens; still with `--galley-ctl-motion: 0` or reduced motion). A save refused because someone else wrote first merges the same way (`src/core/merge.ts`).
 - **Suggested edits** (for agents): `editor.edits.highlight(edit)`, `editor.edits.accept(edit, slug)`. An edit is bound to the document it was proposed for, applied with a conflict check, and withdrawn if it cannot be saved.
 - **The surface alone**: `createSurface(element, { onChange })` is the writing surface with no documents, storage or chrome.
 
@@ -120,9 +120,9 @@ Galley's CSS reads only `--galley-*` custom properties (`src/styles/tokens.css`)
 ```
 src/
   markdown/   the grammar (shared with any read-only renderer) and titles
-  core/       pure logic: write rules, save queue, history, anchoring, edits, tables
+  core/       pure logic: write rules, save queue, history, anchoring, edits, tables, line diffs and merges
   surface/    the contenteditable writing surface: rendering, caret, undo, gestures
-  editor/     createEditor: session (persistence), notes, marks, toolbar, picker
+  editor/     createEditor: session (persistence), notes, marks, toolbar, picker, motion
   stores/     DocumentStore and its HTTP, memory and local implementations
   server/     file store, HTTP handler, Vite plugin (Node only)
   engine/     papers: behaviors, the scheduler, model transports, evidence, rendering (Node only)

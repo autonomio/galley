@@ -31,11 +31,17 @@ export interface Toolbar {
   update(): void
 }
 
-export function createToolbar<Context>(actions: ToolbarAction<Context>[], context: Context): Toolbar {
+export function createToolbar<Context>(actions: (ToolbarAction<Context> | 'separator')[], context: Context): Toolbar {
   const element = el('div', { class: 'galley-bar-left', role: 'toolbar', 'aria-label': 'Document' })
   const buttons = new Map<string, HTMLButtonElement>()
+  const real = actions.filter((action): action is ToolbarAction<Context> => action !== 'separator')
 
   for (const action of actions) {
+    // A divider between groups of actions, so the row reads as its groups.
+    if (action === 'separator') {
+      element.appendChild(el('span', { class: 'galley-bar-sep', role: 'separator', 'aria-orientation': 'vertical' }))
+      continue
+    }
     const button = el('button', {
       type: 'button',
       class: `galley-bar-btn${action.danger ? ' is-danger' : ''}${action.keepInWriterMode ? ' is-kept' : ''}`,
@@ -55,7 +61,7 @@ export function createToolbar<Context>(actions: ToolbarAction<Context>[], contex
   }
 
   function update(): void {
-    for (const action of actions) {
+    for (const action of real) {
       const button = buttons.get(action.id)!
       if (action.pressed) {
         const on = action.pressed(context)
@@ -72,6 +78,28 @@ export function createToolbar<Context>(actions: ToolbarAction<Context>[], contex
 
   update()
   return { element, button: (id) => buttons.get(id) ?? null, update }
+}
+
+/**
+ * A button made like the toolbar's own, for a control a host or plugin puts
+ * in the bar, a slot or a pane: the same size, states and tip. The tip reads
+ * the button's aria-label and data-description each time it shows, so
+ * changing those changes the tip.
+ */
+export function iconButton(options: {
+  label: string
+  description?: string
+  shortcut?: string
+  /** Trusted markup: an icon, or anything that fits the button. */
+  icon: string
+  className?: string
+  onClick?(button: HTMLButtonElement, event: MouseEvent): void
+}): HTMLButtonElement {
+  const button = el('button', { type: 'button', class: `galley-bar-btn${options.className ? ` ${options.className}` : ''}`, 'aria-label': options.label }, options.icon)
+  if (options.description) button.dataset.description = options.description
+  attachTooltip(button, () => ({ label: button.getAttribute('aria-label') ?? options.label, shortcut: options.shortcut, description: button.dataset.description || undefined }))
+  if (options.onClick) button.addEventListener('click', (event) => options.onClick!(button, event))
+  return button
 }
 
 /** Swap a button's icon to a check for a moment, as confirmation. */

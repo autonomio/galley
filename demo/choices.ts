@@ -17,7 +17,7 @@ export function choicesAction(): EditorAction {
     id: 'citation-choices',
     label: 'Citation choices',
     description: 'Claims waiting for you to pick their source among a, b and c, when you chose to pick citations yourself.',
-    icon: icons.comment,
+    icon: icons.book,
     async run(editor) {
       if (panel) { close(); return }
       const slug = editor.slug
