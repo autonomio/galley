@@ -264,7 +264,14 @@ function sendZip(res: ServerResponse, out: string, files: string[], name: string
   res.setHeader('Content-Type', 'application/zip')
   res.setHeader('Content-Disposition', `attachment; filename="${name}"`)
   res.setHeader('Cache-Control', 'no-store')
-  zip.stdout.pipe(res)
+  // The zip is only whole once zip says so: a file it could not read cuts the
+  // download off, so the browser reports it failed instead of saving half an archive.
+  zip.stdout.pipe(res, { end: false })
+  zip.on('close', (code) => {
+    if (res.writableEnded) return // answered already: no zip on this machine
+    if (code === 0) res.end()
+    else res.destroy()
+  })
 }
 
 // What a paper has made, each file at a link of its own: /papers/<doc>/<file>

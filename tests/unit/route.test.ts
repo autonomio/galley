@@ -1,6 +1,6 @@
 // Links: what a link names, and the one link for what is on screen.
 import { describe, expect, it } from 'vitest'
-import { nextDocument, parseRoute, routeSearch } from '../../demo/route.js'
+import { landed, nextDocument, parseRoute, routeSearch } from '../../demo/route.js'
 
 describe('parseRoute', () => {
   it('reads the document and the views open with it', () => {
@@ -33,5 +33,15 @@ describe('routeSearch', () => {
 describe('nextDocument', () => {
   it('keeps the views that follow the writer and closes the ones that belong to the document', () => {
     expect(nextDocument({ doc: 'a', views: ['activity', 'writer', 'paper', 'files'] }, 'b')).toEqual({ doc: 'b', views: ['activity', 'writer'] })
+  })
+})
+
+describe('landed', () => {
+  it('keeps the link as it was when its document opened', () => {
+    expect(landed({ doc: 'a', views: ['writer', 'files'] }, 'a')).toEqual({ doc: 'a', views: ['writer', 'files'] })
+  })
+
+  it('opens none of a missing document\'s paper or files on the one that opened instead', () => {
+    expect(landed({ doc: 'gone', views: ['writer', 'paper', 'files'] }, 'welcome')).toEqual({ doc: 'welcome', views: ['writer'] })
   })
 })

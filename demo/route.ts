@@ -44,6 +44,11 @@ export function nextDocument(route: Route, doc: string): Route {
   return { doc, views: route.views.filter((view) => FOLLOW.includes(view)) }
 }
 
+/** What a link says once a document is open for it: as it was, or, when another document opened instead, only the views that follow the writer, since the rest named the missing document's paper and files. */
+export function landed(route: Route, opened: string): Route {
+  return route.doc === opened ? route : nextDocument(route, opened)
+}
+
 export interface LinkedView {
   /** Open or close it, because the link says so. */
   set(on: boolean, editor: Editor): void
@@ -80,14 +85,20 @@ export function createRouter(): Router {
     for (const [name, view] of views) view.set(route.views.includes(name), editor)
   }
 
+  // The link names the document on screen, and says so when the one it named is not here.
+  function arrived(slug: string): void {
+    if (!editor) return
+    if (route.doc && route.doc !== slug) editor.notify({ source: 'link', level: 'attention', message: `There is no document “${route.doc}” here, so the link opened “${slug}”.` })
+    write(landed(route, slug), false)
+    // The views the link names open once their document is there.
+    apply()
+  }
+
   function opened(slug: string): void {
     if (!editor) return
     if (!started) {
       started = true
-      if (route.doc && route.doc !== slug) editor.notify({ source: 'link', level: 'attention', message: `There is no document “${route.doc}” here, so the link opened “${slug}”.` })
-      write({ doc: slug, views: route.views }, false)
-      // The views the link names open once their document is there.
-      apply()
+      arrived(slug)
       return
     }
     if (asked === slug || route.doc === slug) { asked = null; return }
@@ -112,7 +123,11 @@ export function createRouter(): Router {
         route = parseRoute(location.search)
         if (route.doc && route.doc !== ed.slug) {
           asked = route.doc
-          void ed.open(route.doc).then(apply)
+          // A document deleted since leaves the editor where it was; open() says nothing, so the slug does.
+          void ed.open(route.doc).then(() => {
+            asked = null
+            if (ed.slug) arrived(ed.slug)
+          })
         } else apply()
       })
     },

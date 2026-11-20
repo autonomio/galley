@@ -27,7 +27,14 @@ export function writePaperAction(link?: Router): EditorAction {
     })
   }
 
-  async function start(editor: Editor): Promise<void> {
+  // A second start while the first still asks whether there is a project (a double click, a link and a click) is the same start.
+  let starting: Promise<void> | null = null
+  function start(editor: Editor): Promise<void> {
+    starting ??= begin(editor).finally(() => { starting = null })
+    return starting
+  }
+
+  async function begin(editor: Editor): Promise<void> {
     const slug = editor.slug
     if (!slug || dialog) return
     // Only a document with no project yet starts one; any other answer leads to the project's status and settings.
