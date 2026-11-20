@@ -99,6 +99,19 @@ export function reviewDone(paper: Paper): boolean {
   return s.round >= 1 && !s.findings.some((f) => f.round === s.round && f.severity !== 'minor')
 }
 
+/** A claim's standing, weakest first: of two claims that say the same, the ledger keeps the stronger. */
+const STANDING = ['open', 'unsupported', 'assumed', 'internal', 'narrowed', 'supported']
+const idNumber = (id: string) => Number(id.replace(/\D/g, '')) || 0
+/** The letters of a text, with LaTeX's backslashes gone: typesetting its mathematics may add command names, never change a word. */
+const letters = (text: string) => text.replace(/\\/g, '').replace(/[^a-z]/gi, '').toLowerCase()
+export function sameWords(text: string, typeset: string): boolean {
+  const before = letters(text), after = letters(typeset)
+  if (!typeset.includes('$') || after.length > before.length * 1.5 + 20) return false
+  let i = 0
+  for (const ch of after) if (ch === before[i]) i++
+  return i === before.length
+}
+
 /**
  * Review edits the prose, never the ledger. Once review is done, a family other
  * than the author's reads the final text against every claim, so the ledger,
@@ -121,13 +134,16 @@ The manuscript below went through review after its claim ledger was written, and
 - narrowed: the text states only a narrower or weaker version of it. Give narrowed: the claim reworded to exactly what the text now states, in the claim's own terms.
 - absent: the text no longer states it, not even as a hypothesis or an open question.
 Give quote: the sentence of the text that states it, copied exactly (empty when absent). Judge only the sections, not the title or abstract.
+Also give, for each claim:
+- duplicate_of: the id of another claim in the ledger that says the same thing, possibly in other words; empty when none.
+- typeset: when the claim writes mathematics as plain text (such as T_A, log2(1/(1-p)), x^2 or <1-p, p>), the claim with that mathematics in LaTeX between dollar signs ($T_A$, $\\log_2(1/(1-p))$), every word unchanged; empty otherwise.
 
 LEDGER:
 ${claims.map((c) => `${c.id}: ${c.text}`).join('\n')}
 
 MANUSCRIPT:
 ${manuscriptBlock(paper, false, false)}`,
-        schema: obj({ items: arr(obj({ claim_id: str(), how: enm(['stated', 'narrowed', 'absent']), quote: str(), narrowed: nstr() })) }),
+        schema: obj({ items: arr(obj({ claim_id: str(), how: enm(['stated', 'narrowed', 'absent']), quote: str(), narrowed: nstr(), duplicate_of: nstr(), typeset: nstr() })) }),
       })
       for (const item of reply.items ?? []) {
         const c = claims.find((k) => k.id === item.claim_id)
@@ -135,6 +151,20 @@ ${manuscriptBlock(paper, false, false)}`,
         if (item.how === 'absent') setClaim(paper, c, 'dropped', 'reconcile', 'not stated in the final text')
         // A rewording that keeps little of the claim is a different claim: the ledger keeps the original.
         else if (item.how === 'narrowed' && item.narrowed && isNarrowing(c.text, item.narrowed)) setClaim(paper, c, c.status, 'reconcile', `the final text states it more narrowly: "${String(item.quote).slice(0, 300)}"`, item.narrowed)
+        // Its mathematics typeset, only where every word stays as it was.
+        if (c.status !== 'dropped' && item.typeset && sameWords(c.text, item.typeset)) setClaim(paper, c, c.status, 'reconcile', 'its mathematics typeset', item.typeset)
+      }
+      // A claim the ledger holds twice is kept once: the one with the stronger standing, the earlier on a tie; the other's
+      // verified sources and dependants pass to it.
+      for (const item of reply.items ?? []) {
+        const a = claims.find((k) => k.id === item.claim_id)
+        const b = claims.find((k) => k.id === item.duplicate_of)
+        if (!a || !b || a === b || a.status === 'dropped' || b.status === 'dropped') continue
+        const rank = (k: typeof a) => STANDING.indexOf(k.status)
+        const [keep, drop] = rank(b) > rank(a) || (rank(b) === rank(a) && idNumber(b.id) < idNumber(a.id)) ? [b, a] : [a, b]
+        for (const cite of paper.state.citations) if (cite.claimId === drop.id && cite.status === 'verified') cite.claimId = keep.id
+        for (const k of paper.state.claims) k.dependsOn = (k.dependsOn ?? []).map((id) => id === drop.id ? keep.id : id)
+        setClaim(paper, drop, 'dropped', 'reconcile', `states the same as ${keep.id}`)
       }
       paper.save()
     },
