@@ -82,6 +82,10 @@ export function renderAnnotationMarks(options: {
   // were last seen on, so a live mark on the same line paints over them.
   // Orphans sharing a line cascade rightward, one tick each: identical boxes
   // would stack and leave all but the top one unreachable.
+  // A tick is one line of text square, not the line element's height: a
+  // paragraph wrapped over twenty lines made each tick hundreds of pixels
+  // wide, the cascade ran far past the page, and the page scrolled sideways.
+  // For the same reason the cascade wraps at the line's right edge.
   const orphansOnLine = new Map<number, number>()
   for (const a of annotations) {
     if (!orphans.has(a.id)) continue
@@ -91,7 +95,9 @@ export function renderAnnotationMarks(options: {
     const slot = orphansOnLine.get(lineIdx) ?? 0
     orphansOnLine.set(lineIdx, slot + 1)
     const rect = lineEl.getBoundingClientRect()
-    const div = mark('galley-mark is-orphan', new DOMRect(rect.left - box.left + slot * rect.height, rect.top - box.top, rect.height, rect.height))
+    const size = Math.min(rect.height, parseFloat(getComputedStyle(lineEl).lineHeight) || rect.height)
+    const perRow = Math.max(1, Math.floor(rect.width / size) || 1)
+    const div = mark('galley-mark is-orphan', new DOMRect(rect.left - box.left + (slot % perRow) * size, rect.top - box.top + Math.floor(slot / perRow) * size, size, size))
     div.dataset.annotation = a.id
     div.title = a.comment ? `Passage changed: ${a.comment.slice(0, 200)}` : 'Passage changed'
     layer.appendChild(div)

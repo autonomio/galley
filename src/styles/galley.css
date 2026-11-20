@@ -138,7 +138,9 @@
 .galley-picker-empty { padding: var(--galley-sp-3) var(--galley-sp-2); color: var(--galley-text-muted); font-size: var(--galley-fs-ui); }
 
 /* ---------- The page ---------- */
-.galley-body { flex: 1 1 auto; min-height: 0; display: flex; }
+/* The panes never scroll the window sideways: a pane sliding in from the
+   window's edge (the Activity pane does) is cut there, not added to its width. */
+.galley-body { flex: 1 1 auto; min-height: 0; display: flex; overflow-x: clip; }
 .galley-main {
   flex: 1 1 auto;
   min-width: 0;

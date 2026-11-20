@@ -35,3 +35,24 @@ test('every paper is beside the page, the open one marked and any other one clic
   await page.reload()
   await expect(page.locator('.pr')).toHaveClass(/is-folded/)
 })
+
+test('the window never scrolls sideways, not even while the Activity pane slides in beside the rail', async ({ page }) => {
+  const writing = writePaper(docs(), papers(), { title: 'Street Trees Sideways', running: true })
+  await page.addInitScript(() => {
+    const w = window as unknown as { sideways: number }
+    w.sideways = 0
+    const sample = () => {
+      w.sideways = Math.max(w.sideways, document.documentElement.scrollWidth - document.documentElement.clientWidth)
+      requestAnimationFrame(sample)
+    }
+    requestAnimationFrame(sample)
+  })
+  await page.goto(`/?doc=${writing.slug}&view=activity`)
+  await expect(page.locator('.pr-item', { hasText: writing.title })).toHaveClass(/is-current/)
+  // The pane has slid all the way in.
+  await page.waitForFunction(() => {
+    const side = document.querySelector('.galley-slot[data-slot="side"]')
+    return !!side?.classList.contains('lv-opening') && side.getAnimations().length === 0
+  })
+  expect(await page.evaluate(() => (window as unknown as { sideways: number }).sideways)).toBe(0)
+})
