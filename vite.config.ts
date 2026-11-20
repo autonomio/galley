@@ -1,7 +1,7 @@
 // `npm run dev` serves the demo (demo/) with Galley's API mounted, keeping
 // documents as markdown files in GALLEY_DIR (default ./.galley-data). An
 // empty folder starts with the welcome document.
-import { execFileSync, spawn } from 'node:child_process'
+import { execFile, execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -98,6 +98,18 @@ function papersPlugin(): Plugin {
           res.end(execFileSync(process.execPath, [cli, 'context']).toString())
           return
         }
+        if (slugPart === '_record') {
+          // What a dataset's published record says (a Zenodo record or its DOI), for the wizard to show before the paper starts.
+          const link = new URL(req.url || '/', 'http://localhost').searchParams.get('link') ?? ''
+          if (!/^(https?:\/\/\S+|10\.\d{4,9}\/\S+)$/i.test(link)) { res.statusCode = 400; res.end('a link or DOI'); return }
+          if (!existsSync(cli)) { res.statusCode = 503; res.end('build galley first: npm run build'); return }
+          execFile(process.execPath, [cli, 'record', link], { timeout: 90_000 }, (error, stdout, stderr) => {
+            if (error) { res.statusCode = 502; res.end(String(stderr || error.message).split('\n').filter(Boolean).at(-1) ?? 'the record could not be read'); return }
+            res.setHeader('Content-Type', 'application/json')
+            res.end(stdout)
+          })
+          return
+        }
         const slug = slugPart
         if (!/^[a-z0-9][a-z0-9-]*$/i.test(slug)) { res.statusCode = 400; res.end('bad document name'); return }
         // One document, one project: the paper is written into the document it starts from, so its folder takes the
@@ -192,10 +204,17 @@ function papersPlugin(): Plugin {
           }
           // A dataset is one unit of one or more files: they go in a folder of their own, with a manifest of where the data comes from.
           const short = (value: unknown, max: number) => { const v = String(value ?? '').trim(); return v && v.length <= max ? v : undefined }
-          for (const [i, d] of (datasets as { name?: string; files?: { name?: string; data?: string }[]; producedBy?: string; version?: string; doi?: string; describedIn?: string; licence?: string; citation?: string; private?: boolean }[]).entries()) {
+          for (const [i, d] of (datasets as { name?: string; record?: string; files?: { name?: string; data?: string }[]; producedBy?: string; version?: string; doi?: string; describedIn?: string; licence?: string; citation?: string; private?: boolean }[]).entries()) {
+            const folder = join(inbox, `dataset-${i + 1}`)
+            // A dataset given by its link: the engine reads the record and downloads its files, with the person's answers on top.
+            if (d.record && /^(https?:\/\/\S+|10\.\d{4,9}\/\S+)$/i.test(d.record)) {
+              mkdirSync(folder, { recursive: true })
+              writeFileSync(join(folder, 'dataset.json'), JSON.stringify({ record: d.record, name: short(d.name, 200), producedBy: d.producedBy === 'authors' ? 'authors' : 'others', describedIn: short(d.describedIn, 300), private: d.private === true }, null, 2))
+              args.push('--dataset', join(folder, 'dataset.json'))
+              continue
+            }
             const files = (d.files ?? []).filter((f) => f.name && f.data)
             if (!files.length) continue
-            const folder = join(inbox, `dataset-${i + 1}`)
             mkdirSync(folder, { recursive: true })
             const names = files.map((f) => {
               const name = f.name!.replace(/[^\w.-]+/g, '_')

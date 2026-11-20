@@ -18,7 +18,13 @@ function seedReference(text: string): HTMLElement {
 
 interface Item { name: string; kind: 'dataset' | 'document' | 'link'; url?: string; file?: File; detail: string; private: boolean }
 /** A dataset as its producers know it: one or more files under one name, with where the data comes from. */
-interface DatasetItem { name: string; files: { file: File; detail: string }[]; producedBy: 'authors' | 'others'; doi: string; version: string; describedIn: string; licence: string; private: boolean }
+interface DatasetItem {
+  name: string; files: { file: File; detail: string }[]; producedBy: 'authors' | 'others'; doi: string; version: string; describedIn: string; licence: string; private: boolean
+  /** A dataset given by its link: the published record it comes from, what the record says, and its files as listed there. */
+  record?: string; creators?: string; remote?: { name: string; size: number }[]; recordState?: 'reading' | 'read' | 'failed'
+}
+/** A link to a published dataset galley can read: a Zenodo record or its DOI. */
+const DATASET_RECORD = /zenodo\.org\/(api\/)?(records?|deposit|uploads)\/\d+|10\.5281\/zenodo\.\d+/i
 
 const STEPS = ['Seed', 'Materials', 'Settings', 'Start'] as const
 const DATASET = /\.(csv|tsv|json|xlsx)$/i
@@ -139,6 +145,8 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       const value = url.value.trim()
       if (!/^https?:\/\/\S+\.\S+/i.test(value)) { url.setCustomValidity('A full address, starting with http:// or https://'); url.reportValidity(); return }
       url.setCustomValidity('')
+      // A link to a published dataset is a dataset: galley reads its record for how to cite it and downloads its files.
+      if (DATASET_RECORD.test(value)) { void addRecord(value); return }
       items.push({ name: value, kind: 'link', url: value, detail: 'Read once, when the paper starts', private: false })
       render()
     }
@@ -181,10 +189,18 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
         h('span', { class: 'gw-kind gw-kind--dataset', 'aria-hidden': 'true' }), text('name', 'Dataset name'),
         segmented([['Private', true], ['Shared', false]], d.private, (v) => { d.private = v; render() }, `Who may read ${d.name}`),
         h('button', { type: 'button', class: 'gw-x', 'aria-label': `Remove ${d.name}`, text: '×', onclick: () => { datasets.splice(index, 1); render() } })),
-      h('ul', { class: 'gw-list' }, ...d.files.map((f, i) => h('li', { class: 'gw-row gw-row--file' },
-        h('span', { class: 'gw-row-main' }, h('span', { class: 'gw-mono gw-row-name', text: f.file.name }), h('span', { class: 'gw-row-detail', text: f.detail })),
-        h('button', { type: 'button', class: 'gw-x', 'aria-label': `Remove ${f.file.name}`, text: '×', onclick: () => { d.files.splice(i, 1); if (!d.files.length) datasets.splice(index, 1); render() } })))),
-      h('label', { class: 'gw-btn gw-addfiles' }, more, 'Add files to this dataset'),
+      ...(d.record ? [
+        h('p', { class: 'gw-help', text: d.recordState === 'reading' ? `Reading ${d.record} …`
+          : d.recordState === 'failed' ? `The record at ${d.record} could not be read. Check the link; galley tries again when the paper starts.`
+            : `Published by ${d.creators || 'its creators'}${d.version ? `, version ${d.version}` : ''}${d.licence ? `, ${d.licence}` : ''}${d.doi ? `, DOI ${d.doi}` : ''}. The paper cites it by this record.` }),
+        d.remote?.length ? h('ul', { class: 'gw-list' }, ...d.remote.map((f) => h('li', { class: 'gw-row gw-row--file' },
+          h('span', { class: 'gw-row-main' }, h('span', { class: 'gw-mono gw-row-name', text: f.name }), h('span', { class: 'gw-row-detail', text: `${Math.max(1, Math.round(f.size / 1024)).toLocaleString('en-US')} kB · downloaded${/\.zip$/i.test(f.name) ? ' and unpacked' : ''} when the paper starts` }))))) : null,
+      ] : [
+        h('ul', { class: 'gw-list' }, ...d.files.map((f, i) => h('li', { class: 'gw-row gw-row--file' },
+          h('span', { class: 'gw-row-main' }, h('span', { class: 'gw-mono gw-row-name', text: f.file.name }), h('span', { class: 'gw-row-detail', text: f.detail })),
+          h('button', { type: 'button', class: 'gw-x', 'aria-label': `Remove ${f.file.name}`, text: '×', onclick: () => { d.files.splice(i, 1); if (!d.files.length) datasets.splice(index, 1); render() } })))),
+        h('label', { class: 'gw-btn gw-addfiles' }, more, 'Add files to this dataset'),
+      ]),
       row('Who produced it', segmented([['I or my group', 'authors'], ['Others', 'others']], d.producedBy, (v) => { d.producedBy = v as DatasetItem['producedBy']; render() }, `Who produced ${d.name}`)),
       row('Published as', text('doi', 'Published as', 'DOI or link, if published')),
       row('Version', text('version', 'Version', 'Version, if any')),
@@ -193,6 +209,22 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       h('p', { class: 'gw-help', text: d.producedBy === 'others' || d.doi || d.describedIn
         ? 'The paper analyses this data and cites it where it describes it, never as measurements made for this paper.'
         : 'Data you produced for this paper is your own work. If it was published before, give where, and the paper cites it.' }))
+  }
+
+  /** A dataset by its link: the card shows what the record says at once; the files are downloaded when the paper starts. */
+  async function addRecord(link: string): Promise<void> {
+    const d: DatasetItem = { name: link, files: [], producedBy: 'others', doi: '', version: '', describedIn: '', licence: '', private: false, record: link, recordState: 'reading' }
+    datasets.push(d)
+    render()
+    try {
+      const response = await fetch(`/api/galley-papers/_record?link=${encodeURIComponent(link)}`)
+      if (!response.ok) throw new Error(await response.text())
+      const r = await response.json() as { name: string; creators: string[]; version?: string; doi?: string; licence?: string; describedIn?: string; files: { name: string; size: number }[] }
+      Object.assign(d, { name: r.name, creators: r.creators.join(', '), version: r.version ?? '', doi: r.doi ?? '', licence: r.licence ?? '', describedIn: r.describedIn ?? '', remote: r.files, recordState: 'read' })
+    } catch {
+      d.recordState = 'failed'
+    }
+    render()
   }
 
   async function addTo(d: DatasetItem, files: File[]): Promise<void> {
@@ -338,10 +370,13 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       const materials = await Promise.all(items.map(async (item) => item.kind === 'link'
         ? { name: item.name, url: item.url }
         : { name: item.name, private: item.private, data: await base64(item.file!) }))
-      const sets = await Promise.all(datasets.map(async (d) => ({
-        name: d.name, producedBy: d.producedBy, doi: d.doi, version: d.version, describedIn: d.describedIn, licence: d.licence, private: d.private,
-        files: await Promise.all(d.files.map(async (f) => ({ name: f.file.name, data: await base64(f.file) }))),
-      })))
+      const sets = await Promise.all(datasets.map(async (d) => d.record
+        // A dataset by its link: the engine reads the record and downloads its files; the person's answers go with it.
+        ? { record: d.record, name: d.recordState === 'read' ? d.name : '', producedBy: d.producedBy, describedIn: d.describedIn, private: d.private }
+        : {
+          name: d.name, producedBy: d.producedBy, doi: d.doi, version: d.version, describedIn: d.describedIn, licence: d.licence, private: d.private,
+          files: await Promise.all(d.files.map(async (f) => ({ name: f.file.name, data: await base64(f.file) }))),
+        }))
       const response = await fetch(`/api/galley-papers/${encodeURIComponent(slug)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

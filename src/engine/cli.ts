@@ -13,8 +13,9 @@
 //   galley ladder                    the behaviors, in ladder order
 //   galley doctor                    check that every model, tool and source answers
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { basename, dirname, resolve } from 'node:path'
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, dirname, join, resolve } from 'node:path'
 import { LADDER } from './behaviors/index.js'
 import { answerChoice } from './behaviors/truth.js'
 import { defaultConfig, FAMILY_MODELS, FAMILY_NAMES } from './config.js'
@@ -26,6 +27,7 @@ import { runPaper, Stalled } from './scheduler.js'
 import { obj, bool } from './schema.js'
 import { DOES } from './self.js'
 import { addDatasets, addMaterials, type DatasetManifest } from './materials.js'
+import { datasetFromRecord, isDatasetRecord, readRecord } from './records.js'
 import { reviewDone } from './behaviors/close.js'
 import { REVIEW_SETTINGS } from './literature.js'
 import type { Family } from './types.js'
@@ -67,7 +69,7 @@ function slugFromSeed(seed: string, file: string): string {
 /** What each behavior is doing, in words a person reads in the status view. */
 const DOING: Record<string, string> = {
   extract: 'Reading the seed', position: 'Searching the literature for prior art', 'review-idea': 'Reviewing the idea on seven factors', 'literature-review': 'Systematic review of the literature (Canary)', simulate: 'Designing and running the simulation',
-  reformulate: 'Writing three directions', 'select-direction': 'Choosing a direction', analyze: 'Measuring your data', plan: 'Planning the argument',
+  reformulate: 'Writing three directions', 'select-direction': 'Choosing a direction', 'analysis-plan': 'Planning the analysis of your data', 'analysis-review': 'A statistician reviewing the analysis plan', analyze: 'Running the analyses of your data', plan: 'Planning the argument',
   outline: 'Outlining', 'find-evidence': 'Finding evidence', verify: 'Verifying citations', reassess: 'Reassessing the thesis', calibrate: 'Calibrating the verifier',
   draft: 'Drafting', figure: 'Drawing figures', fidelity: 'Checking sections against their claims', frame: 'Writing the title and abstract',
   referee: 'Referee review', 'close-round': 'Closing the round', respond: 'Answering the referees', 'verify-disposition': 'Referees judging the answers',
@@ -247,10 +249,19 @@ async function main(): Promise<void> {
       const sources = [...flags('material').map((source) => ({ source })), ...flags('shared-material').map((source) => ({ source, shared: true }))]
       const loose = sources.length ? await addMaterials(dir, sources) : []
       // A dataset as a unit: a manifest names its files (relative to the manifest) and says where the data comes from.
-      const manifests = flags('dataset').map((path) => {
-        const manifest = JSON.parse(readFileSync(path, 'utf8')) as DatasetManifest
-        return { ...manifest, files: (manifest.files ?? []).map((file) => resolve(dirname(resolve(path)), file)) }
-      })
+      // A dataset is given by its link (a Zenodo record or its DOI), or by a manifest that names its files or its record.
+      const manifests: DatasetManifest[] = []
+      for (const value of flags('dataset')) {
+        const inbox = () => mkdtempSync(join(tmpdir(), 'galley-record-'))
+        if (isDatasetRecord(value)) { manifests.push(await datasetFromRecord(value, inbox())); continue }
+        const manifest = JSON.parse(readFileSync(value, 'utf8')) as DatasetManifest & { record?: string }
+        if (manifest.record) {
+          const { record, files: _files, ...given } = manifest
+          manifests.push(await datasetFromRecord(record, inbox(), Object.fromEntries(Object.entries(given).filter(([, v]) => v !== undefined && v !== ''))))
+          continue
+        }
+        manifests.push({ ...manifest, files: (manifest.files ?? []).map((file) => resolve(dirname(resolve(value)), file)) })
+      }
       const units = manifests.length ? await addDatasets(dir, manifests, loose.length) : { materials: [], datasets: [] }
       const materials = [...loose, ...units.materials]
       for (const m of materials) console.log(`Material ${m.id}: ${m.kind} ${m.url ?? m.name}${m.dataset ? ` in ${m.dataset}` : ''}${m.kind === 'dataset' ? (m.private ? ' (private)' : ' (shared)') : m.text ? '' : ' (its text could not be read)'}`)
@@ -343,6 +354,13 @@ async function main(): Promise<void> {
       const paper = Paper.open(resolve(dir))
       const editor = editorDir(paper)
       console.log(`The manuscript and its notes are in ${editor}. Open them in the editor with:\n\n  GALLEY_DIR=${editor} npm run dev\n\nthen visit http://localhost:5174. While the paper is being written, your edits, notes and replies are taken in within seconds; otherwise on the next "galley run ${dir}".`)
+      return
+    }
+    case 'record': {
+      // What a dataset's published record says about it (a Zenodo record or its DOI), for a host to show before the paper starts.
+      const [link] = positional()
+      if (!link) throw new Error('usage: galley record <link>')
+      console.log(JSON.stringify(await readRecord(link)))
       return
     }
     case 'context': {

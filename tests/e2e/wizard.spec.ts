@@ -79,6 +79,36 @@ test('the paper wizard walks through seed, materials and settings, and starts th
   })])
 })
 
+test('a link to a published dataset becomes a dataset, read from its record and cited by it', async ({ page }) => {
+  const dir = process.env.GALLEY_E2E_DIR!
+  const slug = `seed-${Date.now()}`
+  writeFileSync(join(dir, `${slug}.md`), `# Telecom latency\n\n${'Telecom sites could sell fast frequency reserve if they switch to battery fast enough. '.repeat(10)}\n`)
+  let posted: { datasets: Record<string, unknown>[] } | null = null
+  await page.route('**/api/galley-papers/_record?**', (route) => route.fulfill({ json: {
+    link: 'https://zenodo.org/records/19781923', name: 'VPP latency measurements', creators: ['ICTEnergyFTW'], version: 'v1.0.1', doi: '10.5281/zenodo.19781923', licence: 'CC-BY-4.0', url: 'https://zenodo.org/records/19781923', citation: '', files: [{ name: 'VPP_Latency_Measurements-v1.0.1.zip', size: 3243312, url: '' }],
+  } }))
+  await page.route(`**/api/galley-papers/${slug}`, async (route) => {
+    if (route.request().method() !== 'POST') return route.fulfill({ status: 404, body: '' })
+    posted = route.request().postDataJSON()
+    return route.fulfill({ status: 202, json: {} })
+  })
+  await page.goto(`/?doc=${slug}`)
+  await page.waitForFunction((s) => window.galley?.slug === s, slug)
+  await page.locator('[data-action="write-paper"]').click()
+  const wizard = page.locator('dialog.gw')
+  await wizard.getByRole('button', { name: 'Next: Materials' }).click()
+  await wizard.getByLabel('Link', { exact: true }).fill('https://zenodo.org/records/19781923')
+  await wizard.getByRole('button', { name: 'Add link' }).click()
+  const dataset = wizard.locator('.gw-dataset')
+  await expect(dataset).toContainText('Published by ICTEnergyFTW, version v1.0.1, CC-BY-4.0, DOI 10.5281/zenodo.19781923')
+  await expect(dataset).toContainText('downloaded and unpacked when the paper starts')
+  await expect(dataset).toContainText('never as measurements made for this paper')
+  for (const step of ['Next: Settings', 'Next: Start']) await wizard.getByRole('button', { name: step }).click()
+  await wizard.getByRole('button', { name: 'Start the paper' }).click()
+  await expect(wizard.getByRole('heading', { name: 'Writing the paper' })).toBeVisible()
+  expect(posted!.datasets).toEqual([{ record: 'https://zenodo.org/records/19781923', name: 'VPP latency measurements', producedBy: 'others', describedIn: '', private: false }])
+})
+
 test('a seed that already has a paper shows where the paper stands, and opens the manuscript once it is typeset', async ({ page }) => {
   const dir = process.env.GALLEY_E2E_DIR!
   const slug = `seed-${Date.now()}`
