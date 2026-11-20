@@ -73,21 +73,22 @@ describe('livePapers', () => {
   it('lists every paper, those being written first, with how far each has come', () => {
     dir = mkdtempSync(join(tmpdir(), 'galley-live-'))
     const finding = (id: string, status: 'open' | 'resolved', origin: 'agent' | 'human' = 'agent') => ({ id, round: 1, seat: 'methods', family: 'gpt', model: 'm', severity: 'minor', sectionId: 'S1', quote: '', question: '', alternatives: '', evidence: '', decision: '', status, origin }) as unknown as PaperState['findings'][number]
-    const make = (name: string, created: string, change: (s: PaperState) => void) => {
-      const paper = Paper.create(join(dir, name), 'seed', { rounds: 2 })
+    const make = (name: string, created: string, change: (s: PaperState) => void, rounds?: number) => {
+      const paper = Paper.create(join(dir, name), 'seed', rounds ? { rounds } : {})
       paper.state.createdAt = created
       change(paper.state)
       paper.save()
       return paper
     }
     make('stopped', '2026-01-03T00:00:00Z', () => {})
-    make('ready', '2026-01-01T00:00:00Z', (s) => { s.outcome = 'ready_for_submission' })
+    // A paper that does not set its rounds has the engine's default.
+    make('ready', '2026-01-01T00:00:00Z', (s) => { s.outcome = 'ready_for_submission'; s.round = 1 })
     const writing = make('writing', '2026-01-02T00:00:00Z', (s) => {
       s.outline = { sections: [{ id: 'S1', title: 'One', purpose: '', claimIds: [], words: 1, figureIds: [] }, { id: 'S2', title: 'Two', purpose: '', claimIds: [], words: 1, figureIds: [] }], style: '', glossary: [] }
       s.passages = { S1: { text: 'x' } } as unknown as PaperState['passages']
       s.round = 1
       s.findings = [finding('F1', 'open'), finding('F2', 'open'), finding('F3', 'resolved'), finding('H-1', 'open', 'human')]
-    })
+    }, 3)
     writeFileSync(writing.path('progress.json'), JSON.stringify({ pid: process.pid, outcome: null, inFlight: [] }))
     // Neither an upload nor a folder without a paper is a paper.
     mkdirSync(join(dir, '.uploads'))
@@ -97,7 +98,8 @@ describe('livePapers', () => {
     expect(papers.map((p) => [p.view.slug, p.view.running, p.view.outcome])).toEqual([['writing', true, null], ['ready', false, 'ready_for_submission'], ['stopped', false, null]])
     expect(papers[0].dir).toBe(writing.dir)
     expect(papers[0].view.started).toBe('2026-01-02T00:00:00Z')
-    expect(papers[0].view.progress).toEqual({ sections: { written: 1, total: 2 }, review: { round: 1, rounds: 2, findings: 3, open: 2 } })
+    expect(papers[0].view.progress).toEqual({ sections: { written: 1, total: 2 }, review: { round: 1, rounds: 3, findings: 3, open: 2 } })
+    expect(papers[1].view.progress.review).toEqual({ round: 1, rounds: 2, findings: 0, open: 0 })
     expect(papers[2].view.progress).toEqual({ sections: null, review: null })
     expect(livePapers(join(dir, 'missing'))).toEqual([])
   })

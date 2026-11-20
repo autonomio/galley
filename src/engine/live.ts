@@ -323,6 +323,8 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
   ]
   const sections = (s.outline?.sections ?? []).map((sec) => ({ id: sec.id, title: sec.title, written: !!s.passages[sec.id] }))
   const findings = s.findings.filter((f) => f.origin === 'agent')
+  // A paper that does not set its rounds has the engine's default, never just the round it is in.
+  const rounds = Math.max(config.rounds ?? defaults.rounds, s.round)
   return {
     slug: s.slug,
     doc: config.editorDoc || editorSlug(s.slug),
@@ -335,13 +337,13 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
     sections,
     now,
     waiting,
-    notes: [...workingNotes(s, config), lastActivity(dir, running, now, s.outcome ?? null)],
+    notes: [...workingNotes(s, { ...config, rounds }), lastActivity(dir, running, now, s.outcome ?? null)],
     activity: all.slice(-(options.limit ?? 400)),
     updated: updatedAt(dir),
     started: s.createdAt ?? null,
     progress: {
       sections: s.outline ? { written: sections.filter((sec) => sec.written).length, total: sections.length } : null,
-      review: s.round ? { round: s.round, rounds: config.rounds ?? s.round, findings: findings.length, open: findings.filter((f) => f.status === 'open').length } : null,
+      review: s.round ? { round: s.round, rounds, findings: findings.length, open: findings.filter((f) => f.status === 'open').length } : null,
     },
   }
 }
