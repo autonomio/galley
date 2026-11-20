@@ -23,6 +23,8 @@ export const icons = {
   focusEnter: svg('<path d="M2.75 6V2.75H6M10 2.75h3.25V6M2.75 10v3.25H6M13.25 10v3.25H10"/>'),
   focusExit: svg('<path d="M6 2.75V6H2.75M10 2.75V6h3.25M2.75 10H6v3.25M13.25 10H10v3.25"/>'),
   comment: svg(`<path d="${bubble}"/>`),
+  /** Comments put away: the bubble, struck through. */
+  commentOff: svg(`<path d="${bubble}"/><path d="m2.25 2.25 11.5 11.5"/>`),
   chat: svg(`<path d="${bubble}M5.5 5.75h5M5.5 8h3"/>`),
   close: svg('<path d="m4 4 8 8M12 4l-8 8"/>'),
   // Start: set something going that then runs by itself.

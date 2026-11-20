@@ -67,11 +67,14 @@ export interface NotePanel {
 const GAP = 16
 
 // Thread text is the agents' or the writer's prose: paragraphs, bold and code, nothing else.
-function prose(text: string): string {
-  return text.split(/\n\s*\n/).map((p) => `<p>${escapeHtml(p)
+export function inline(text: string): string {
+  return escapeHtml(text)
     .replace(/`([^`\n]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br>')}</p>`).join('')
+}
+
+function prose(text: string): string {
+  return text.split(/\n\s*\n/).map((p) => `<p>${inline(p).replace(/\n/g, '<br>')}</p>`).join('')
 }
 
 function when(iso: string): string {
@@ -79,12 +82,22 @@ function when(iso: string): string {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-function item(author: AnnotationAuthor | null, text: string, at: string, me: string): string {
+/** Who wrote it: an initial ringed in their tone, the writer's own in the accent. */
+export function faceHtml(author: AnnotationAuthor | null, me: string): string {
   const name = author ? author.name : me
   const initial = (name.match(/[A-Za-z0-9]/)?.[0] ?? '?').toUpperCase()
   const tone = author?.tone ? ` data-tone="${author.tone}"` : author?.kind === 'agent' ? '' : ' data-tone="me"'
+  return `<span class="galley-thread-face"${tone} aria-hidden="true">${escapeHtml(initial)}</span>`
+}
+
+export function labelsHtml(labels: AnnotationLabel[]): string {
+  return labels.map((l) => `<span class="galley-note-label"${l.tone ? ` data-tone="${l.tone}"` : ''}>${escapeHtml(l.text)}</span>`).join('')
+}
+
+function item(author: AnnotationAuthor | null, text: string, at: string, me: string): string {
+  const name = author ? author.name : me
   return `<li class="galley-thread-item">
-    <span class="galley-thread-face"${tone} aria-hidden="true">${escapeHtml(initial)}</span>
+    ${faceHtml(author, me)}
     <div class="galley-thread-body">
       <div class="galley-thread-who"><b>${escapeHtml(name)}</b>${author?.detail ? `<span>${escapeHtml(author.detail)}</span>` : ''}<time>${when(at)}</time></div>
       <div class="galley-thread-text">${prose(text)}</div>
@@ -94,10 +107,6 @@ function item(author: AnnotationAuthor | null, text: string, at: string, me: str
 
 function threadHtml(t: ThreadView): string {
   return item(t.author, t.comment, t.created_at, t.me) + t.replies.map((r) => item(r.author.kind === 'human' && r.author.name === t.me ? null : r.author, r.text, r.created_at, t.me)).join('')
-}
-
-function labelsHtml(t: ThreadView): string {
-  return t.labels.map((l) => `<span class="galley-note-label"${l.tone ? ` data-tone="${l.tone}"` : ''}>${escapeHtml(l.text)}</span>`).join('')
 }
 
 export function createNotePanel(page: HTMLElement, doc: HTMLElement, moved: () => void): NotePanel {
@@ -156,7 +165,7 @@ export function createNotePanel(page: HTMLElement, doc: HTMLElement, moved: () =
       if (grew) list.scrollTop = list.scrollHeight
     }
     const labels = panel.querySelector<HTMLElement>('[data-note="labels"]')
-    if (labels) labels.innerHTML = labelsHtml(thread)
+    if (labels) labels.innerHTML = labelsHtml(thread.labels)
     const resolve = panel.querySelector<HTMLButtonElement>('[data-note="resolve"]')
     if (resolve) resolve.textContent = thread.resolved ? 'Reopen' : 'Resolve'
     panel.classList.toggle('is-resolved', thread.resolved)

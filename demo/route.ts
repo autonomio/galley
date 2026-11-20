@@ -2,7 +2,7 @@
 // view= the views open with it, joined by '+': activity, writer, paper, files,
 // choices, proposals. Opening another document is a step that Back and Forward
 // walk through; opening or closing a view changes the link in place. The
-// host's own parameters (store, theme) stay in the link as they were.
+// host's own parameters (store, theme, comments) stay in the link as they were.
 import type { Editor } from '../src/index.js'
 
 export const VIEWS = ['activity', 'writer', 'paper', 'files', 'choices', 'proposals'] as const

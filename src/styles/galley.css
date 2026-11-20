@@ -35,7 +35,8 @@
   transition: border-color var(--galley-dur-feedback) ease-out;
 }
 .galley-bar-left { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
-.galley-bar-right { display: inline-flex; align-items: center; gap: var(--galley-sp-3); margin-left: auto; min-width: 0; }
+/* The title gives way before the actions: it has only the room left over, so a full row shortens it rather than running the actions into it. */
+.galley-bar-right { display: inline-flex; flex: 1 1 0; align-items: center; justify-content: flex-end; gap: var(--galley-sp-3); min-width: 0; }
 /* A divider between groups of controls. */
 .galley-bar-sep { flex: none; width: var(--galley-line-hair); height: var(--galley-sp-4); margin: 0 var(--galley-sp-1); background: var(--galley-line); }
 /* The host's own start and end of the row (slots bar-start, bar-end). */
@@ -60,7 +61,7 @@
 .galley-bar-btn[aria-pressed="true"] { color: var(--galley-text); }
 .galley-bar-btn:disabled { opacity: 0.4; cursor: default; }
 .galley-bar-btn svg { display: block; }
-.galley :is(.galley-bar-btn, .galley-picker-trigger, .galley-picker-item, .galley-note-btn, .galley-selection-btn, .galley-notice-close):focus-visible {
+.galley :is(.galley-bar-btn, .galley-picker-trigger, .galley-picker-item, .galley-note-btn, .galley-selection-btn, .galley-notice-close, .galley-card):focus-visible {
   outline: var(--galley-line-focus) solid var(--galley-accent);
   outline-offset: var(--galley-line-focus);
 }
@@ -254,7 +255,9 @@
   border-bottom: var(--galley-line-focus) solid var(--galley-note-mark);
   transition: background var(--galley-dur-feedback) ease-out;
 }
-.galley-mark:hover { background: var(--galley-note-mark-hover); }
+/* Pointed at here or at its card, every rect of the passage lights; its thread open, it stays lit. */
+.galley-mark:hover, .galley-mark.is-hovered { background: var(--galley-note-mark-hover); }
+.galley-mark.is-open { background: var(--galley-highlight); }
 .galley-mark.is-orphan { border-bottom-style: dotted; border-bottom-color: var(--galley-text-muted); }
 .galley-mark.is-resolved { border-bottom-width: var(--galley-line-hair); border-bottom-style: dotted; border-bottom-color: var(--galley-edge); }
 .galley-highlight { position: absolute; pointer-events: none; border-radius: calc(var(--galley-sp-unit) * 0.75); background: var(--galley-highlight); animation: galley-fade-in var(--galley-dur-feedback) ease-out; }
@@ -429,6 +432,51 @@
 .galley-note.is-thread .galley-note-text { min-height: calc(var(--galley-sp-unit) * 10); }
 .galley-note-actions { display: flex; justify-content: flex-end; padding: 0 var(--galley-sp-3) var(--galley-sp-3); margin-top: calc(var(--galley-sp-2) * -1); }
 .galley-note.is-resolved .galley-thread { opacity: 0.75; }
+
+/* ---------- The comments column, beside the text (margin.ts) ---------- */
+/* Its room is kept free on the main column's right, so the page and its column are centred together. */
+.galley--margin .galley-main { padding-right: calc(var(--galley-sp-4) + var(--galley-sp-margin) + var(--galley-w-margin)); }
+.galley-margin { position: absolute; top: 0; left: 100%; width: var(--galley-w-margin); margin-left: var(--galley-sp-margin); }
+.galley-card {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--galley-sp-1);
+  padding: var(--galley-sp-2) var(--galley-sp-3);
+  border: var(--galley-line-hair) solid var(--galley-line);
+  border-radius: var(--galley-r-panel);
+  background: var(--galley-surface);
+  color: var(--galley-text-soft);
+  font-size: var(--galley-fs-row);
+  line-height: var(--galley-lh-ui);
+  text-align: left;
+  cursor: pointer;
+  animation: galley-fade-in var(--galley-dur-feedback) ease-out;
+  /* A card glides when the cards around it make way; placed for the first time it is simply there. */
+  transition: top var(--galley-dur-flow) var(--galley-ease-flow), border-color var(--galley-dur-feedback) ease-out, opacity var(--galley-dur-feedback) ease-out;
+}
+.galley-card:hover, .galley-card.is-hovered { border-color: var(--galley-attention-edge); }
+.galley-card.is-open { border-color: var(--galley-attention); box-shadow: var(--galley-shadow-menu); }
+/* Who wrote it, then its labels on the same line, wrapping under the name. */
+.galley-card-who { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; column-gap: var(--galley-sp-2); }
+.galley-card .galley-thread-face { width: calc(var(--galley-sp-unit) * 5); height: calc(var(--galley-sp-unit) * 5); }
+.galley-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--galley-sp-1); min-width: 0; min-height: calc(var(--galley-sp-unit) * 5); }
+.galley-card-head b { min-width: 0; max-width: 100%; margin-right: var(--galley-sp-1); overflow: hidden; color: var(--galley-text); font-weight: var(--galley-fw-strong); text-overflow: ellipsis; white-space: nowrap; }
+.galley-card-head .galley-note-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.galley-card-gone { color: var(--galley-text-muted); font-size: var(--galley-fs-micro); }
+.galley-card-text { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.galley-card-text code { font-family: var(--galley-font-mono); }
+.galley-card-text strong { color: var(--galley-text); font-weight: var(--galley-fw-strong); }
+.galley-card-replies { color: var(--galley-text-muted); font-size: var(--galley-fs-micro); }
+/* A settled thread keeps its place, quieter: one line, dimmed until it is pointed at or open. */
+.galley-card.is-resolved { opacity: 0.55; }
+.galley-card.is-resolved:is(:hover, :focus-visible, .is-hovered, .is-open) { opacity: 1; }
+.galley-card.is-resolved .galley-card-text { -webkit-line-clamp: 1; }
+.galley-card.is-resolved .galley-card-replies { display: none; }
+/* A note whose passage is gone stays where the passage was last seen. */
+.galley-card.is-orphan { border-style: dashed; }
 
 /* Room a host can fill: a strip under the toolbar, a block above the text, a pane beside the page and one before it. */
 .galley-slot[data-slot="header"] { flex: none; }
