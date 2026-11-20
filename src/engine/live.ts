@@ -3,7 +3,7 @@
 // the paper stands, its working notes, and what has happened, in the words a
 // person reads. A host polls it beside the editor; the editor's copy carries
 // the text and the threads themselves.
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { defaultConfig, FAMILY_NAMES } from './config.js'
 import type { Family, PaperState } from './types.js'
@@ -61,6 +61,13 @@ export interface LiveView {
   activity: LiveEntry[]
   /** When anything in the paper's folder last changed. */
   updated: string | null
+  /** When the paper was started. */
+  started: string | null
+  /** How far the writing and the review have come, as numbers: what the working notes say in words. */
+  progress: {
+    sections: { written: number, total: number } | null
+    review: { round: number, rounds: number, findings: number, open: number } | null
+  }
 }
 
 const SEATS: Record<string, string> = { author: 'Author', checker: 'Checker', challenger: 'Challenger', verifier: 'Verifier', adjudicator: 'Adjudicator', referee: 'Referee', human: 'You', galley: 'Galley' }
@@ -315,6 +322,9 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
     member('adjudicator', lastAs.adjudicator ?? null),
   ]
   const sections = (s.outline?.sections ?? []).map((sec) => ({ id: sec.id, title: sec.title, written: !!s.passages[sec.id] }))
+  const findings = s.findings.filter((f) => f.origin === 'agent')
+  // A paper that does not set its rounds has the engine's default, never just the round it is in.
+  const rounds = Math.max(config.rounds ?? defaults.rounds, s.round)
   return {
     slug: s.slug,
     doc: config.editorDoc || editorSlug(s.slug),
@@ -327,10 +337,30 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
     sections,
     now,
     waiting,
-    notes: [...workingNotes(s, config), lastActivity(dir, running, now, s.outcome ?? null)],
+    notes: [...workingNotes(s, { ...config, rounds }), lastActivity(dir, running, now, s.outcome ?? null)],
     activity: all.slice(-(options.limit ?? 400)),
     updated: updatedAt(dir),
+    started: s.createdAt ?? null,
+    progress: {
+      sections: s.outline ? { written: sections.filter((sec) => sec.written).length, total: sections.length } : null,
+      review: s.round ? { round: s.round, rounds, findings: findings.length, open: findings.filter((f) => f.status === 'open').length } : null,
+    },
   }
+}
+
+/**
+ * Every paper in a folder of papers, as liveView sees each, with the folder it is in: those being written first, then
+ * those ready, then those stopped, each newest first. The order stays put while the papers change, so a list drawn from
+ * it does not reshuffle at every step.
+ */
+export function livePapers(root: string, options: { limit?: number } = {}): { dir: string, view: LiveView }[] {
+  if (!existsSync(root)) return []
+  const rank = (v: LiveView) => (v.running ? 0 : v.outcome === 'ready_for_submission' ? 1 : 2)
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+    .map((entry) => ({ dir: join(root, entry.name), view: liveView(join(root, entry.name), { limit: options.limit ?? 3 }) }))
+    .filter((p): p is { dir: string, view: LiveView } => !!p.view)
+    .sort((a, b) => rank(a.view) - rank(b.view) || (b.view.started ?? '').localeCompare(a.view.started ?? '') || a.view.slug.localeCompare(b.view.slug))
 }
 
 /** When anything in the paper's folder last changed: its state, the run's progress, its journal or its log. */

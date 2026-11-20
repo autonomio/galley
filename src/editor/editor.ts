@@ -142,10 +142,11 @@ export interface Editor {
    *   for the host's own name and controls (`iconButton` makes them match);
    * - `header`: a strip under the toolbar that stays put;
    * - `top`: a block above the text that scrolls with it;
-   * - `side`: a pane beside the page, under the bar.
+   * - `side`: a pane beside the page, under the bar;
+   * - `start`: a pane before the page, under the bar, as wide as what it holds.
    * All but `top` hide in writer mode.
    */
-  slot(where: 'bar-start' | 'bar-end' | 'header' | 'top' | 'side'): HTMLElement
+  slot(where: 'bar-start' | 'bar-end' | 'header' | 'top' | 'side' | 'start'): HTMLElement
   notify(notice: Notice): void
   annotations: {
     list(): Annotation[]
@@ -200,7 +201,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
   root.innerHTML = ''
   const bar = el('header', { class: 'galley-bar' })
   const barRight = el('div', { class: 'galley-bar-right' })
-  // The page, and whatever a host puts beside it (slot 'side'), under the bar.
+  // The page, and whatever a host puts before it (slot 'start') and beside it (slot 'side'), under the bar.
   const body = el('div', { class: 'galley-body' })
   const main = el('main', { class: 'galley-main' })
   const page = el('div', { class: 'galley-page' })
@@ -935,6 +936,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       else if (where === 'bar-end') bar.append(slot)
       else if (where === 'header') root.insertBefore(slot, body)
       else if (where === 'side') body.append(slot)
+      else if (where === 'start') body.insertBefore(slot, main)
       // Above the page rather than inside it, so what is drawn over the text
       // (marks, faces) moves with the text when this block changes height.
       else main.insertBefore(slot, page)
