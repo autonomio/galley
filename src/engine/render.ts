@@ -122,8 +122,19 @@ export function numberEquations(texts: string[]): string[] {
 /** The systematic review's flow figure, drawn from Canary's counts when the paper is typeset. */
 const REVIEW_FLOW = 'figures/review-flow.png'
 
-/** Typst settings both PDFs share: display equations carry their number. */
-const TYPST_HEADER = '#set math.equation(numbering: "(1)")'
+/** Typst settings both PDFs share: display equations carry their number, and a heading never breaks a word across lines. */
+const TYPST_HEADER = '#set math.equation(numbering: "(1)")\n#show heading: set text(hyphenate: false)'
+
+/**
+ * Single quotes as they are printed. Pandoc hands Typst straight quotes, and Typst opens a quote after a full stop or a
+ * plus sign, so "et al.'s" and "RSR++'s" printed with an opening quote. Every straight single quote outside math and
+ * code is written as the curly one it is: opening after a space or an opening bracket, an apostrophe or closing quote
+ * otherwise. The PDF and Typst are then written with pandoc's smart quotes off, so they stay as written.
+ */
+export function printedQuotes(text: string): string {
+  return text.replace(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$|`[^`\n]*`)|'/g, (_, kept: string | undefined, at: number) =>
+    kept ?? (/[\s([{“"—–/]/.test(text[at - 1] ?? ' ') ? '‘' : '’'))
+}
 
 export async function buildManuscript(paper: Paper): Promise<{ markdown: string; refs: Record<string, unknown>[]; record: Record_ }> {
   const s = paper.state
@@ -131,7 +142,7 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   const refs = await references(paper)
   // Escaped before quoting, so the backslash survives the YAML string.
   const known = new Set(refs.map((r) => String(r.id)))
-  const plain = (text: string) => escapeUnknownCitations(text, known)
+  const plain = (text: string) => escapeUnknownCitations(printedQuotes(text), known)
   const title = paper.config.title || s.frame?.title || s.plan?.workingTitle || 'Untitled'
   // A paper never prints a blank for its author to fill: with none set it has no author line, and the sign-off asks for them.
   const authors = paper.config.authors
@@ -182,8 +193,7 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   if (decl.acknowledgements?.trim()) body.push(`# Acknowledgements {.unnumbered}\n\n${decl.acknowledgements.trim()}`)
   body.push('# References {.unnumbered}\n\n::: {#refs}\n:::')
   if (unknown.length) paper.note('typeset', `Unknown placeholders left as "[not recorded]": ${[...new Set(unknown)].join(', ')}`)
-  // A possessive after an abbreviation ("et al.'s") would be typeset as an opening quote; it is written as the apostrophe it is.
-  const printed = body.join('\n\n').replace(/\.'s\b/g, '.’s')
+  const printed = printedQuotes(body.join('\n\n'))
   return { markdown: `${head}\n\n${escapeUnknownCitations(printed, known)}\n`, refs, record }
 }
 
@@ -750,18 +760,20 @@ export async function typeset(paper: Paper): Promise<string[]> {
   writeFileSync(join(build, 'manuscript.md'), markdown)
   writeFileSync(join(build, 'refs.json'), JSON.stringify(refs, null, 2))
   const common = ['manuscript.md', '--citeproc', '--bibliography', 'refs.json', '--resource-path', build]
+  // Typst is written with pandoc's smart quotes off, so the quotes stay as printedQuotes wrote them.
+  const typstOut = ['-t', 'typst-smart']
   const made: string[] = []
-  await exec('pandoc', [...common, '-o', join(out, 'paper.pdf'), '--pdf-engine=typst', '-V', 'papersize=a4', '-V', 'fontsize=10.5pt', '-V', 'section-numbering=1.1', '-V', `header-includes=${TYPST_HEADER}`], build)
+  await exec('pandoc', [...common, ...typstOut, '-o', join(out, 'paper.pdf'), '--pdf-engine=typst', '-V', 'papersize=a4', '-V', 'fontsize=10.5pt', '-V', 'section-numbering=1.1', '-V', `header-includes=${TYPST_HEADER}`], build)
   made.push('paper.pdf')
   // The version many journals ask for at submission: line-numbered, with room between lines.
   try {
-    await exec('pandoc', [...common, '-o', join(out, 'paper-review.pdf'), '--pdf-engine=typst', '-V', 'papersize=a4', '-V', 'fontsize=11pt', '-V', 'section-numbering=1.1',
+    await exec('pandoc', [...common, ...typstOut, '-o', join(out, 'paper-review.pdf'), '--pdf-engine=typst', '-V', 'papersize=a4', '-V', 'fontsize=11pt', '-V', 'section-numbering=1.1',
       '-V', `header-includes=${TYPST_HEADER}\n#set par.line(numbering: "1", numbering-scope: "page")\n#set par(leading: 1.1em)`], build)
     made.push('paper-review.pdf')
   } catch (error) {
     paper.note('typeset', `paper-review.pdf was not produced: ${(error as Error).message.slice(0, 200)}`)
   }
-  for (const [format, file] of [['latex', 'paper.tex'], ['docx', 'paper.docx'], ['typst', 'paper.typ']] as const) {
+  for (const [format, file] of [['latex', 'paper.tex'], ['docx', 'paper.docx'], ['typst-smart', 'paper.typ']] as const) {
     try {
       await exec('pandoc', [...common, '-s', '-t', format, '-o', join(out, file)], build)
       made.push(file)

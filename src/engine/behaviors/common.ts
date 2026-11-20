@@ -124,7 +124,7 @@ export function ledgerAppendix(paper: Paper): string {
   const lines = activeClaims(paper).map((c) => {
     const keys = verifiedCitations(paper, c.id).map((cite) => `@${keyFor(paper, paper.state.works[cite.workId])}`)
     const evidence = keys.length ? ` [${keys.join('; ')}]` : ''
-    return `- **${c.id}** (${c.kind}${c.loadBearing ? ', load-bearing' : ''}; ${STATUS_WORDS[c.status] ?? c.status}${c.origin === 'review' ? `; from the systematic review, uncertainty ${c.uncertainty ?? 'moderate'}` : c.origin === 'system' ? '; added by the system' : '; from the seed'})${evidence}. ${c.text}`
+    return `- **${c.id}** (${c.kind.replace(/_/g, ' ')}${c.loadBearing ? ', load-bearing' : ''}; ${STATUS_WORDS[c.status] ?? c.status}${c.origin === 'review' ? `; from the systematic review, uncertainty ${c.uncertainty ?? 'moderate'}` : c.origin === 'system' ? '; added by the system' : '; from the seed'})${evidence}. ${c.text}`
   })
   return `Every claim of the final argument, as the claim ledger holds it: its kind, its standing, where it came from, and the verified sources it rests on.\n\n${lines.join('\n')}`
 }

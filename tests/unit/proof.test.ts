@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { printedDefects, proof } from '../../src/engine/behaviors/proof.js'
 import { figure } from '../../src/engine/behaviors/write.js'
 import { Paper } from '../../src/engine/paper.js'
-import { contentHash, numberEquations } from '../../src/engine/render.js'
+import { contentHash, numberEquations, printedQuotes } from '../../src/engine/render.js'
+import { ledgerAppendix } from '../../src/engine/behaviors/common.js'
 
 let dir = ''
 afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }) })
@@ -17,6 +18,15 @@ describe('what must never be printed', () => {
     const found = printedDefects('The rate is {{data.A5}} ms, see {#eq:budget} and @fig:trace. Funding: to be declared by the author. Value [not recorded].')
     expect(found.map((d) => d.problem)).toEqual(['an unfilled placeholder', 'a raw cross-reference label', 'an unresolved cross-reference', 'a number the production record does not hold', 'a blank left for the author to fill'])
     expect(printedDefects('The rate is 197 ms (Equation 2).')).toEqual([])
+  })
+
+  it('prints single quotes as the curly ones they are, outside math and code, and claim kinds as words', () => {
+    expect(printedQuotes("Wei et al.'s and RSR++'s 'scare' quotes, Wang's view, $f'(x)$ and `a'b`."))
+      .toBe("Wei et al.’s and RSR++’s ‘scare’ quotes, Wang’s view, $f'(x)$ and `a'b`.")
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const paper = Paper.create(join(dir, 'p'), 'seed')
+    paper.state.claims = [{ id: 'C1', kind: 'common_knowledge', status: 'assumed', text: 'Gradients flow backwards.' } as Paper['state']['claims'][number]]
+    expect(ledgerAppendix(paper)).toContain('**C1** (common knowledge;')
   })
 
   it('numbers display equations and turns their labels into those numbers', () => {
