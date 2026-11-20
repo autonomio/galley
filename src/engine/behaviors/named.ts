@@ -4,6 +4,7 @@
 // scholarly index, and cited where it is named. A name that cannot be found is left as written and goes on the
 // sign-off sheet, so nothing stops over it.
 import { canarySearch, workFromHit } from '../evidence.js'
+import { datasetSources } from '../materials.js'
 import type { Paper } from '../paper.js'
 import { HOUSE } from '../prompts.js'
 import type { Behavior } from '../scheduler.js'
@@ -53,31 +54,46 @@ export function matchNamed(named: Named, works: Work[]): Work | null {
  * - Any other name is followed by one ("JCGM 100:2008 [@key]").
  * Null when the quote is not in the text.
  */
-export function citeAt(text: string, quote: string, key: string): string | null {
+export function citeAt(text: string, quote: string, key: string, surname = ''): string | null {
   const at = text.indexOf(quote)
   if (!quote || at < 0) return null
   const own = ownParentheses(text, at, quote)
   if (own) return `${text.slice(0, own.start)}[@${key}]${text.slice(own.end)}`
-  const year = /\(\s*\d{4}[a-z]?\b[^()]*\)\s*$/.exec(quote)
-  const cited = year ? `${quote.slice(0, year.index).trimEnd()} [-@${key}]` : `${quote} [@${key}]`
-  return text.slice(0, at) + cited + text.slice(at + quote.length)
+  // A parenthesis that opens inside the name: "Wilks (1941)" keeps the name and its year becomes the citation;
+  // "SSR (Pittet et al. 2026, October manuscript)" holds the reference itself, which becomes the citation.
+  const open = quote.lastIndexOf('(')
+  if (open >= 0) {
+    const start = at + open
+    const end = closing(text, start)
+    const inner = end > 0 ? text.slice(start + 1, end) : ''
+    if (end > 0 && end - start < 140 && !inner.includes(';') && /\b\d{4}[a-z]?\b/.test(inner)) {
+      const withAuthor = !!surname && fold(inner).includes(fold(surname))
+      return `${text.slice(0, start).trimEnd()} ${withAuthor ? `[@${key}]` : `[-@${key}]`}${text.slice(end + 1)}`
+    }
+  }
+  return `${text.slice(0, at)}${quote} [@${key}]${text.slice(at + quote.length)}`
+}
+
+/** Where the parenthesis that opens at start closes, or -1. */
+function closing(text: string, start: number): number {
+  let depth = 0
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === '(') depth++
+    else if (text[i] === ')' && --depth === 0) return i
+  }
+  return -1
 }
 
 /** The parentheses a reference stands in alone, with at most its own bibliographic details after it; null otherwise. */
 function ownParentheses(text: string, at: number, quote: string): { start: number; end: number } | null {
-  if (quote.startsWith('(') && quote.endsWith(')')) return { start: at, end: at + quote.length }
+  if (quote.startsWith('(') && closing(text, at) === at + quote.length - 1) return { start: at, end: at + quote.length }
   const open = text.slice(0, at).search(/\(\s*$/)
   if (open < 0) return null
-  let depth = 0
-  for (let i = open; i < text.length; i++) {
-    if (text[i] === '(') depth++
-    else if (text[i] === ')' && --depth === 0) {
-      // Never a second reference or a remark: those stay, and the name is cited where it stands.
-      const tail = text.slice(at + quote.length, i)
-      return tail.length > 90 || tail.includes(';') || /\b(see|also|e\.g\.|cf\.|and|for)\b/i.test(tail) ? null : { start: open, end: i + 1 }
-    }
-  }
-  return null
+  const end = closing(text, open)
+  if (end < 0) return null
+  // Never a second reference or a remark: those stay, and the name is cited where it stands.
+  const tail = text.slice(at + quote.length, end)
+  return tail.length > 90 || tail.includes(';') || /\b(see|also|e\.g\.|cf\.|and|for)\b/i.test(tail) ? null : { start: open, end: end + 1 }
 }
 
 export const citeNamed: Behavior = {
@@ -125,11 +141,19 @@ ${sections.map((sec) => `[${sec.id}] ${sec.title}\n${sectionText(paper, sec.id)}
           }
         }
         const by = { kind: 'agent' as const, family: checker, model: paper.config.models[checker]?.model ?? checker, seat: 'checker' as const, behavior: 'cite-named' }
-        const cited = [...found].map(([n, work]) => {
-          const next = citeAt(sectionText(paper, n.section), n.quote, keyFor(paper, work))
-          if (next) setPassage(paper, n.section, next, by, `cited ${keyFor(paper, work)} where the text names it`)
-          return { workId: work.id, quote: n.quote, sectionId: n.section, placed: !!next }
-        })
+        // A work is cited once in a section, at its first mention, and not at all where the section cites it already;
+        // a dataset is cited where it is described, not wherever its name recurs.
+        const datasets = new Set((paper.config.datasets ?? []).flatMap((unit) => Object.values(datasetSources(paper, unit))))
+        const cited: NonNullable<typeof s.named> = []
+        for (const [n, work] of found) {
+          if (datasets.has(work.id)) continue
+          const key = keyFor(paper, work)
+          const text = sectionText(paper, n.section)
+          if (text.includes(`@${key}`) || cited.some((c) => c.workId === work.id && c.sectionId === n.section && c.placed)) continue
+          const next = citeAt(text, n.quote, key, n.authors[0] ?? '')
+          if (next) setPassage(paper, n.section, next, by, `cited ${key} where the text names it`)
+          cited.push({ workId: work.id, quote: n.quote, sectionId: n.section, placed: !!next })
+        }
         s.named = [...(s.named ?? []), ...cited]
         s.unreferenced = named.filter((n) => !found.has(n)).map((n) => ({ quote: n.quote, sectionId: n.section }))
         paper.journal({ event: 'cite_named', named: named.length, cited: cited.length, unreferenced: s.unreferenced.length })

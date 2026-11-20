@@ -32,6 +32,10 @@ describe('works the text names', () => {
     expect(citeAt('upper limits (Wilks, 1941, Ann. Math. Stat. 12(1), 91–96). Next', 'Wilks, 1941', 'wilks1941')).toBe('upper limits [@wilks1941]. Next')
     expect(citeAt('the order statistic (Wilks, 1941). Each', '(Wilks, 1941)', 'wilks1941')).toBe('the order statistic [@wilks1941]. Each')
     expect(citeAt('limits (Wilks, 1941; see also Massart, 1990).', 'Wilks, 1941', 'wilks1941')).toBe('limits (Wilks, 1941 [@wilks1941]; see also Massart, 1990).')
+    // A reference in parentheses after a method's name, even when the name was copied without its closing parenthesis.
+    expect(citeAt('the SSR comparison (Pittet et al. 2026, October manuscript) claims', 'SSR comparison (Pittet et al. 2026, October manuscript)', 'pittet2026', 'Pittet')).toBe('the SSR comparison [@pittet2026] claims')
+    expect(citeAt('Spectra packing (Vaidhya et al. 2025) is lossless', 'Spectra packing (Vaidhya et al. 2025', 'vaidhya2025', 'Vaidhya')).toBe('Spectra packing [@vaidhya2025] is lossless')
+    expect(citeAt('by Dehghankar, Erfanian and Asudeh (2025 revision) as premises', 'Dehghankar, Erfanian and Asudeh (2025 revision)', 'dehghankar2024', 'Dehghankar')).toBe('by Dehghankar, Erfanian and Asudeh [-@dehghankar2024] as premises')
   })
 
   it('cites what it holds after review, and lists what it cannot find for the sign-off', async () => {
