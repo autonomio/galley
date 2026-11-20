@@ -45,16 +45,39 @@ export function matchNamed(named: Named, works: Work[]): Work | null {
 }
 
 /**
- * The text with the work cited where the quote names it. A name that ends with its year in parentheses keeps its words
- * and the year becomes the citation ("Wilks (1941)" → "Wilks [-@key]", printed "Wilks (1941)"); any other name is
- * followed by one ("JCGM 100:2008 [@key]"). Null when the quote is not in the text.
+ * The text with the work cited where the quote names it:
+ * - A reference in parentheses of its own, "(Wilks, 1941)" or "(Dvoretzky, Kiefer and Wolfowitz, 1956, Ann. Math.
+ *   Stat. 27(3), 642–669)", becomes the citation, "[@key]": the reference list gives the rest.
+ * - A name that ends with its year in parentheses keeps its words, and the year becomes the citation ("Wilks (1941)" →
+ *   "Wilks [-@key]", printed "Wilks (1941)").
+ * - Any other name is followed by one ("JCGM 100:2008 [@key]").
+ * Null when the quote is not in the text.
  */
 export function citeAt(text: string, quote: string, key: string): string | null {
   const at = text.indexOf(quote)
   if (!quote || at < 0) return null
+  const own = ownParentheses(text, at, quote)
+  if (own) return `${text.slice(0, own.start)}[@${key}]${text.slice(own.end)}`
   const year = /\(\s*\d{4}[a-z]?\b[^()]*\)\s*$/.exec(quote)
   const cited = year ? `${quote.slice(0, year.index).trimEnd()} [-@${key}]` : `${quote} [@${key}]`
   return text.slice(0, at) + cited + text.slice(at + quote.length)
+}
+
+/** The parentheses a reference stands in alone, with at most its own bibliographic details after it; null otherwise. */
+function ownParentheses(text: string, at: number, quote: string): { start: number; end: number } | null {
+  if (quote.startsWith('(') && quote.endsWith(')')) return { start: at, end: at + quote.length }
+  const open = text.slice(0, at).search(/\(\s*$/)
+  if (open < 0) return null
+  let depth = 0
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === '(') depth++
+    else if (text[i] === ')' && --depth === 0) {
+      // Never a second reference or a remark: those stay, and the name is cited where it stands.
+      const tail = text.slice(at + quote.length, i)
+      return tail.length > 90 || tail.includes(';') || /\b(see|also|e\.g\.|cf\.|and|for)\b/i.test(tail) ? null : { start: open, end: i + 1 }
+    }
+  }
+  return null
 }
 
 export const citeNamed: Behavior = {

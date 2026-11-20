@@ -162,7 +162,7 @@ export const figure: Behavior = {
           behavior: 'figure', target: fig.id, seat: 'author', family: seatFamily(paper, 'author'),
           prompt: `${HOUSE}
 
-Draw one figure for the paper as a standalone Typst document (Typst 0.15). Use only built-in Typst: rect, circle, ellipse, line, polygon, path, place, grid, stack, box, block, align, text, table, arrows drawn with line and polygon. Do not import packages. Design it at the width it will be printed: start with #set page(width: 16cm, height: auto, margin: 6pt) and #set text(font: "New Computer Modern", size: 9pt), keep every label at 8pt or larger, and keep the figure no wider than it is tall by more than about two to one, so it stays legible on a printed page; stack or wrap rows rather than running one long row. Keep it clean and legible in greyscale with one accent colour (rgb("#2b5797")). The figure must show only what the paper describes; no invented data. Print no internal identifier (no claim, dataset, scenario, simulation, plan or section id such as C12, D1, S2 or P3): name each thing as the text names it.
+Draw one figure for the paper as a standalone Typst document (Typst 0.15). Use only built-in Typst: rect, circle, ellipse, line, polygon, path, place, grid, stack, box, block, align, text, table, arrows drawn with line and polygon. Do not import packages. Design it at the width it will be printed: start with #set page(width: 16cm, height: auto, margin: 6pt) and #set text(font: "New Computer Modern", size: 9pt), keep every label at 8pt or larger, and keep the figure no wider than it is tall by more than about two to one, so it stays legible on a printed page; stack or wrap rows rather than running one long row. Keep it clean and legible in greyscale with one accent colour (rgb("#2b5797")). The figure must show only what the paper describes; no invented data. Print no internal identifier (no claim, dataset, scenario, simulation, plan or section id such as C12, D1, S2 or P3): name each thing as the text names it. Put no citation or author–year reference inside the figure; the caption and the text cite.
 
 ${briefBlock(paper)}
 Figure: ${fig.caption}
@@ -174,7 +174,7 @@ ${sectionNow ? `\nThe section as it now reads; the figure and its caption must a
 ${lastError ? `\nThe previous attempt failed to compile with: ${lastError}\nFix that.` : ''}${fig.revise ? `\nIn the typeset paper, a reader found this in the figure: ${fig.revise}\nDraw it again without that defect.` : ''}
 A number may be written as its {{placeholder}}; it is filled in with its recorded value before the figure is drawn.
 
-Return typst (the complete document source), and caption: the caption as it should print under the figure. Keep the current caption unless it no longer matches the figure as drawn or the section as it reads; never name an internal identifier in it.`,
+Return typst (the complete document source), and caption: the caption as it should print under the figure. Keep the current caption unless it no longer matches the figure as drawn or the section as it reads; never name an internal identifier in it, and write any mathematics in it in LaTeX between dollar signs ($W_t$, not W_t).`,
           schema: obj({ typst: str(), caption: str() }),
         })
         // A figure is a picture: its numbers are written in before it is drawn, never left as placeholders. No label is

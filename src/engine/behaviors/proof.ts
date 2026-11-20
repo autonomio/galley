@@ -184,7 +184,9 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
           const ledger: Found[] = []
           for (const d of defects) {
             const fig = d.fixIn === 'figure' || d.where === 'figure' ? figureOf(paper, d) : null
-            if (d.fixIn === 'figure' && fig) {
+            // A figure is drawn again only while a later reading can still send its new drawing back: a redraw on the
+            // last such reading would print unread, and a drawing brings defects of its own.
+            if (d.fixIn === 'figure' && fig && rounds < PROOF_ROUNDS) {
               // The figure is drawn again with the defect named.
               const figure = s.figures.find((f) => f.id === fig)!
               figure.revise = [figure.revise, `${d.problem} ${d.fix}`.trim()].filter(Boolean).join(' ')
