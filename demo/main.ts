@@ -5,17 +5,22 @@ import '../src/styles/tokens.css'
 import '../src/styles/galley.css'
 import './demo.css'
 import './wizard.css'
+import './files.css'
 import './living.css'
 import welcome from './welcome.md?raw'
 import { createEditor, createHttpStore, createLocalStore, iconButton, icons, type EditorAction } from '../src/index.js'
 import { choicesAction } from './choices.js'
+import { filesAction } from './files.js'
 import { livingPaper } from './living.js'
 import { writePaperAction } from './paper.js'
 import { proposalsAction } from './proposals.js'
+import { createRouter } from './route.js'
 
 const params = new URLSearchParams(location.search)
 const local = params.get('store') === 'local'
 const theme = (params.get('theme') === 'light' ? 'light' : 'dark') as 'light' | 'dark'
+// The address bar says what is on screen, so any of it can be passed on as a link (route.ts).
+const router = createRouter()
 
 const store = local
   ? createLocalStore({ documents: { welcome } })
@@ -40,12 +45,17 @@ const editor = createEditor(document.getElementById('editor')!, {
   store,
   theme,
   placeholder: 'Start writing…',
-  // Grouped: the view; the document; the paper written from it; and, on its own, delete.
-  toolbar: ['writer', '|', 'new', 'import', 'copy', download, ...(local ? [] : ['|' as const, writePaperAction(), choicesAction(), proposalsAction()]), '|', 'delete'],
+  // ?doc=<name> opens that document, so a paper can be linked to directly.
+  open: router.route().doc ?? undefined,
+  // Grouped: the view; the document; the paper written from it, and its files; and, on its own, delete.
+  toolbar: ['writer', '|', 'new', 'import', 'copy', download, ...(local ? [] : ['|' as const, writePaperAction(router), choicesAction(router), proposalsAction(router), filesAction(router)]), '|', 'delete'],
   storagePrefix: local ? 'galley-local' : 'galley',
   // A paper's document is written by its team while you work in it: who is at work, its notes and its history.
-  plugins: local ? [] : [livingPaper(store)],
+  plugins: local ? [] : [livingPaper(store, router)],
 })
+router.view('writer', { set: (on, e) => e.setWriterMode(on) })
+editor.on('writer-mode', ({ on }) => router.shown('writer', on))
+router.attach(editor)
 
 document.documentElement.dataset.theme = theme
 
@@ -79,16 +89,6 @@ const themeSwitch = iconButton({
   },
 })
 editor.slot('bar-end').append(divider, storeSwitch, themeSwitch)
-
-// ?doc=<name> opens that document once the editor has loaded, so a paper can be linked to directly.
-const linked = params.get('doc')
-if (linked && /^[a-z0-9][a-z0-9-]*$/i.test(linked)) {
-  const ready = setInterval(() => {
-    if (!editor.slug) return
-    clearInterval(ready)
-    if (editor.slug !== linked) void editor.open(linked)
-  }, 50)
-}
 
 // For poking at from the console, and for the end-to-end tests.
 ;(window as unknown as { galley: typeof editor }).galley = editor

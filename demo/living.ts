@@ -15,6 +15,7 @@
 // with a little motion. Redrawing it all on every poll restarted every
 // animation and made the strip and the history flash every few seconds.
 import { icons, iconButton, type DocumentStore, type EditorPlugin } from '../src/index.js'
+import type { Router } from './route.js'
 
 interface Member { seat: string, name: string, family: string | null, detail: string | null }
 interface Working { seat: string, name: string, family: string | null, model: string, doing: string, section: string | null, finding: string | null, seconds: number }
@@ -146,7 +147,8 @@ const threadId = (finding: string) => (finding.startsWith('H-ann-') ? finding.sl
 const stateOf = (l: Live): State => (l.outcome === 'ready_for_submission' ? 'ready' : !l.running ? 'paused' : l.waiting ? 'waiting' : 'running')
 const goTo = (n: Working | undefined) => (n?.finding ? `f:${n.finding}` : n?.section ? `s:${n.section}` : '')
 
-export function livingPaper(store: DocumentStore): EditorPlugin {
+/** `link` puts Activity in the address bar (view=activity), so a link can open it. */
+export function livingPaper(store: DocumentStore, link?: Router): EditorPlugin {
   return (editor) => {
     const end = editor.slot('bar-end')
     const top = editor.slot('top')
@@ -156,7 +158,8 @@ export function livingPaper(store: DocumentStore): EditorPlugin {
     let live: Live | null = null
     let timer = 0
     let polling = false
-    let open = read('galley-activity-open') === '1'
+    // Whether Activity is open is the link's to say, so it opens for whoever opens the link.
+    let open = false
     let paneDrawn = false
     let barDrawn = false
 
@@ -226,11 +229,12 @@ export function livingPaper(store: DocumentStore): EditorPlugin {
     const log = el('div', 'lv-log')
     log.setAttribute('aria-label', 'What has happened, newest first')
     side.append(paneHead, now, log)
+    link?.view('activity', { set: (on) => setOpen(on) })
 
     function setOpen(next: boolean): void {
       if (next === open) return
       open = next
-      write('galley-activity-open', open ? '1' : '0')
+      link?.shown('activity', open)
       // Closing the pane is having looked.
       if (!open) { markSeen(); paneDrawn = false }
       if (open) {

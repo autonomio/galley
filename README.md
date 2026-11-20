@@ -32,6 +32,8 @@ npm run dev
 
 Open http://localhost:5174. Documents are kept as markdown files in `.galley-data/`; set `GALLEY_DIR` to use another folder. Add `?store=local` to the URL to keep documents in the browser instead, with no server involved.
 
+The address bar always says what is on screen, so any of it can be passed on as a link: `?doc=<name>` is the document, and `view=` what is open with it (`activity`, `writer`, `paper`, `files`, `choices`, `proposals`, joined by `+`). Back and Forward walk the documents you opened. A paper's files have links of their own: `/papers/<doc>/paper.pdf` is its PDF, `/papers/<doc>/evidence.zip` one of its folders, `/papers/<doc>.zip` all of them, and `/papers/<doc>/` opens the list. Only what the paper made (its `out/` folder) is ever served.
+
 ## Adopt it in an app
 
 ```ts
@@ -97,7 +99,7 @@ createEditor(el, {
 })
 ```
 
-- **Toolbar actions**: `{ id, label, icon, run(editor, button) }`, optionally `pressed`, `disabled`, `shortcut`, `danger`. The built-ins are the same shape, named by id; `'|'` draws a divider between groups. `icons` is the editor's own set (16×16, one stroke), and `iconButton({ label, description, icon, onClick })` makes a control that looks and behaves like a toolbar button, tip included, for anything a host puts in a slot.
+- **Toolbar actions**: `{ id, label, icon, run(editor, button) }`, optionally `pressed`, `disabled`, `shortcut`, `danger`. The built-ins are the same shape, named by id; `'|'` draws a divider between groups. `icons` is the editor's own set (16×16, one stroke), and `iconButton({ label, description, icon, onClick })` makes a control that looks and behaves like a toolbar button, tip included, for anything a host puts in a slot or in a dialog of its own inside the editor. `confirmOn(button, icons.check)` shows a check on a button for a moment, as confirmation.
 - **Selection actions**: `{ id, label, icon, run(passage, editor) }`. The `passage` carries its source text, its range and its on-screen rect.
 - **Plugins**: `(editor) => cleanup`. They use `editor.on('open' | 'change' | 'status' | 'documents' | 'layout' | 'annotations' | 'writer-mode' | 'notice', …)`, draw in `editor.layer(name)` with `editor.rects(start, end)`, and redraw on `layout`. Slots are room for the host's own content: `editor.slot('bar-start')` and `editor.slot('bar-end')` open and close the toolbar's row (a host's name, its own controls), so the top of the page stays one row; `'header'` is a strip under it, `'top'` a block above the text, `'side'` a pane beside the page. All but `'top'` hide in writer mode.
 - **Threads**: a note can carry an `author`, `replies`, `labels` and `resolved`; its panel then shows the conversation and takes replies. `options.me` names the writer in threads.
