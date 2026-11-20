@@ -241,9 +241,18 @@ function sendFile(res: ServerResponse, file: string): void {
   createReadStream(file).on('error', () => res.destroy()).pipe(res)
 }
 
-// A folder of out/, or all of it, as one zip made while it is sent, by the zip the engine packs submission.zip with.
-function sendZip(res: ServerResponse, out: string, what: string, name: string, leave: string[] = []): void {
-  const zip = spawn('zip', ['-qr', '-', what, '-x', '.*', '*/.*', ...leave], { cwd: out })
+// A folder of out/, or all of it, as one zip made while it is sent, by the zip
+// the engine packs submission.zip with. It holds exactly the files the list
+// shows: zip left to walk a folder itself packs what a link in it points to,
+// which can be the materials outside out/.
+function sendZip(res: ServerResponse, out: string, files: string[], name: string): void {
+  // A name is read one per line, so a name with a line break in it could name another file.
+  const names = files.filter((f) => !/[\r\n]/.test(f))
+  if (!names.length) { res.statusCode = 404; res.end('Nothing here yet.'); return }
+  // -nw: a name is a name, never a pattern; -y: a link that appears after the list was read is packed as a link.
+  const zip = spawn('zip', ['-q', '-nw', '-y', '-', '-@'], { cwd: out })
+  zip.stdin.on('error', () => { /* zip is gone; its own error answers */ })
+  zip.stdin.end(names.join('\n') + '\n')
   zip.on('error', () => {
     if (res.headersSent) { res.destroy(); return }
     res.removeHeader('Content-Disposition')
@@ -301,8 +310,9 @@ function paperFilesPlugin(): Plugin {
         }
         const out = outOf(doc)
         if (!out) { res.statusCode = 404; res.end('This document has no files yet.'); return }
+        const listed = () => listFiles(out).map((f) => f.path)
         // A whole-project zip leaves out submission.zip, which is most of it zipped already.
-        if (whole) { sendZip(res, out, '.', `${doc}.zip`, ['submission.zip']); return }
+        if (whole) { sendZip(res, out, listed().filter((p) => p !== 'submission.zip'), `${doc}.zip`); return }
         const rel = parts.slice(1).join('/')
         // Nothing outside out/, and nothing hidden in it.
         if (rel.split('/').some((p) => !p || p.startsWith('.'))) { res.statusCode = 404; res.end(); return }
@@ -310,7 +320,7 @@ function paperFilesPlugin(): Plugin {
         if (inside(out, target) && statSync(target).isFile()) { sendFile(res, realpathSync(target)); return }
         const folder = rel.endsWith('.zip') ? rel.slice(0, -4) : ''
         if (folder && inside(out, resolve(out, folder)) && statSync(resolve(out, folder)).isDirectory()) {
-          sendZip(res, out, folder, `${doc}-${folder.replace(/\//g, '-')}.zip`)
+          sendZip(res, out, listed().filter((p) => p.startsWith(`${folder}/`)), `${doc}-${folder.replace(/\//g, '-')}.zip`)
           return
         }
         res.statusCode = 404

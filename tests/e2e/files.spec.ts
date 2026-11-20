@@ -1,6 +1,6 @@
 // A project's files: the icon on the left opens what its paper has made, each
 // file has a link of its own, and the list is a link as well.
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 
@@ -32,6 +32,9 @@ function typesetPaper(): string {
   writeFileSync(join(dir, 'out', 'signoff.md'), '# Sign-off\n')
   writeFileSync(join(dir, 'out', 'figures', 'fig1.png'), 'png')
   writeFileSync(join(dir, 'out', '.draft'), 'not for anyone')
+  // Links in out/ to what is not out/'s to share.
+  symlinkSync(join(dir, 'materials.csv'), join(dir, 'out', 'materials.csv'))
+  symlinkSync(join(dir, 'materials.csv'), join(dir, 'out', 'figures', 'notes.csv'))
   writeFileSync(join(docs(), `${slug}.md`), '# A Typeset Paper\n\nIts files are ready.\n')
   return slug
 }
@@ -60,10 +63,20 @@ test('the files icon on the left opens what the paper has made, each file a link
   expect(pdf.status()).toBe(200)
   expect(pdf.headers()['content-type']).toBe('application/pdf')
   expect((await request.get(`/papers/${slug}/refs.bib`)).headers()['content-type']).toBe('text/plain; charset=utf-8')
-  // A folder comes as one zip, and so does everything.
-  expect((await request.get(`/papers/${slug}/figures.zip`)).headers()['content-type']).toBe('application/zip')
-  expect((await request.get(`/papers/${slug}.zip`)).headers()['content-type']).toBe('application/zip')
+  // A folder comes as one zip, and so does everything: what the list shows,
+  // never what a link in out/ points to elsewhere, nor what is hidden.
+  const folder = await request.get(`/papers/${slug}/figures.zip`)
+  expect(folder.headers()['content-type']).toBe('application/zip')
+  const inFolder = (await folder.body()).toString('latin1')
+  expect(inFolder).toContain('figures/fig1.png')
+  expect(inFolder).not.toContain('notes.csv')
+  const all = await request.get(`/papers/${slug}.zip`)
+  expect(all.headers()['content-type']).toBe('application/zip')
+  const inAll = (await all.body()).toString('latin1')
+  for (const name of ['paper.pdf', 'refs.bib', 'signoff.md', 'figures/fig1.png']) expect(inAll).toContain(name)
+  for (const name of ['materials.csv', 'notes.csv', 'private,data', '.draft']) expect(inAll).not.toContain(name)
   // Nothing hidden, and nothing from outside out/.
+  expect((await request.get(`/papers/${slug}/materials.csv`)).status()).toBe(404)
   expect((await request.get(`/papers/${slug}/.draft`)).status()).toBe(404)
   expect((await request.get(`/papers/${slug}/..%2Fmaterials.csv`)).status()).toBe(404)
   expect((await request.get(`/papers/${slug}/figures%2F..%2F..%2Fstate.json`)).status()).toBe(404)
