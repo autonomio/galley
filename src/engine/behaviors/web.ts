@@ -154,8 +154,11 @@ ${group.map((c) => {
 /** A fetched document as a work: cited by its issuer, title and address, with the date galley retrieved it. */
 function webWork(paper: Paper, doc: Fetched, source: { title?: string; publisher?: string; date?: string }): Work {
   const id = `web:${doc.sha256.slice(0, 16)}`
-  const year = Number(String(source.date ?? '').match(/\b(19|20)\d{2}\b/)?.[0]) || null
+  const stated = Number(String(source.date ?? '').match(/\b(19|20)\d{2}\b/)?.[0]) || null
   const [y, m, d] = doc.retrieved.split('-').map(Number)
+  // A date in the year it was read is the day it was read unless the document itself dates it so: an undated page is
+  // cited n.d., with the date it was accessed.
+  const year = stated && (stated !== y || datedIn(doc.text, stated)) ? stated : null
   const title = String(source.title || doc.title || doc.url)
   const publisher = String(source.publisher ?? '').trim()
   paper.state.works[id] ??= {
@@ -166,4 +169,12 @@ function webWork(paper: Paper, doc: Fetched, source: { title?: string; publisher
     },
   } as Work
   return paper.state.works[id]
+}
+
+
+const MONTHS = 'January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec'
+
+/** Whether a text carries a full date in the given year (2026-03-12, March 12, 2026, 12 March 2026), not just the year. */
+export function datedIn(text: string, year: number): boolean {
+  return new RegExp(`\\b${year}-\\d{2}-\\d{2}\\b|\\b(?:${MONTHS})\\.?\\s+(?:\\d{1,2},?\\s+)?${year}\\b|\\b\\d{1,2}\\s+(?:${MONTHS})\\.?\\s+${year}\\b`).test(text)
 }

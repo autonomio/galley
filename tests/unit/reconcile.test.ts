@@ -27,6 +27,7 @@ describe('reconciling the ledger', () => {
     s.frame = { title: 'T', abstract: 'A', keywords: [], limitations: '', opens: '' }
     s.round = paper.config.rounds
     paper.settle('named:works', 'done')
+    paper.settle('copyedit:text', 'done')
     paper.ask = (async () => ({ items: [
       { claim_id: 'C16', how: 'stated', quote: 'q', narrowed: null, duplicate_of: 'C39', typeset: null },
       { claim_id: 'C39', how: 'stated', quote: 'q', narrowed: null, duplicate_of: 'C16', typeset: null },

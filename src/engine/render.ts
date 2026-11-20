@@ -92,6 +92,12 @@ function unplacedNames(paper: Paper, known: Set<string>): string[] {
 /** Every pipe table in Markdown has one rule line under its header, and Typst numbers every table, so this counts them. */
 export const tablesIn = (markdown: string) => (markdown.match(/^\|(?:\s*:?-+:?\s*\|)+\s*$/gm) ?? []).length
 
+/** Who wrote the seed, as the byline has them: one author or several (possessive: whose machine). */
+function theAuthors(paper: Paper, possessive = false): string {
+  const many = paper.config.authors.length > 1
+  return possessive ? (many ? 'the authors’' : 'the author’s') : (many ? 'the authors' : 'the author')
+}
+
 function disclosure(paper: Paper, record: Record_, table = 1): string {
   const seats = paper.config.seats
   const referees = [...new Set(paper.config.referees.map((r) => r.family))].map((f) => FAMILY_NAMES[f]).join(' and ')
@@ -104,23 +110,23 @@ function disclosure(paper: Paper, record: Record_, table = 1): string {
   const web = paper.state.citations.filter((c) => c.status === 'verified' && c.workId.startsWith('web:')).length
   const fromWeb = web ? ` Where the scholarly index had no source for a claim, GPT-6.2 Sol searched the web for the primary document (the issuer's own rules, standards, specifications or reports); galley fetched and kept a copy of each, and each of the ${web} citation${web === 1 ? '' : 's'} to such documents was verified against its passage like any other.` : ''
   const sims = runsOf(paper)
-  const simulated = sims.length ? ` The Monte Carlo simulation${sims.length > 1 ? 's' : ''} (${sims.map((r) => `${r.id}, ${methodWords(r.result.method)} with ${sizeOf(r.result)}, seed ${r.result.provenance.seed}`).join('; ')}) ran on the authors' machine with galley's simulation engine, from a specification ${FAMILY_NAMES[seats.author]} wrote; every simulated number in the text is filled in from that run at the precision its Monte Carlo error supports, and the evidence package holds each specification with its results, so every number can be reproduced.` : ''
+  const simulated = sims.length ? ` The Monte Carlo simulation${sims.length > 1 ? 's' : ''} (${sims.map((r) => `${r.id}, ${methodWords(r.result.method)} with ${sizeOf(r.result)}, seed ${r.result.provenance.seed}`).join('; ')}) ran on ${theAuthors(paper, true)} machine with galley's simulation engine, from a specification ${FAMILY_NAMES[seats.author]} wrote; every simulated number in the text is filled in from that run at the precision its Monte Carlo error supports, and the evidence package holds each specification with its results, so every number can be reproduced.` : ''
   const review = lit ? ` The systematic review ${paper.config.literatureReview === 'load-bearing' ? 'this paper reports' : 'reported in its own section'} was carried out with Canary: ${modelName(lit.models?.research)} planned the search of OpenAlex, screened the candidates, read the full texts and quoted the passages behind each finding, and ${modelName(lit.models?.audit)} audited every finding against those passages; the review's citations rest on them.` : ''
   // A paper built on a world model says so, and whether it searched anything else.
   const wm = paper.config.worldModel
   const sources = wm
     ? ` Its sources come from the world model "${wm.name}", a Resolvent world model of ${wm.claims.toLocaleString('en-US')} claims resting on the verbatim passages of ${wm.sources.toLocaleString('en-US')} sources${wm.only ? '; no other literature was searched' : ', searched first, and then the literature through Canary over OpenAlex'}. For each claim galley searched the world model's sources, and ${FAMILY_NAMES[seats.checker]} chose the passages, copied verbatim from each source's excerpt. Bibliographic records come from the DOI registries.`
     : ' Literature search ran through Canary over OpenAlex; bibliographic records come from the DOI registries.'
-  return `This manuscript was produced with ${software()} from a seed text written by the author. ${FAMILY_NAMES[seats.author]} extracted the seed's claims, planned the argument, drafted every section and answered the referees. ${FAMILY_NAMES[seats.checker]} ${wm?.only ? 'selected candidate passages' : 'wrote the literature searches, selected candidate passages'} and checked each section against its claims. ${seats.challenger === seats.verifier ? `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting and verified ${everyCitation} against the passage it rests on.` : `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting, and ${FAMILY_NAMES[seats.verifier]} verified ${everyCitation} against the passage it rests on.`} Referee reports came from ${referees}, never from the family that drafted the text, and each answer to a material finding was verified by the referee family that raised it.${settled}${sources}${fromWeb}${review}${simulated} No model reviewed its own work. The production journal that accompanies this manuscript records every step, model call, verdict and decision with its time, and the evidence package holds each claim with the verbatim passage and verdict behind every citation. Table ${table} gives the run in numbers.
+  return `This manuscript was produced with ${software()} from a seed text written by ${theAuthors(paper)}. ${FAMILY_NAMES[seats.author]} extracted the seed's claims, planned the argument, drafted every section and answered the referees. ${FAMILY_NAMES[seats.checker]} ${wm?.only ? 'selected candidate passages' : 'wrote the literature searches, selected candidate passages'} and checked each section against its claims. ${seats.challenger === seats.verifier ? `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting and verified ${everyCitation} against the passage it rests on.` : `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting, and ${FAMILY_NAMES[seats.verifier]} verified ${everyCitation} against the passage it rests on.`} Referee reports came from ${referees}, never from the family that drafted the text, and each answer to a material finding was verified by the referee family that raised it.${settled}${sources}${fromWeb}${review}${simulated} No model reviewed its own work. The production journal that accompanies this manuscript records every step, model call, verdict and decision with its time, and the evidence package holds each claim with the verbatim passage and verdict behind every citation. Table ${table} gives the run in numbers.
 
 | Production record | |
 |:---|:---|
 | Model calls | ${record['run.calls']} (Claude ${record['run.calls_claude']}, GPT ${record['run.calls_gpt']}, Gemini ${record['run.calls_gemini']}) |
-| Tokens | ${record['run.tokens_in_m']} M in, ${record['run.tokens_out_k']} k out |
+| Tokens | ${record['run.tokens_in_m']} M in, ${Number(record['run.tokens_out_k']) >= 1000 ? `${(Number(record['run.tokens_out_k']) / 1000).toFixed(1)} M` : `${record['run.tokens_out_k']} k`} out |
 | Claims | ${record['run.claims']} (${record['run.claims_seed']} from the seed, ${record['run.claims_added']} added; ${record['run.claims_narrowed']} narrowed; ${record['run.claims_unsupported']} stated as hypotheses) |
 | Works screened | ${record['run.works_screened']} |
 | Citations | ${record['run.citations_verified']} verified, ${record['run.citations_rejected']} rejected |
-${sims.length ? `| Simulations | ${sims.map((r) => `${r.id}: ${methodWords(r.result.method)}, ${sizeOf(r.result)}; ${r.result.provenance.ok ? 'every check passed' : `${r.result.provenance.checks.filter((c) => !c.ok).length} check(s) noted`}`).join('; ')} |\n` : ''}${lit ? `| Systematic review | ${record['lit.discovered']} records identified, ${record['lit.screened']} screened, ${record['lit.reviewed']} read in full and included; ${record['lit.findings']} findings, ${record['lit.audited']} audited |\n` : ''}| Referee findings | ${findingsSummary(record)} |
+${sims.length ? `| Simulations | ${sims.map((r) => `${r.id}: ${methodWords(r.result.method)}, ${sizeOf(r.result)}; ${r.result.provenance.ok ? 'every check passed' : `${r.result.provenance.checks.filter((c) => !c.ok).length} check(s) noted`}`).join('; ')} |\n` : ''}${lit ? `| Systematic review | ${record['lit.discovered']} records identified, ${record['lit.screened']} screened, ${record['lit.reviewed']} read in full and included; ${record['lit.findings']} findings, ${record['lit.audited']} audited |\n` : ''}| Referee findings | ${findingsSummary(record, theAuthors(paper))} |
 | Verifier calibration | ${record['run.calibration'] === 'none to check' ? 'no verified citations to check' : `${record['run.calibration']} planted defective citations caught; ${record['run.calibration_controls']} unaltered controls accepted`} |
 
 : The production record of this manuscript.
@@ -208,6 +214,30 @@ export function printedLength(text: string): number {
     .replace(/\[@[^\]]*\]/g, 'Author 2026')
     .replace(/\*\*|__|`/g, '')
     .trim().length
+}
+
+
+const STATEMENTS = 'Definition|Proposition|Theorem|Lemma|Corollary|Remark|Assumption|Conjecture|Example|Claim'
+
+/**
+ * The house conventions a typesetter applies to text drafted section by section:
+ * - A numbered statement carries its name inside its bold label, as every other one does: "**Definition 7**
+ *   (Concordance)." prints as "**Definition 7 (Concordance).**".
+ * - A citation that a preposition makes a noun is the narrative form: "summarized in [@nist]" prints "summarized in
+ *   NIST (2026)", not "summarized in (NIST 2026)".
+ * - Sized delimiters are paired as \left and \right, which every format sizes to their contents; a size given alone is
+ *   dropped. Pandoc draws \big( for Typst as a scaled box, which prints with gaps around it.
+ */
+export function conventions(text: string): string {
+  return text
+    .replace(new RegExp(`\\*\\*(${STATEMENTS}) (\\d+(?:\\.\\d+)*)\\*\\*\\s*\\(([^()\\n]{1,80})\\)\\.?`, 'g'), '**$1 $2 ($3).**')
+    .replace(/(\b(?:in|by|from|of|following|per|with|than|to)) \[@([\w:.#$%&+?<>~/-]+)\]/g, '$1 @$2')
+    .replace(/\$\$[\s\S]*?\$\$|\$[^$\n]+\$/g, (math) => {
+      const opens = math.match(/\\(?:big|Big|bigg|Bigg)l(?![a-zA-Z])/g)?.length ?? 0
+      const closes = math.match(/\\(?:big|Big|bigg|Bigg)r(?![a-zA-Z])/g)?.length ?? 0
+      const paired = opens === closes ? math.replace(/\\(?:big|Big|bigg|Bigg)l(?![a-zA-Z])/g, '\\left').replace(/\\(?:big|Big|bigg|Bigg)r(?![a-zA-Z])/g, '\\right') : math
+      return paired.replace(/\\(?:big|Big|bigg|Bigg)[lrm]?(?![a-zA-Z])\s*/g, '')
+    })
 }
 
 // A table taller than this, as estimated from its cells, breaks across pages instead of floating whole.
@@ -371,10 +401,10 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   for (const [i, section] of sections.entries()) {
     const filled = fillPlaceholders(numbered[i], record)
     unknown.push(...filled.unknown)
-    body.push(`# ${section.title}\n\n${splitWideEquations(filled.text)}`)
+    body.push(`# ${section.title}\n\n${splitWideEquations(conventions(filled.text))}`)
     for (const fig of s.figures.filter((f) => f.sectionId === section.id && f.status === 'rendered' && f.file)) {
       // A caption can state a measured or simulated number, so it is filled like the text it sits in.
-      body.push(`![${fillPlaceholders(fig.caption, record).text.replace(/\n/g, ' ')}](${fig.file}){#fig-${fig.id} width=95%}`)
+      body.push(`![${conventions(fillPlaceholders(fig.caption, record).text).replace(/\n/g, ' ')}](${fig.file}){#fig-${fig.id} width=95%}`)
     }
   }
   const decl = paper.config.declarations ?? {}
@@ -390,7 +420,7 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   if (review) appendices.push(['The literature review: protocol, queries and included publications', review])
   appendices.forEach(([title, text], i) => body.push(`# Appendix ${String.fromCharCode(65 + i)}: ${title} {.unnumbered}\n\n${text}`))
   body.push(`# Use of AI and production record {.unnumbered}\n\n${disclosure(paper, record, tablesIn(body.join('\n\n')) + 1)}`)
-  const evidencePackage = 'Every claim in this manuscript, the evidence it rests on and the verbatim passages of its sources are available as an evidence package accompanying it (claims, evidence and sources in the Resolvent format).'
+  const evidencePackage = 'The claims of this manuscript, the evidence each rests on and the verbatim passages of its sources accompany it as a supplementary evidence package.'
   const reproduction = runsOf(paper).length ? ` The simulations can be rerun, and every simulated number checked against this manuscript, with the reproduction package that accompanies it (simulation/: \`node simulate.mjs --verify\`, or index.html in a browser).` : ''
   const data = availabilityStatement(paper)
   body.push(`# Data and code availability {.unnumbered}\n\n${decl.availability || `${data ? `${data} ` : ''}${s.brief?.aboutSystem ? `${sourceStatement()} ` : ''}${evidencePackage}${reproduction}`}`)
@@ -783,11 +813,11 @@ export function importHumanNotes(paper: Paper, json?: string): number {
 const NOTE_SETTLE_MS = 15_000
 
 /** How the referee findings were settled, every material one accounted for. */
-function findingsSummary(record: Record_): string {
+function findingsSummary(record: Record_, authors = 'the authors'): string {
   const parts = ([
-    ['run.findings_fixed', 'fixed'], ['run.findings_rebutted', 'rebutted'], ['run.findings_limitation', 'left for the authors'],
+    ['run.findings_fixed', 'fixed'], ['run.findings_rebutted', 'rebutted'], ['run.findings_limitation', `left for ${authors}`],
     ['run.findings_decided', 'decided by a third model family'], ['run.findings_set_aside', 'set aside by a third model family, with the text answering each'],
-    ['run.findings_fallback', 'left for the authors when adjudication could not settle them'], ['run.findings_yours', 'set aside by the author'], ['run.findings_open', 'still open'],
+    ['run.findings_fallback', `left for ${authors} when adjudication could not settle them`], ['run.findings_yours', `set aside by ${authors}`], ['run.findings_open', 'still open'],
   ] as const).filter(([key]) => Number(record[key]) > 0).map(([key, what]) => `${record[key]} ${what}`)
   return `${record['run.findings']} over ${record['run.rounds']} round${Number(record['run.rounds']) === 1 ? '' : 's'}; ${record['run.findings_material']} material or critical${parts.length ? `: ${parts.join(', ')}` : ''}`
 }

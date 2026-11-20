@@ -121,7 +121,8 @@ export const reconcile: Behavior = {
   id: 'reconcile', stage: 'close', improver: true, title: 'Reconcile the ledger with the text',
   // After the works the text names are cited, so the ledger is read against the text as it will print.
   ready: (paper) => !live(paper) || !paper.state.outline || paper.isSettled('frame:final') || !reviewDone(paper)
-    || (!paper.isSettled('named:works') && !paper.config.off.includes('cite-named')) ? [] : [{
+    || (!paper.isSettled('named:works') && !paper.config.off.includes('cite-named'))
+    || (!paper.isSettled('copyedit:text') && !paper.config.off.includes('copyedit')) ? [] : [{
     key: 'reconcile:ledger', label: 'every claim against the final text',
     run: async () => {
       const claims = activeClaims(paper)
