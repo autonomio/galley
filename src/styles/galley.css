@@ -501,7 +501,8 @@
 .galley--writer .galley-bar-right,
 .galley--writer .galley-bar-sep,
 .galley--writer .galley-slot:not([data-slot="top"]),
-.galley--writer .galley-bar-btn:not(.is-kept) { display: none; }
+/* A dialog opened in writer mode (from a link) is a window of its own: its controls stay. */
+.galley--writer .galley-bar-btn:not(.is-kept):not(dialog .galley-bar-btn) { display: none; }
 
 /* ---------- Motion ---------- */
 .galley-reveal { animation: galley-reveal var(--galley-dur-settle) var(--galley-ease-spring); }

@@ -80,11 +80,14 @@ export function proposalsAction(link?: Router): EditorAction {
     document.body.append(panel)
     const render = async () => {
       if (!panel) return
-      const pending = (await load(slug)).filter((p) => p.state === 'pending')
+      // A failed read still draws the panel, Close and all, or it would stay open with no way to shut it.
+      const all = await load(slug).catch(() => null)
+      const pending = (all ?? []).filter((p) => p.state === 'pending')
+      if (!panel) return
       panel.replaceChildren()
       const head = document.createElement('div')
       head.className = 'demo-proposals-head'
-      head.textContent = pending.length ? `${pending.length} proposed change${pending.length === 1 ? '' : 's'}` : 'No proposed changes'
+      head.textContent = !all ? 'The proposed changes could not be read' : pending.length ? `${pending.length} proposed change${pending.length === 1 ? '' : 's'}` : 'No proposed changes'
       const x = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Close', className: 'demo-link' })
       x.addEventListener('click', close)
       head.append(x)
