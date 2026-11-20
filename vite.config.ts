@@ -2,9 +2,10 @@
 // documents as markdown files in GALLEY_DIR (default ./.galley-data). An
 // empty folder starts with the welcome document.
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import type { ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 import { liveView } from './src/engine/live.js'
 import { galleyVitePlugin } from './src/server/vite.js'
@@ -196,6 +197,129 @@ function papersPlugin(): Plugin {
   }
 }
 
+// How a paper's file is sent: shown in the browser where it can be, saved where it cannot.
+const TYPES: Record<string, string> = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  zip: 'application/zip',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+  json: 'application/json; charset=utf-8',
+  csv: 'text/csv; charset=utf-8',
+}
+// Sources, references and records read as they are, as text.
+const TEXT = /\.(md|markdown|tex|typ|bib|jsonl|ya?ml|txt|log|ris|html?)$/i
+
+/** Every file under a folder, hidden ones left out, as paths relative to it. */
+function listFiles(root: string): { path: string, size: number, modified: string }[] {
+  const files: { path: string, size: number, modified: string }[] = []
+  const walk = (dir: string, prefix: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith('.') || files.length >= 10_000) continue
+      const path = prefix ? `${prefix}/${entry.name}` : entry.name
+      if (entry.isDirectory()) walk(join(dir, entry.name), path)
+      else if (entry.isFile()) {
+        const stats = statSync(join(dir, entry.name))
+        files.push({ path, size: stats.size, modified: stats.mtime.toISOString() })
+      }
+    }
+  }
+  walk(root, '')
+  return files.sort((a, b) => a.path.localeCompare(b.path))
+}
+
+function sendFile(res: ServerResponse, file: string): void {
+  const ext = (/\.([a-z0-9]+)$/i.exec(file)?.[1] ?? '').toLowerCase()
+  const stats = statSync(file)
+  res.setHeader('Content-Type', TYPES[ext] ?? (TEXT.test(file) ? 'text/plain; charset=utf-8' : 'application/octet-stream'))
+  res.setHeader('Content-Length', String(stats.size))
+  res.setHeader('Last-Modified', stats.mtime.toUTCString())
+  // The paper is typeset again whenever its text changes: always the latest.
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  // A figure is a picture, never a page that runs.
+  if (ext === 'svg') res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:")
+  createReadStream(file).on('error', () => res.destroy()).pipe(res)
+}
+
+// A folder of out/, or all of it, as one zip made while it is sent, by the zip the engine packs submission.zip with.
+function sendZip(res: ServerResponse, out: string, what: string, name: string, leave: string[] = []): void {
+  const zip = spawn('zip', ['-qr', '-', what, '-x', '.*', '*/.*', ...leave], { cwd: out })
+  zip.on('error', () => {
+    if (res.headersSent) { res.destroy(); return }
+    res.removeHeader('Content-Disposition')
+    res.statusCode = 501
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+    res.end('zip is not installed on this machine')
+  })
+  res.on('close', () => zip.kill())
+  res.setHeader('Content-Type', 'application/zip')
+  res.setHeader('Content-Disposition', `attachment; filename="${name}"`)
+  res.setHeader('Cache-Control', 'no-store')
+  zip.stdout.pipe(res)
+}
+
+// What a paper has made, each file at a link of its own: /papers/<doc>/<file>
+// is one file of its out/ folder, /papers/<doc>/<folder>.zip one of its
+// folders, /papers/<doc>.zip all of it, and /papers/<doc>/ the list, open in
+// the editor. /api/galley-files/<doc> is that list as data. Only out/ is ever
+// served: the materials a person brought stay where they are.
+function paperFilesPlugin(): Plugin {
+  const NAME = /^[a-z0-9][a-z0-9-]*$/i
+  // A seed document from before one-document projects has its paper at <doc>-paper.
+  const projectOf = (doc: string): string | null => {
+    const legacy = join(papers, `${doc}-paper`)
+    return existsSync(join(legacy, 'state.json')) ? legacy : paperForDocument(doc)
+  }
+  const outOf = (doc: string): string | null => {
+    const project = projectOf(doc)
+    return project && existsSync(join(project, 'out')) ? realpathSync(join(project, 'out')) : null
+  }
+  const inside = (out: string, path: string) => existsSync(path) && realpathSync(path).startsWith(out + sep)
+  return {
+    name: 'galley-files',
+    configureServer(server) {
+      server.middlewares.use('/api/galley-files', (req, res) => {
+        let doc = ''
+        try { doc = decodeURIComponent((req.url || '').replace(/^\//, '').split('?')[0]) } catch { /* a malformed name is no name */ }
+        if (!NAME.test(doc)) { res.statusCode = 400; res.end(); return }
+        const out = outOf(doc)
+        res.setHeader('Content-Type', 'application/json')
+        res.setHeader('Cache-Control', 'no-store')
+        res.end(JSON.stringify({ paper: !!projectOf(doc), files: out ? listFiles(out) : [] }))
+      })
+      server.middlewares.use('/papers', (req, res, next) => {
+        let parts: string[]
+        try { parts = new URL(req.url || '/', 'http://localhost').pathname.split('/').filter(Boolean).map(decodeURIComponent) } catch { res.statusCode = 400; res.end(); return }
+        const whole = parts.length === 1 && parts[0].endsWith('.zip')
+        const doc = whole ? parts[0].slice(0, -4) : parts[0] ?? ''
+        if (!NAME.test(doc)) { next(); return }
+        if (parts.length === 1 && !whole) {
+          res.statusCode = 302
+          res.setHeader('Location', `/?doc=${encodeURIComponent(doc)}&view=files`)
+          res.end()
+          return
+        }
+        const out = outOf(doc)
+        if (!out) { res.statusCode = 404; res.end('This document has no files yet.'); return }
+        // A whole-project zip leaves out submission.zip, which is most of it zipped already.
+        if (whole) { sendZip(res, out, '.', `${doc}.zip`, ['submission.zip']); return }
+        const rel = parts.slice(1).join('/')
+        // Nothing outside out/, and nothing hidden in it.
+        if (rel.split('/').some((p) => !p || p.startsWith('.'))) { res.statusCode = 404; res.end(); return }
+        const target = resolve(out, rel)
+        if (inside(out, target) && statSync(target).isFile()) { sendFile(res, realpathSync(target)); return }
+        const folder = rel.endsWith('.zip') ? rel.slice(0, -4) : ''
+        if (folder && inside(out, resolve(out, folder)) && statSync(resolve(out, folder)).isDirectory()) {
+          sendZip(res, out, folder, `${doc}-${folder.replace(/\//g, '-')}.zip`)
+          return
+        }
+        res.statusCode = 404
+        res.end()
+      })
+    },
+  }
+}
+
 export default defineConfig(({ command }) => {
   if (command === 'serve') {
     mkdirSync(dir, { recursive: true })
@@ -205,7 +329,7 @@ export default defineConfig(({ command }) => {
   }
   return {
     root: 'demo',
-    plugins: [galleyVitePlugin({ dir }), proposalsPlugin(), papersPlugin(), livePlugin()],
+    plugins: [galleyVitePlugin({ dir }), proposalsPlugin(), papersPlugin(), livePlugin(), paperFilesPlugin()],
     server: {
       port: Number(process.env.PORT || 5174),
       strictPort: !!process.env.PORT,
