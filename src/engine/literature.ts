@@ -304,7 +304,7 @@ export function reviewFlowTypst(lit: LiteratureReview): string | null {
   const c = lit.counts
   if (!c) return null
   const notScreened = Math.max(0, c.discovered - c.screened)
-  return `#set page(width: 15cm, height: auto, margin: 6pt)
+  return `#set page(width: 14cm, height: auto, margin: 6pt)
 #set text(font: "New Computer Modern", size: 9pt)
 #let stage(body) = rect(width: 100%, inset: 7pt, stroke: 0.7pt + rgb("#2b5797"), radius: 2pt)[#align(center, body)]
 #let out(body) = rect(width: 100%, inset: 7pt, stroke: 0.6pt + luma(140), fill: luma(246), radius: 2pt)[#align(center, body)]

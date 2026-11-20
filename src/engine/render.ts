@@ -8,7 +8,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { claim, keyFor, ledgerAppendix } from './behaviors/common.js'
 import { FAMILY_NAMES, lightName, lightSpecFor } from './config.js'
-import { cleanCsl, completeByTitle, cslForDoi, cslFromWork } from './evidence.js'
+import { cleanCsl, completeByTitle, cslForDoi, cslFromWork, titleWords } from './evidence.js'
 import type { Paper } from './paper.js'
 import { LIT_PLACEHOLDERS, modelName, reviewAppendix, reviewFlowTypst } from './literature.js'
 import { worldModelOf } from './worldmodel.js'
@@ -20,7 +20,7 @@ import { fillPlaceholders, productionRecord, type Record_ } from './record.js'
 import { software, sourceStatement } from './self.js'
 import { escapeUnknownCitations, squash } from './text.js'
 import type { Annotation, AnnotationAuthor, AnnotationLabel, AnnotationReply } from '../types.js'
-import type { AuthorNote, Claim, Family, Finding } from './types.js'
+import type { AuthorNote, Claim, Family, Finding, Work } from './types.js'
 
 function exec(cmd: string, args: string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => execFile(cmd, args, { cwd, timeout: 300_000, maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => error ? reject(new Error(`${cmd} ${args.slice(0, 3).join(' ')}: ${stderr || error.message}`)) : resolve(stdout)))
@@ -28,14 +28,23 @@ function exec(cmd: string, args: string[], cwd: string): Promise<string> {
 
 // ---------------------------------------------------------------- references
 
-async function references(paper: Paper): Promise<Record<string, unknown>[]> {
+async function references(paper: Paper): Promise<{ refs: Record<string, unknown>[]; aliases: Map<string, string> }> {
   const seen = new Set<string>()
   const out: Record<string, unknown>[] = []
-  for (const cite of paper.state.citations.filter((c) => c.status === 'verified')) {
-    const work = paper.state.works[cite.workId]
+  // One work found twice (a document from the web and its record in the index, a preprint and its journal version) is
+  // listed once: every key it was cited under prints the first entry.
+  const aliases = new Map<string, string>()
+  const firstBy = new Map<string, string>()
+  const add = async (work: Work) => {
     const key = keyFor(paper, work)
-    if (seen.has(key)) continue
+    if (seen.has(key)) return
     seen.add(key)
+    // A document found on the web is cited as the publication it is, when the index holds one by its exact title:
+    // its issuer is not its author, and the day it was read is not when it was published.
+    if (work.id.startsWith('web:') && !work.titleChecked) {
+      work.titleChecked = true
+      if (await completeByTitle(work, true)) delete work.csl
+    }
     // A reference that would print as only a title, a year and a link is looked up once by its title.
     if (!work.csl && !work.doi && (!work.authors.length || !work.venue) && !work.titleChecked) {
       work.titleChecked = true
@@ -45,8 +54,19 @@ async function references(paper: Paper): Promise<Record<string, unknown>[]> {
       const csl = await cslForDoi(work.doi)
       if (csl) work.csl = csl
     }
-    const base = cleanCsl(work.csl ?? cslFromWork(work))
-    out.push({ ...base, id: key })
+    const title = titleWords(work.title)
+    const ids = [work.doi ? `doi:${work.doi.toLowerCase()}` : '', title.length >= 4 ? `title:${title.join(' ')}` : ''].filter(Boolean)
+    const first = ids.map((id) => firstBy.get(id)).find(Boolean)
+    if (first) {
+      aliases.set(key, first)
+      return
+    }
+    for (const id of ids) firstBy.set(id, key)
+    out.push({ ...cleanCsl(work.csl ?? cslFromWork(work)), id: key })
+  }
+  for (const cite of paper.state.citations.filter((c) => c.status === 'verified')) {
+    const work = paper.state.works[cite.workId]
+    if (work) await add(work)
   }
   // Every publication a systematic review included is listed in its appendix, and each dataset is cited where it is
   // described, so each one is in the references too.
@@ -54,18 +74,10 @@ async function references(paper: Paper): Promise<Record<string, unknown>[]> {
   const datasets = (paper.config.datasets ?? []).flatMap((unit) => Object.values(datasetSources(paper, unit))).map((workId) => ({ workId }))
   for (const { workId } of [...(paper.state.literature?.status === 'done' ? paper.state.literature.included ?? [] : []), ...datasets, ...(paper.state.named ?? [])]) {
     const work = paper.state.works[workId]
-    if (!work) continue
-    const key = keyFor(paper, work)
-    if (seen.has(key)) continue
-    seen.add(key)
-    if (!work.csl && work.doi) {
-      const csl = await cslForDoi(work.doi)
-      if (csl) work.csl = csl
-    }
-    out.push({ ...cleanCsl(work.csl ?? cslFromWork(work)), id: key })
+    if (work) await add(work)
   }
   paper.save()
-  return out
+  return { refs: out, aliases }
 }
 
 // ---------------------------------------------------------------- manuscript
@@ -78,7 +90,7 @@ function unplacedNames(paper: Paper, known: Set<string>): string[] {
 }
 
 /** Every pipe table in Markdown has one rule line under its header, and Typst numbers every table, so this counts them. */
-export const tablesIn = (markdown: string) => (markdown.match(/^\|(?:\s*:?-{3,}:?\s*\|)+\s*$/gm) ?? []).length
+export const tablesIn = (markdown: string) => (markdown.match(/^\|(?:\s*:?-+:?\s*\|)+\s*$/gm) ?? []).length
 
 function disclosure(paper: Paper, record: Record_, table = 1): string {
   const seats = paper.config.seats
@@ -102,7 +114,7 @@ function disclosure(paper: Paper, record: Record_, table = 1): string {
   return `This manuscript was produced with ${software()} from a seed text written by the author. ${FAMILY_NAMES[seats.author]} extracted the seed's claims, planned the argument, drafted every section and answered the referees. ${FAMILY_NAMES[seats.checker]} ${wm?.only ? 'selected candidate passages' : 'wrote the literature searches, selected candidate passages'} and checked each section against its claims. ${seats.challenger === seats.verifier ? `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting and verified ${everyCitation} against the passage it rests on.` : `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting, and ${FAMILY_NAMES[seats.verifier]} verified ${everyCitation} against the passage it rests on.`} Referee reports came from ${referees}, never from the family that drafted the text, and each answer to a material finding was verified by the referee family that raised it.${settled}${sources}${fromWeb}${review}${simulated} No model reviewed its own work. The production journal that accompanies this manuscript records every step, model call, verdict and decision with its time, and the evidence package holds each claim with the verbatim passage and verdict behind every citation. Table ${table} gives the run in numbers.
 
 | Production record | |
-|---|---|
+|:---|:---|
 | Model calls | ${record['run.calls']} (Claude ${record['run.calls_claude']}, GPT ${record['run.calls_gpt']}, Gemini ${record['run.calls_gemini']}) |
 | Tokens | ${record['run.tokens_in_m']} M in, ${record['run.tokens_out_k']} k out |
 | Claims | ${record['run.claims']} (${record['run.claims_seed']} from the seed, ${record['run.claims_added']} added; ${record['run.claims_narrowed']} narrowed; ${record['run.claims_unsupported']} stated as hypotheses) |
@@ -146,8 +158,20 @@ const REVIEW_FLOW = 'figures/review-flow.png'
 const TYPST_HEADER = [
   '#set math.equation(numbering: "(1)")',
   '#show heading: set text(hyphenate: false)',
-  '#show figure.where(kind: table): set block(breakable: true)',
+  // A figure or table floats to the top or bottom of a page, so no page is left half empty in front of one, and a
+  // table is never split; one too long for a page is let break, with its header repeated (see fitTables).
+  '#show figure.where(kind: image): set figure(placement: auto)',
+  '#show figure.where(kind: table): set figure(placement: auto)',
   '#show table: set text(size: 9pt)',
+  '#show table: set par(justify: false)',
+  // A paragraph or caption does not end on a line holding a single word.
+  '#set text(costs: (runt: 500%))',
+  // A display equation too wide for the column is set smaller until it fits beside its number.
+  '#show math.equation.where(block: true): it => layout(size => {',
+  '  let w = measure(math.equation(block: false, math.display(it.body))).width',
+  '  let room = size.width - 4 * text.size',
+  '  if w <= room { it } else { let f = room / w; scale(f * 100%, reflow: true, block(width: size.width / f, it)) }',
+  '})',
 ].join('\n')
 
 const UNITS = 'ns|µs|ms|s|min|h|Hz|kHz|MHz|GHz|mV|V|kV|mA|A|W|kW|MW|GW|Wh|kWh|MWh|J|kJ|K|°C|dB|dBm|B|kB|MB|GB|TB|ppm|%|mm|cm|m|km|g|kg'
@@ -159,23 +183,169 @@ const UNITS = 'ns|µs|ms|s|min|h|Hz|kHz|MHz|GHz|mV|V|kV|mA|A|W|kW|MW|GW|Wh|kWh|M
  *   any other is an apostrophe or a closing quote. The PDF and Typst are written with pandoc's smart quotes off, so
  *   they stay as written.
  * - A number keeps its unit on the same line (a no-break space, which LaTeX and Word keep too).
+ * - A negative number has a minus sign, not a hyphen.
  */
 export function printedQuotes(text: string): string {
-  const pattern = new RegExp(`(\\$\\$[\\s\\S]*?\\$\\$|\\$[^$\\n]+?\\$|\`[^\`\\n]*\`)|'|(?<=\\d) (?=(?:${UNITS})(?![\\p{L}\\d]))`, 'gu')
+  const pattern = new RegExp(`(\\$\\$[\\s\\S]*?\\$\\$|\\$[^$\\n]+?\\$|\`[^\`\\n]*\`)|'|(?<=\\d) (?=(?:${UNITS})(?![\\p{L}\\d]))|(?<![\\p{L}\\d\\-–—.,/:])-(?=\\d)`, 'gu')
   return text.replace(pattern, (match: string, kept: string | undefined, at: number) => {
     if (kept) return kept
-    if (match === ' ') return ' '
+    if (match === ' ') return '\u00a0'
+    // A negative number is printed with a minus sign, as it is in the mathematics beside it.
+    if (match === '-') return '−'
     return /[\s([{“"—–/]/.test(text[at - 1] ?? ' ') ? '‘' : '’'
   })
+}
+
+
+/** About how many characters a cell or formula takes when printed: TeX commands and markup take none or one. */
+export function printedLength(text: string): number {
+  return text
+    .replace(/\$([^$]*)\$/g, (_m, tex: string) => tex
+      .replace(/\\(?:mathrm|mathbf|mathit|mathsf|mathcal|text|operatorname|overline|underline|hat|bar|tilde|widehat|left|right|bigl|bigr|Bigl|Bigr|big|Big|displaystyle|tfrac|dfrac|frac|quad|qquad)(?![a-zA-Z])/g, '')
+      .replace(/\\[,;:! ]/g, '')
+      .replace(/\\[a-zA-Z]+/g, 'x')
+      .replace(/[{}^_\s&]/g, ''))
+    .replace(/\[@[^\]]*\]/g, 'Author 2026')
+    .replace(/\*\*|__|`/g, '')
+    .trim().length
+}
+
+// A table taller than this, as estimated from its cells, breaks across pages instead of floating whole.
+const TALL_TABLE_CM = 17
+
+/**
+ * Pipe tables as the typesetter should lay them out. Pandoc gives each column the share of the width its dashes have in
+ * the separator line, so the dashes are drawn in proportion to what each column holds: a column of symbols stays
+ * narrow and the one that explains them gets the room. A table too tall for a page is let break across pages, its
+ * header repeated, instead of floating whole (raw Typst around it; the other formats ignore it).
+ */
+export function fitTables(markdown: string): string {
+  const row = /^\|.*\|\s*$/
+  const separator = /^\|(?:\s*:?-+:?\s*\|)+\s*$/
+  const cells = (line: string) => line.trim().replace(/^\||\|$/g, '').split(/(?<!\\)\|/)
+  const lines = markdown.split('\n')
+  const out: string[] = []
+  for (let i = 0; i < lines.length; i++) {
+    if (!(row.test(lines[i]) && separator.test(lines[i + 1] ?? ''))) { out.push(lines[i]); continue }
+    let end = i + 2
+    while (end < lines.length && row.test(lines[end])) end++
+    const rows = [lines[i], ...lines.slice(i + 2, end)].map(cells)
+    const aligns = cells(lines[i + 1]).map((a) => a.trim())
+    const widths = aligns.map((_, c) => Math.max(4, ...rows.map((r) => printedLength(r[c] ?? ''))))
+    const total = widths.reduce((a, b) => a + b, 0)
+    // A column whose longest cell fits on one line in at most two fifths of the width gets the room for that line (at
+    // about 95 characters of 9pt text across the page); the other columns share the rest in proportion to what they hold.
+    const line = widths.map((w) => (w + 3) / 95)
+    const short = line.map((need, c) => need <= 0.4 && need > widths[c] / total)
+    const kept = line.reduce((sum, need, c) => sum + (short[c] ? need : 0), 0)
+    const rest = widths.reduce((sum, w, c) => sum + (short[c] ? 0 : w), 0)
+    const shares = widths.map((w, c) => Math.max(0.08, short[c] ? line[c] : rest && kept < 1 ? (w / rest) * (1 - kept) : w / total))
+    const dashes = shares.map((share) => Math.max(3, Math.round(share * 60)))
+    const rule = `|${aligns.map((a, c) => `${a.startsWith(':') ? ':' : ''}${'-'.repeat(dashes[c])}${a.endsWith(':') ? ':' : ''}`).join('|')}|`
+    // Its height: each row as many lines as its fullest cell wraps to, at about 95 characters of 9pt text a line.
+    const sum = shares.reduce((a, b) => a + b, 0)
+    const height = rows.reduce((h, r) => h + 0.42 * (1 + Math.max(1, ...r.map((cell, c) => Math.ceil(printedLength(cell) / Math.max(4, 95 * shares[c] / sum))))), 0)
+    const table = [lines[i], rule, ...lines.slice(i + 2, end)]
+    // The caption, after the table or before it, stays with it.
+    let after = end
+    while (after < lines.length && !lines[after].trim()) after++
+    const captionAfter = /^(?:Table)?:\s/.test(lines[after] ?? '')
+    if (height <= TALL_TABLE_CM) {
+      out.push(...table)
+      i = end - 1
+      continue
+    }
+    let before = out.length
+    while (before > 0 && !out[before - 1].trim()) before--
+    let start = before
+    while (start > 0 && out[start - 1].trim()) start--
+    const captionBefore = !captionAfter && /^(?:Table)?:\s/.test(out[start] ?? '')
+    const lead = captionBefore ? out.splice(start) : []
+    out.push('```{=typst}', '#[', '#show figure: set figure(placement: none)', '#show figure: set block(breakable: true)', '```', '', ...lead, ...table)
+    if (captionAfter) {
+      let last = after
+      while (last < lines.length && lines[last].trim()) last++
+      out.push(...lines.slice(end, last))
+      end = last
+    }
+    out.push('', '```{=typst}', ']', '```')
+    i = end - 1
+  }
+  return out.join('\n')
+}
+
+// A display whose formulas, set side by side, print longer than this is set one formula a line.
+const WIDE_EQUATION = 60
+
+/** The parts of a formula between separators at the top level, outside every brace. */
+function topLevel(tex: string, separator: RegExp): string[] {
+  const parts: string[] = []
+  let depth = 0
+  let from = 0
+  for (let at = 0; at < tex.length; at++) {
+    const ch = tex[at]
+    if (ch === '\\' && (tex[at + 1] === '{' || tex[at + 1] === '}')) { at++; continue }
+    if (ch === '{') depth++
+    else if (ch === '}') depth--
+    else if (depth === 0 && ch === '\\') {
+      const m = tex.slice(at).match(separator)
+      if (m?.index === 0) {
+        parts.push(tex.slice(from, at))
+        from = at + m[0].length
+        at = from - 1
+      }
+    }
+  }
+  parts.push(tex.slice(from))
+  return parts
+}
+
+const RELATION = /(?<![\\<>!])(?:=|<|>)|\\(?:le|leq|ge|geq|approx|sim|equiv|propto)(?![a-zA-Z])/
+
+/**
+ * Two formulas set side by side in one display (`A, \qquad B`) that together print wider than the column are set one
+ * above the other, aligned at their first relation, under the display's one number. A part that states no relation
+ * (`\qquad \text{for all } i`) stays with the formula before it.
+ */
+export function splitWideEquations(text: string): string {
+  return text.replace(/\$\$([\s\S]+?)\$\$/g, (match, tex: string) => {
+    if (/\\begin\{/.test(tex) || printedLength(`$${tex}$`) <= WIDE_EQUATION) return match
+    const parts: string[] = []
+    for (const part of topLevel(tex, /^\\qquad(?![a-zA-Z])/)) {
+      if (parts.length && atTop(part, RELATION) < 0) parts[parts.length - 1] += ` \\qquad ${part.trim()}`
+      else parts.push(part.trim())
+    }
+    if (parts.length < 2) return match
+    const aligned = parts.map((part) => {
+      const at = atTop(part, RELATION)
+      return at > 0 ? `${part.slice(0, at)}&${part.slice(at)}` : `&${part}`
+    })
+    return `$$\n\\begin{aligned}\n${aligned.join(' \\\\\n')}\n\\end{aligned}\n$$`
+  })
+}
+
+/** Where the first match of a pattern outside every brace starts, or -1. */
+function atTop(tex: string, pattern: RegExp): number {
+  let depth = 0
+  for (let at = 0; at < tex.length; at++) {
+    const ch = tex[at]
+    if (ch === '\\' && (tex[at + 1] === '{' || tex[at + 1] === '}')) { at++; continue }
+    if (ch === '{') depth++
+    else if (ch === '}') depth--
+    else if (depth === 0 && tex.slice(at).search(pattern) === 0) return at
+  }
+  return -1
 }
 
 export async function buildManuscript(paper: Paper): Promise<{ markdown: string; refs: Record<string, unknown>[]; record: Record_ }> {
   const s = paper.state
   const record = productionRecord(paper)
-  const refs = await references(paper)
+  const { refs, aliases } = await references(paper)
   // Escaped before quoting, so the backslash survives the YAML string.
   const known = new Set(refs.map((r) => String(r.id)))
-  const plain = (text: string) => escapeUnknownCitations(printedQuotes(text), known)
+  // A work listed once is cited by the one key it is listed under.
+  const cited = (text: string) => [...aliases].reduce((t, [from, to]) => t.replace(new RegExp(`@${from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w:-])`, 'g'), `@${to}`), text)
+  const plain = (text: string) => escapeUnknownCitations(printedQuotes(cited(text)), known)
   const title = paper.config.title || s.frame?.title || s.plan?.workingTitle || 'Untitled'
   // A paper never prints a blank for its author to fill: with none set it has no author line, and the sign-off asks for them.
   const authors = paper.config.authors
@@ -201,7 +371,7 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   for (const [i, section] of sections.entries()) {
     const filled = fillPlaceholders(numbered[i], record)
     unknown.push(...filled.unknown)
-    body.push(`# ${section.title}\n\n${filled.text}`)
+    body.push(`# ${section.title}\n\n${splitWideEquations(filled.text)}`)
     for (const fig of s.figures.filter((f) => f.sectionId === section.id && f.status === 'rendered' && f.file)) {
       // A caption can state a measured or simulated number, so it is filled like the text it sits in.
       body.push(`![${fillPlaceholders(fig.caption, record).text.replace(/\n/g, ' ')}](${fig.file}){#fig-${fig.id} width=95%}`)
@@ -230,8 +400,8 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   if (decl.acknowledgements?.trim()) body.push(`# Acknowledgements {.unnumbered}\n\n${decl.acknowledgements.trim()}`)
   body.push('# References {.unnumbered}\n\n::: {#refs}\n:::')
   if (unknown.length) paper.note('typeset', `Unknown placeholders left as "[not recorded]": ${[...new Set(unknown)].join(', ')}`)
-  const printed = printedQuotes(body.join('\n\n'))
-  return { markdown: `${head}\n\n${escapeUnknownCitations(printed, known)}\n`, refs, record }
+  const printed = printedQuotes(fitTables(body.join('\n\n')))
+  return { markdown: `${head}\n\n${escapeUnknownCitations(cited(printed), known)}\n`, refs, record }
 }
 
 // ---------------------------------------------------------------- editor document and notes

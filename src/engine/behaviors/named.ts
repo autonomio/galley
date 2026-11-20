@@ -28,22 +28,6 @@ const overlap = (a: string, b: string) => {
   return n / Math.min(x.size, y.size)
 }
 
-/** The one work a name points to: by its first author and year, and its title where the name gives one. Null when none or several fit. */
-export function matchNamed(named: Named, works: Work[]): Work | null {
-  const first = named.authors[0] ? fold(named.authors[0]).trim() : ''
-  const byAuthor = (w: Work) => !!w.authors[0] && new RegExp(`(^|[^a-z])${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`).test(fold(w.authors[0]))
-  const fits = works.filter((w) => {
-    if (named.year && w.year && Math.abs(w.year - named.year) > 1) return false
-    if (first) return byAuthor(w)
-    return !!named.title && overlap(named.title, w.title) >= 0.6
-  })
-  if (fits.length <= 1) return fits[0] ?? null
-  const sameYear = fits.filter((w) => w.year === named.year)
-  if (sameYear.length === 1) return sameYear[0]
-  if (!named.title) return null
-  const ranked = (sameYear.length ? sameYear : fits).map((w) => ({ w, score: overlap(named.title, w.title) })).sort((a, b) => b.score - a.score)
-  return ranked[0].score >= 0.5 && ranked[0].score > (ranked[1]?.score ?? 0) ? ranked[0].w : null
-}
 
 /**
  * The text with the work cited where the quote names it:
@@ -106,36 +90,53 @@ export const citeNamed: Behavior = {
       run: async () => {
         const sections = s.outline!.sections
         const checker = seatFamily(paper, 'checker')
+        const held = Object.values(s.works)
         const reply = await paper.ask<any>({
           behavior: 'cite-named', target: 'works', seat: 'checker', family: checker,
           prompt: `${HOUSE}
 
 Below is a manuscript, section by section; a citation in it is written [@key], [-@key] or @key. List every place where the text names a specific publication, standard or dataset without citing it right there: an author and year such as "Wilks (1941)", "Dvoretzky, Kiefer and Wolfowitz (1956)" or "Pittet et al. (2026)", or a document's own designation such as "JCGM 100:2008". Leave out a method or result named after people that points to no publication (such as "the Kaplan–Meier estimator"), and anything a citation already follows.
-For each: section (its id in brackets), quote (the words that name it, copied character for character from the text, ending with the year in parentheses where the text gives one), authors (surnames, in order, as far as the text or your knowledge gives them), year (0 if none), title (the work's title if you know it with confidence, else empty).
+For each: section (its id in brackets), quote (the words that name it, copied character for character from the text, ending with the year in parentheses where the text gives one), authors (surnames, in order, as far as the text or your knowledge gives them), year (0 if none), title (the work's title if you know it with confidence, else empty), and id: the id of the work it names from the list of works the paper holds, below, when one of them is that work by its authors, year and subject as the sentence describes it; else empty. A work by an author of the same name on another subject is not it.
 
-${sections.map((sec) => `[${sec.id}] ${sec.title}\n${sectionText(paper, sec.id)}`).join('\n\n')}`,
-          schema: obj({ named: arr(obj({ section: str(), quote: str(), authors: arr(str()), year: int(), title: str() })) }),
+${sections.map((sec) => `[${sec.id}] ${sec.title}\n${sectionText(paper, sec.id)}`).join('\n\n')}
+
+THE WORKS THE PAPER HOLDS (id | authors | year | title):
+${held.map(workLine).join('\n')}`,
+          schema: obj({ named: arr(obj({ section: str(), quote: str(), authors: arr(str()), year: int(), title: str(), id: str() })) }),
         })
-        const named: Named[] = (reply.named ?? [])
-          .map((n: any) => ({ section: String(n.section ?? '').replace(/[[\]]/g, ''), quote: String(n.quote ?? ''), authors: (n.authors ?? []).map(String).filter(Boolean), year: Number(n.year) || null, title: String(n.title ?? '') }))
+        const named: (Named & { id: string })[] = (reply.named ?? [])
+          .map((n: any) => ({ section: String(n.section ?? '').replace(/[[\]]/g, ''), quote: String(n.quote ?? ''), authors: (n.authors ?? []).map(String).filter(Boolean), year: Number(n.year) || null, title: String(n.title ?? ''), id: String(n.id ?? '').trim() }))
           .filter((n: Named) => n.quote && sections.some((sec) => sec.id === n.section))
         const found = new Map<Named, Work>()
-        for (const n of named) {
-          const work = matchNamed(n, Object.values(s.works))
-          if (work) found.set(n, work)
-        }
-        // Beyond the works it holds, a paper looks only where it may: never past a world model it rests on alone.
+        for (const n of named) if (s.works[n.id]) found.set(n, s.works[n.id])
+        // Beyond the works it holds, a paper looks only where it may: never past a world model it rests on alone. What the
+        // index returns for a name is a candidate until the sentence it is named in is read against it: a surname and a
+        // year are shared by works on other subjects.
         const missing = named.filter((n) => !found.has(n))
         if (missing.length && !onlyWorldModel(paper) && !paper.config.off.includes('find-evidence')) {
           const queries = missing.map((n, i) => ({ id: `N${i + 1}`, search: n.title || `${n.authors.join(' ')} ${n.year ?? ''}`.trim() }))
           try {
             const results = await canarySearch(paper.path('canary', 'named'), `galley:${s.slug}:named`, queries, 8)
-            missing.forEach((n, i) => {
-              const work = matchNamed(n, (results[`N${i + 1}`]?.results ?? []).map(workFromHit))
-              if (!work) return
-              s.works[work.id] = s.works[work.id] ?? work
-              found.set(n, s.works[work.id])
-            })
+            const candidates = missing.map((n, i) => (results[`N${i + 1}`]?.results ?? []).map(workFromHit).filter((w) => plausible(n, w)).slice(0, 5))
+            const asked = missing.map((n, i) => ({ n, place: `N${i + 1}`, works: candidates[i] })).filter((a) => a.works.length)
+            if (asked.length) {
+              const choice = await paper.ask<any>({
+                behavior: 'cite-named', target: 'candidates', seat: 'checker', family: checker,
+                prompt: `${HOUSE}
+
+Each place below is a sentence of a manuscript that names a work without citing it, followed by works the scholarly index returned for that name. For each place give the id of the work the sentence names, judged by its authors, year and subject as the sentence describes it, or an empty id when none of them is that work. A work by an author of the same name on another subject is not it.
+
+${asked.map((a) => `${a.place}. Names "${a.n.quote}" in: "${sentenceAround(sectionText(paper, a.n.section), a.n.quote)}"\n${a.works.map((w) => `  ${workLine(w)}${w.venue ? ` | ${w.venue}` : ''}`).join('\n')}`).join('\n\n')}`,
+                schema: obj({ choices: arr(obj({ place: str(), id: str() })) }),
+              })
+              for (const c of choice.choices ?? []) {
+                const a = asked.find((x) => x.place === String(c.place ?? '').trim())
+                const work = a?.works.find((w) => w.id === String(c.id ?? '').trim())
+                if (!a || !work) continue
+                s.works[work.id] = s.works[work.id] ?? work
+                found.set(a.n, s.works[work.id])
+              }
+            }
           } catch (error) {
             paper.note('cite-named', `The scholarly index could not be searched for the works the text names: ${(error as Error).message.slice(0, 200)}`)
           }
@@ -164,4 +165,28 @@ ${sections.map((sec) => `[${sec.id}] ${sec.title}\n${sectionText(paper, sec.id)}
       skip: () => {},
     }]
   },
+}
+
+
+/** A work as one line of a list a model chooses from. */
+function workLine(w: Work): string {
+  return `${w.id} | ${w.authors.slice(0, 3).join(', ')}${w.authors.length > 3 ? ' et al.' : ''} | ${w.year ?? 'n.d.'} | ${w.title}`
+}
+
+/** Could this be the work a name points to: its first author by surname, and its year within one of the name's. */
+export function plausible(named: Named, work: Work): boolean {
+  if (named.year && work.year && Math.abs(work.year - named.year) > 1) return false
+  const first = named.authors[0] ? fold(named.authors[0]).trim() : ''
+  if (!first) return !!named.title && overlap(named.title, work.title) >= 0.6
+  return !!work.authors[0] && new RegExp(`(^|[^a-z])${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`).test(fold(work.authors.join(' ')))
+}
+
+/** The sentence of a section's text that holds a quote, to read what the quote names. */
+export function sentenceAround(text: string, quote: string): string {
+  const at = text.indexOf(quote)
+  if (at < 0) return quote
+  const start = Math.max(text.lastIndexOf('. ', at) + 2, text.lastIndexOf('\n', at) + 1)
+  const ends = [text.indexOf('. ', at + quote.length), text.indexOf('\n', at + quote.length)].filter((i) => i >= 0)
+  const end = ends.length ? Math.min(...ends) + 1 : text.length
+  return text.slice(start, end).trim().slice(0, 600)
 }

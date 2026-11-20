@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { citeAt, citeNamed, matchNamed } from '../../src/engine/behaviors/named.js'
+import { citeAt, citeNamed, plausible, sentenceAround } from '../../src/engine/behaviors/named.js'
 import { Paper } from '../../src/engine/paper.js'
 import type { Work } from '../../src/engine/types.js'
 
@@ -18,10 +18,14 @@ const works = [
 ]
 
 describe('works the text names', () => {
-  it('finds the one work a name points to, and none when several fit and nothing tells them apart', () => {
-    expect(matchNamed({ section: 'S1', quote: 'Wilks (1941)', authors: ['Wilks'], year: 1941, title: '' }, works)?.id).toBe('W1')
-    expect(matchNamed({ section: 'S1', quote: 'Dehghankar et al. (2025)', authors: ['Dehghankar'], year: 2025, title: '' }, works)).toBeNull()
-    expect(matchNamed({ section: 'S1', quote: 'Dehghankar et al. (2025)', authors: ['Dehghankar'], year: 2025, title: 'efficient matrix multiplication algorithm' }, works)?.id).toBe('W2')
+  it('takes as candidates only works by the named author within a year of the name', () => {
+    const named = { section: 'S1', quote: 'Dehghankar et al. (2025)', authors: ['Dehghankar'], year: 2025, title: '' }
+    expect(works.filter((w) => plausible(named, w)).map((w) => w.id)).toEqual(['W2', 'W3'])
+    expect(works.filter((w) => plausible({ ...named, authors: ['Wilks'], year: 1941 }, w)).map((w) => w.id)).toEqual(['W1'])
+  })
+
+  it('reads the sentence a name stands in', () => {
+    expect(sentenceAround('First point. As Wilks (1941) showed, n = 59. Next point.', 'Wilks (1941)')).toBe('As Wilks (1941) showed, n = 59.')
   })
 
   it('cites a name where it stands, keeping its words', () => {
@@ -47,10 +51,11 @@ describe('works the text names', () => {
     s.passages = { S1: { sectionId: 'S1', text: 'Following Wilks (1941) and JCGM 100:2008, we bound the quantile.', revisions: [], checked: 'faithful' } }
     s.frame = { title: 'T', abstract: 'A', keywords: [], limitations: '', opens: '' }
     s.round = paper.config.rounds
-    s.works = { W1: works[0] }
+    // A held work by the same surname and year on another subject is never cited for the name: the model names the work it means.
+    s.works = { W1: works[0], W9: work('W9', 'Alisson Wilks', 1941, 'Lettuce yield under organic compost') }
     paper.ask = (async () => ({ named: [
-      { section: '[S1]', quote: 'Wilks (1941)', authors: ['Wilks'], year: 1941, title: '' },
-      { section: 'S1', quote: 'JCGM 100:2008', authors: ['JCGM'], year: 2008, title: 'Guide to the expression of uncertainty in measurement' },
+      { section: '[S1]', quote: 'Wilks (1941)', authors: ['Wilks'], year: 1941, title: '', id: 'W1' },
+      { section: 'S1', quote: 'JCGM 100:2008', authors: ['JCGM'], year: 2008, title: 'Guide to the expression of uncertainty in measurement', id: '' },
     ] })) as Paper['ask']
     await citeNamed.ready(paper)[0].run()
     expect(s.passages.S1.text).toMatch(/^Following Wilks \[-@\w+\] and JCGM 100:2008, we bound/)

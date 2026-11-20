@@ -4,10 +4,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { calledOut, printedDefects, proof } from '../../src/engine/behaviors/proof.js'
+import { calledOut, printedDefects, printedTables, proof } from '../../src/engine/behaviors/proof.js'
 import { figure } from '../../src/engine/behaviors/write.js'
 import { Paper } from '../../src/engine/paper.js'
-import { contentHash, numberEquations, printedQuotes } from '../../src/engine/render.js'
+import { contentHash, fitTables, numberEquations, printedQuotes, splitWideEquations } from '../../src/engine/render.js'
 import { ledgerAppendix } from '../../src/engine/behaviors/common.js'
 import { readableReason } from '../../src/engine/literature.js'
 
@@ -38,6 +38,46 @@ describe('what must never be printed', () => {
     const [a, b] = numberEquations(['$$\nL = a + b\n$$ {#eq:sum}\n\nThen $$x$$', 'By @eq:sum and [@eq:sum], it holds.'])
     expect(a).toBe('$$\nL = a + b\n$$\n\nThen $$x$$')
     expect(b).toBe('By (1) and (1), it holds.')
+  })
+
+  it('prints a negative number with a minus sign, and leaves ranges, dates, names and mathematics alone', () => {
+    expect(printedQuotes('Shifts of -0.005 and (-3%), pages 1-29 on 2026-11-21, GPT-6.2, $x - 1$ and `a -1`.'))
+      .toBe('Shifts of −0.005 and (−3%), pages 1-29 on 2026-11-21, GPT-6.2, $x - 1$ and `a -1`.')
+  })
+
+  it('gives a table\'s columns the width their cells take, and lets only a table too tall for a page break', () => {
+    const notation = '| Symbol | Meaning |\n|:--|:--|\n| $b$ | gate basis, $b \\in \\{\\mathrm{AIG}, \\mathrm{XAG}\\}$ |\n| $c(T)$ | basis contrast, the difference between the MIG and XAG floors of a task |\n\nTable: Notation.'
+    const fitted = fitTables(notation).split('\n')
+    const [symbol, meaning] = fitted[1].split('|').slice(1, 3).map((rule) => rule.replace(/:/g, '').length)
+    expect(fitted[1]).toMatch(/^\|:-+\|:-+\|$/)
+    expect(meaning).toBeGreaterThan(symbol * 4)
+    expect(fitted.join('\n')).not.toContain('{=typst}')
+    const tall = `| Study | Finding |\n|---|---|\n${Array.from({ length: 40 }, (_, i) => `| S${i} | ${'a finding that wraps onto a second line of its cell '.repeat(2)} |`).join('\n')}\n\n: Included studies.\n\nNext paragraph.`
+    const broken = fitTables(tall)
+    expect(broken.startsWith('```{=typst}\n#[\n#show figure: set figure(placement: none)\n#show figure: set block(breakable: true)\n```')).toBe(true)
+    // The caption stays inside, with the table it belongs to.
+    expect(broken).toMatch(/: Included studies\.\n\n```\{=typst\}\n\]\n```\n\nNext paragraph\.$/)
+  })
+
+  it('sets two formulas side by side that print wider than the column one above the other, aligned, under one number', () => {
+    const wide = '$$\n\\mathrm{floor}_{\\mathrm{XAG}}(T_i) = g_i + \\log_2\\bigl(1 + (r_{m,\\mathrm{XAG}} - 1)m_i\\bigr), \\qquad\n\\mathrm{floor}_{\\mathrm{MIG}}(T_i) = g_i + \\log_2\\bigl(1 + (r_{x,\\mathrm{MIG}} - 1)x_i\\bigr).\n$$'
+    expect(splitWideEquations(wide)).toBe('$$\n\\begin{aligned}\n\\mathrm{floor}_{\\mathrm{XAG}}(T_i) &= g_i + \\log_2\\bigl(1 + (r_{m,\\mathrm{XAG}} - 1)m_i\\bigr), \\\\\n\\mathrm{floor}_{\\mathrm{MIG}}(T_i) &= g_i + \\log_2\\bigl(1 + (r_{x,\\mathrm{MIG}} - 1)x_i\\bigr).\n\\end{aligned}\n$$')
+    // One that fits, and a condition after the spacing, stay as written.
+    expect(splitWideEquations('$$E(T) = a, \\qquad S(T) = b.$$')).toBe('$$E(T) = a, \\qquad S(T) = b.$$')
+    const condition = '$$\\sum_{i=1}^{n} \\mathrm{cost}_\\mu(A_i) + \\lambda\\, Q(A) + \\beta_\\times(w) + \\beta_+(w\') + \\mathrm{floor}_b(T) \\qquad \\text{for every task } T\\text{ and basis } b$$'
+    expect(splitWideEquations(condition)).toBe(condition)
+  })
+
+  it('finds the tables the sections print, with their captions, and whether the text refers to each', () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const paper = Paper.create(join(dir, 'p'), 'seed')
+    paper.state.outline = { sections: [{ id: 'S1', title: 'A', purpose: '', claimIds: [], words: 1, figureIds: [] }, { id: 'S2', title: 'B', purpose: '', claimIds: [], words: 1, figureIds: [] }], style: '', glossary: [] }
+    paper.state.passages = {
+      S1: { sectionId: 'S1', text: 'Text.\n\n| a | b |\n|:--|:--|\n| 1 | 2 |\n\nTable: Notation.', revisions: [], checked: 'faithful' },
+      S2: { sectionId: 'S2', text: 'Table: Costs.\n\n| c | d |\n|---|---|\n| 3 | 4 |\n\nAs Table 2 shows.', revisions: [], checked: 'faithful' },
+    }
+    expect(printedTables(paper)).toEqual([{ sectionId: 'S1', caption: 'Notation.' }, { sectionId: 'S2', caption: 'Costs.' }])
+    expect([calledOut('As Table 2 shows.', 1, 'table'), calledOut('As Table 2 shows.', 2, 'table'), calledOut('as Figure 2 shows', 2, 'table')]).toEqual([false, true, false])
   })
 })
 

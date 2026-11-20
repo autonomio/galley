@@ -65,7 +65,7 @@ async function pagesOf(paper: Paper): Promise<{ text: string[]; images: string[]
   try { text = (await run('pdftotext', ['-layout', pdf, '-'], dir)).split('\f').map((page) => page.trimEnd()).filter((page, i, all) => page || i < all.length - 1) } catch { /* the source text stands in below */ }
   let images: string[] = []
   try {
-    await run('pdftoppm', ['-r', '70', '-png', '-l', String(MAX_PAGES), pdf, join(dir, 'page')], dir)
+    await run('pdftoppm', ['-r', '100', '-png', '-l', String(MAX_PAGES), pdf, join(dir, 'page')], dir)
     // In page order by number, however the renderer pads it: page-2 before page-10.
     const page = (f: string) => Number(f.match(/\d+/)![0])
     images = readdirSync(dir).filter((f) => /^page-\d+\.png$/.test(f)).sort((a, b) => page(a) - page(b)).map((f) => join(dir, f))
@@ -81,10 +81,50 @@ const FIX_IN = ['prose', 'figure', 'ledger', 'other'] as const
 function sectionOf(paper: Paper, quote: string, record: Record_): string | null {
   const q = squash(quote)
   if (!q) return null
-  for (const section of paper.state.outline?.sections ?? []) {
-    if (squash(fillPlaceholders(sectionText(paper, section.id), record).text).includes(q) || squash(sectionText(paper, section.id)).includes(q)) return section.id
+  const sections = (paper.state.outline?.sections ?? []).map((section) => ({ id: section.id, raw: sectionText(paper, section.id), filled: fillPlaceholders(sectionText(paper, section.id), record).text }))
+  for (const section of sections) {
+    if (squash(section.filled).includes(q) || squash(section.raw).includes(q)) return section.id
   }
-  return null
+  // A quote from the printed page differs from the source where a citation, a cross-reference or mathematics is
+  // printed: it comes from the section that holds the longest run of its words, when that run is long enough to tell
+  // and no other section holds one as long.
+  const words = plainWords(quote)
+  let best: { id: string | null; run: number } = { id: null, run: 0 }
+  for (const section of sections) {
+    const hay = ` ${plainWords(section.filled).join(' ')} `
+    let run = 0
+    for (let i = 0; i < words.length && words.length - i > run; i++) {
+      let j = i
+      while (j < words.length && hay.includes(` ${words.slice(i, j + 1).join(' ')} `)) j++
+      run = Math.max(run, j - i)
+    }
+    if (run > best.run) best = { id: section.id, run }
+    else if (run === best.run) best = { id: null, run }
+  }
+  return best.run >= Math.min(6, Math.max(3, Math.ceil(words.length * 0.6))) ? best.id : null
+}
+
+/** A text's words, as a reader sees them: no citation keys, no mathematics, no markup or punctuation. */
+function plainWords(text: string): string[] {
+  return text.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\[[^\]]*@[^\]]*\]|-?@[\w:.-]+/g, ' ').replace(/\$\$[\s\S]*?\$\$|\$[^$\n]*\$/g, ' ').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+}
+
+/**
+ * The section a page shows, for a defect whose quote cannot be found in the source (a printed equation, say): the
+ * last section whose heading is printed on that page or before it. Where a page begins a section partway down, the
+ * section before it is on that page too, and is offered second.
+ */
+function sectionsOnPage(paper: Paper, pages: string[], page: number | null): string[] {
+  if (!page || !pages.length) return []
+  const sections = paper.state.outline?.sections ?? []
+  const heading = (title: string, n: number) => new RegExp(`^\\s*${n}\\s+${title.slice(0, 40).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')}`, 'm')
+  const starts = sections.map((section, i) => pages.findIndex((text) => heading(section.title, i + 1).test(text)) + 1)
+  let current = -1
+  for (let i = 0; i < sections.length; i++) if (starts[i] > 0 && starts[i] <= page) current = i
+  if (current < 0) return []
+  const out = [sections[current].id]
+  if (starts[current] === page && current > 0) out.push(sections[current - 1].id)
+  return out
 }
 
 /** The figures as printed, in order, so "Figure 3" names one. */
@@ -102,7 +142,13 @@ function figureOf(paper: Paper, defect: { quote: string; problem: string; figure
   return printed.find((f) => q && squash(f.caption).includes(q))?.id ?? null
 }
 
-type Found = ProofDefect & { fixIn: typeof FIX_IN[number] }
+type Found = ProofDefect & { fixIn: typeof FIX_IN[number]; tableSection?: string }
+
+/** The table a defect is about, by the number it names (0 for Table 1), or -1. */
+function tableOf(defect: { quote: string; problem: string }): number {
+  const number = `${defect.quote} ${defect.problem}`.match(/\btable\s*(\d+)/i)
+  return number ? Number(number[1]) - 1 : -1
+}
 
 /**
  * Sentences in which the text doubts itself or talks about how it was made: who did or did not review it, what it
@@ -123,15 +169,35 @@ export function selfTalk(text: string, aboutSystem = false): string[] {
 const CALLOUT = /call(?:ed|s|ing)? out|callout|never (?:refer|mention|cite)|(?:does|do) not (?:refer|mention|cite)|without (?:referring|calling)/i
 
 /** Whether the text refers to figure n: "Figure 3", "Fig. 3", "Figures 2 and 3", "Figures 1–3". */
-export function calledOut(text: string, n: number): boolean {
-  const figures = /\b(?:Figures?|Figs?\.)\s+(\d+)((?:\s*(?:,|and|&|–|-|to)\s*\d+)*)/g
-  for (const m of text.matchAll(figures)) {
+export function calledOut(text: string, n: number, kind: 'figure' | 'table' = 'figure'): boolean {
+  const names = kind === 'figure' ? /\b(?:Figures?|Figs?\.)\s+(\d+)((?:\s*(?:,|and|&|–|-|to)\s*\d+)*)/g : /\b(?:Tables?)\s+(\d+)((?:\s*(?:,|and|&|–|-|to)\s*\d+)*)/g
+  for (const m of text.matchAll(names)) {
     const numbers = [Number(m[1]), ...[...m[2].matchAll(/\d+/g)].map((x) => Number(x[0]))]
     if (numbers.includes(n)) return true
     // A range: "Figures 1–3" refers to 2 as well.
     if (/–|-|to/.test(m[2]) && n > numbers[0] && n < numbers.at(-1)!) return true
   }
   return false
+}
+
+/** The tables the sections print, in the order they are numbered, each with the caption it prints under. */
+export function printedTables(paper: Paper): { sectionId: string; caption: string }[] {
+  return (paper.state.outline?.sections ?? []).flatMap((section) => {
+    const lines = sectionText(paper, section.id).split('\n')
+    const found: { sectionId: string; caption: string }[] = []
+    lines.forEach((line, i) => {
+      if (!/^\|(?:\s*:?-+:?\s*\|)+\s*$/.test(line) || !/^\|.*\|\s*$/.test(lines[i - 1] ?? '')) return
+      // Its caption is the paragraph that starts "Table:" or ":" just after the table or just before it.
+      let after = i + 1
+      while (after < lines.length && /^\|.*\|\s*$/.test(lines[after])) after++
+      while (after < lines.length && !lines[after].trim()) after++
+      let before = i - 2
+      while (before >= 0 && !lines[before].trim()) before--
+      const caption = [lines[after], lines[before]].find((l) => /^(?:Table)?:\s/.test(l ?? '')) ?? ''
+      found.push({ sectionId: section.id, caption: caption.replace(/^(?:Table)?:\s*/, '').trim() })
+    })
+    return found
+  })
 }
 
 export const proof: Behavior = {
@@ -164,7 +230,7 @@ You are the production editor. Below is the typeset paper as a reader will see i
 - tables that overflow the page or break apart;
 - an entry of the claim ledger appendix that says something the printed text does not (a result it does not report, a method it does not carry out);
 - missing, duplicated or misnumbered headings; a reference list with broken entries.
-Do not judge the science, the argument or the prose style; other steps do that. For each defect give page, where (${WHERE.join(', ')}), quote (the exact printed text it concerns, or the figure's number), problem, fix (what the printed page should show instead), and fix_in: prose when the words of a section must change, figure when the figure itself must be drawn again, ledger for an entry of the claim ledger, other for anything else (layout, references, front matter, the production record). If the paper prints cleanly, return no defects.
+Do not judge the science, the argument or the prose style; other steps do that. The byline, affiliations and date are as the authors gave them: do not report them. For each defect give page, where (${WHERE.join(', ')}), quote (the exact printed text it concerns, or the figure's number), problem, fix (what the printed page should show instead), and fix_in: prose when the words of a section must change, figure when the figure itself must be drawn again, ledger for an entry of the claim ledger, other for anything else (layout, references, front matter, the production record). If the paper prints cleanly, return no defects.
 
 ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page}`).join('\n\n') : source}`,
           schema: obj({ defects: arr(obj({ page: int(), where: enm([...WHERE]), quote: str(), problem: str(), fix: str(), fix_in: enm([...FIX_IN]) })) }),
@@ -196,11 +262,17 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
           if (calledOut(prose, i + 1) || defects.some((d) => CALLOUT.test(d.problem) && figureOf(paper, d) === fig.id)) return
           defects.push({ page: null, where: 'figure', quote: `Figure ${i + 1}`, problem: `Figure ${i + 1} is never referred to in the text.`, fix: `Refer to it as Figure ${i + 1} in the sentence that discusses what it shows.`, by: 'check', figureId: fig.id, fixIn: 'prose' })
         })
+        // So is a table the sections print: it is numbered in the order the sections print them.
+        const tables = printedTables(paper)
+        tables.forEach((table, i) => {
+          if (calledOut(prose, i + 1, 'table') || defects.some((d) => CALLOUT.test(d.problem) && /\btable\b/i.test(`${d.quote} ${d.problem}`) && tableOf(d) === i)) return
+          defects.push({ page: null, where: 'table', quote: `Table ${i + 1}`, problem: `Table ${i + 1}${table.caption ? ` (${table.caption.slice(0, 80)})` : ''} is never referred to in the text.`, fix: `Refer to it as Table ${i + 1} in the sentence that introduces what it shows.`, by: 'check', tableSection: table.sectionId, fixIn: 'prose' })
+        })
 
         const rounds = (s.proof?.rounds ?? 0) + 1
         const left: ProofDefect[] = []
         let fixed = 0
-        const keep = ({ fixIn: _, ...d }: Found): ProofDefect => d
+        const keep = ({ fixIn: _, tableSection: __, ...d }: Found): ProofDefect => d
         if (rounds > PROOF_ROUNDS) left.push(...defects.map(keep))
         else {
           const prose = new Map<string, Found[]>()
@@ -217,15 +289,20 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
               figure.status = 'planned'
               fixed++
             } else if (d.fixIn === 'ledger') ledger.push(d)
-            else if (d.fixIn === 'prose') {
-              // A missing callout or a wrong cross-reference has no quote in the prose: it belongs to the figure's own section.
-              const section = sectionOf(paper, d.quote, record) ?? (fig ? s.figures.find((f) => f.id === fig)?.sectionId ?? null : null)
+            else if (d.fixIn === 'prose' || d.where === 'equation') {
+              // A missing callout or a wrong cross-reference has no quote in the prose: it belongs to the figure's or the
+              // table's own section. A display equation is the section's own source, though printed it reads unlike it:
+              // it is found by the page it is printed on.
+              const table = d.where === 'table' ? tables[tableOf(d)]?.sectionId ?? null : null
+              const section = sectionOf(paper, d.quote, record) ?? d.tableSection ?? table ?? (fig ? s.figures.find((f) => f.id === fig)?.sectionId ?? null : null)
+                ?? sectionsOnPage(paper, pages.text, d.page).find((id) => d.where !== 'equation' || sectionText(paper, id).includes('$$')) ?? null
               if (section) prose.set(section, [...(prose.get(section) ?? []), d])
               else left.push(keep(d))
             } else left.push(keep(d))
           }
           const outline = (s.outline?.sections ?? []).map((sec, i) => `${i + 1} ${sec.title}`).join('\n')
           const figures = printedFigures(paper).map((f, i) => `Figure ${i + 1}: ${f.caption}`).join('\n')
+          const tableList = tables.map((t, i) => `Table ${i + 1}: ${t.caption || '(no caption)'}`).join('\n')
           for (const [sectionId, found] of prose) {
             const section = s.outline!.sections.find((sec) => sec.id === sectionId)!
             const text = sectionText(paper, sectionId)
@@ -240,7 +317,9 @@ ${found.map((d, i) => `${i + 1}. "${d.quote}": ${d.problem} Fix: ${d.fix}`).join
 
 The sections as printed, by number:
 ${outline}
-${figures ? `\nThe figures as printed:\n${figures}\n` : ''}
+${figures ? `\nThe figures as printed:\n${figures}\n` : ''}${tableList ? `\nThe tables as printed:\n${tableList}\n` : ''}
+A display equation too wide for the column is set on several lines, as \\begin{aligned} with \\\\ between the lines and & before the sign they align at.
+
 SOURCE TEXT:
 """
 ${text}

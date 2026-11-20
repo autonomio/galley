@@ -179,14 +179,14 @@ export function budgetLine(budget: { remaining: number; limit: number; resetSeco
 }
 
 /** The registry's CSL-JSON record for a DOI (Crossref and DataCite alike), or null. */
-const titleWords = (title: string) => title.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+export const titleWords = (title: string) => title.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
 
 /**
  * A work known only by its title and year (a reference that would print as a title, a year and a link) completed from
  * OpenAlex: its DOI, authors and venue, taken only from a record whose title is the same word for word and whose year
  * is within one. One search; the work keeps what it had when nothing matches or the index cannot answer.
  */
-export async function completeByTitle(work: Work): Promise<boolean> {
+export async function completeByTitle(work: Work, replace = false): Promise<boolean> {
   const words = titleWords(work.title)
   if (words.length < 3 || work.doi) return false
   try {
@@ -194,13 +194,19 @@ export async function completeByTitle(work: Work): Promise<boolean> {
     const response = await fetch(`https://api.openalex.org/works?search=${encodeURIComponent(work.title)}&per_page=5&select=doi,display_name,publication_year,authorships,primary_location${key ? `&api_key=${encodeURIComponent(key)}` : ''}`, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(30_000) })
     if (!response.ok) return false
     const { results = [] } = await response.json() as { results?: { doi?: string; display_name?: string; publication_year?: number; authorships?: { author?: { display_name?: string } }[]; primary_location?: { source?: { display_name?: string } } }[] }
-    const same = results.find((r) => titleWords(r.display_name ?? '').join(' ') === words.join(' ') && (!work.year || !r.publication_year || Math.abs(r.publication_year - work.year) <= 1))
+    // The same title, and of those the one nearest the year the work gives. A document found on the web (`replace`)
+    // may carry the date it was posted or read rather than published, so its year only ranks the matches.
+    const near = (r: { publication_year?: number }) => (work.year && r.publication_year ? Math.abs(r.publication_year - work.year) : 0)
+    const same = results
+      .filter((r) => titleWords(r.display_name ?? '').join(' ') === words.join(' ') && (replace || near(r) <= 1))
+      .sort((a, b) => near(a) - near(b) || (b.doi ? 1 : 0) - (a.doi ? 1 : 0))[0]
     if (!same) return false
     work.doi = same.doi ? same.doi.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '').toLowerCase() : null
     const authors = (same.authorships ?? []).map((a) => a.author?.display_name ?? '').filter(Boolean)
     if (authors.length) work.authors = authors
-    work.year = work.year ?? same.publication_year ?? null
-    work.venue = work.venue ?? same.primary_location?.source?.display_name ?? null
+    // A web document's issuer and date give way to the publication's own record.
+    work.year = replace ? same.publication_year ?? work.year : work.year ?? same.publication_year ?? null
+    work.venue = replace ? same.primary_location?.source?.display_name ?? work.venue : work.venue ?? same.primary_location?.source?.display_name ?? null
     return true
   } catch {
     return false
