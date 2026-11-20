@@ -238,9 +238,11 @@ export function importReview(paper: Paper, data: any, bundlePath: string): void 
   lit.counts.excludedFullText = Math.max(0, lit.counts.retrieved - lit.counts.reviewed)
   lit.limits = [
     'It searched one database, OpenAlex, and read only publications with an open-access full text, so closed-access work without an open copy is not included.',
-    `A research model (${modelName(lit.models.research)}) chose which records to screen, screened them and read the full texts, and an independent model (${modelName(lit.models.audit)}) audited every finding against the passages; no person screened or read them.`,
     'The search stopped on a coverage rule, not on exhaustion, so it does not claim complete recall.',
   ]
+  // The review's limits are the authors' to see beside its section, never printed.
+  const notes = (s.authorNotes ??= [])
+  for (const limit of lit.limits) if (!notes.some((n) => n.text === limit)) notes.push({ id: `N${notes.length + 1}`, sectionId: REVIEW_SECTION, quote: '', text: limit, kind: 'limitation', seat: 'checker', family: 'gpt', behavior: 'literature-review', at: new Date().toISOString() })
   lit.gaps = (answer.gaps ?? []).map((g: any) => tidy(String(g.description ?? ''))).filter(Boolean).slice(0, 8)
   lit.contradictions = (answer.contradictions ?? []).map((k: any) => tidy(String(k.description ?? ''))).filter(Boolean).slice(0, 6)
   lit.claimIds = claimIds
@@ -276,9 +278,9 @@ Search queries: ${lit.protocol.queries.map((q) => `"${q}"`).join('; ')}
 Eligible as core studies: ${lit.protocol.eligibility.core}
 Eligible as supporting studies: ${lit.protocol.eligibility.supporting}
 Excluded: ${lit.protocol.eligibility.exclusion}
-How it was done: a research model (${modelName(lit.models?.research)}) planned the search, read the queries' results, chose which records to screen by how much of the question each would cover, screened them by title and abstract, retrieved and read the full texts, and extracted each finding with the verbatim passages it rests on; an independent model (${modelName(lit.models?.audit)}) audited every finding against those passages.
+How it was done: the search was planned from the question; records were chosen for screening by how much of the question each would cover, screened by title and abstract, read in full, and each finding was extracted with the verbatim passages it rests on; an independent audit checked every finding against those passages.
 Why the search stopped: ${lit.stopping || 'a coverage rule, not exhaustion'}
-Its limits: ${(lit.limits ?? []).join(' ')}
+Its limits, for notes to the authors and never for the text: ${(lit.limits ?? []).join(' ')}
 Appendix: the paper's appendix gives the full protocol, how the records were narrowed (with a figure), every query and every included publication, each in the references.
 Where the studies disagree: ${lit.contradictions?.join(' | ') || 'none recorded'}
 What they leave open: ${lit.gaps?.join(' | ') || 'none recorded'}
@@ -288,11 +290,11 @@ ${Object.entries(LIT_PLACEHOLDERS).map(([key, meaning]) => `{{${key}}}: ${meanin
 
 /** How the review section is written, on top of the rules every section follows. */
 export const REVIEW_SECTION_RULES = `This section reports the systematic review above. Write it in this order:
-1. How the review was done, in one paragraph: the question, the source and the queries, how records were chosen for screening, the eligibility criteria, the screening and full-text reading, the independent audit and why the search stopped, with every count as its placeholder; then its limits in a sentence or two; then that the appendix gives the full protocol, every query and every included publication. Call it a systematic review throughout, and never by another name.
-2. What the reviewed studies establish, organised by theme rather than study by study: each finding above with its citations, worded to its uncertainty (low: state it plainly; moderate: what the evidence indicates; high: what limited evidence suggests).
+1. How the review was done, in one paragraph: the question, the source and the queries, how records were chosen for screening, the eligibility criteria, the screening and full-text reading, the independent audit and why the search stopped, with every count as its placeholder; then that the appendix gives the full protocol, every query and every included publication. Call it a systematic review throughout, and never by another name.
+2. What the reviewed studies establish, organised by theme rather than study by study: each finding above with its citations, stated plainly with its citations; where a finding's evidence is thin, say so in a note for the authors, not in the text.
 3. Where the studies disagree and what they leave open, from the review above.
 4. One short paragraph relating this paper's contribution to what the review found, claiming no more than the paper's own claims.
-The review's method, disagreements and open questions above may be stated as facts of the review; every other factual sentence states one of the findings.`
+The review's method, disagreements and open questions above may be stated as facts of the review; every other factual sentence states one of the findings. Name no model or tool that did the work: that belongs to the statement on the use of AI.`
 
 const thousands = (n: number) => n.toLocaleString('en-US')
 const cell = (text: string) => text.replace(/\|/g, '/').replace(/\s+/g, ' ').trim()
@@ -351,9 +353,8 @@ export function reviewAppendix(paper: Paper, cite: (workId: string) => string, f
     `**Question.** ${lit.question}`,
     `**Source.** OpenAlex: titles, abstracts and indexed full text, limited to publications with an open-access full text.`,
     `**Eligibility.** Core studies: ${lit.protocol.eligibility.core || 'as the question defines them'} Supporting studies: ${lit.protocol.eligibility.supporting || 'studies that inform the question'} Excluded: ${lit.protocol.eligibility.exclusion || 'studies outside the question'}`,
-    `**Screening, reading and audit.** A research model (${modelName(lit.models?.research)}) read the queries' results and chose which records to screen by how much of the question each would cover, screened them by title and abstract, retrieved and read the open-access full texts, and extracted each finding with the verbatim passages it rests on. An independent model (${modelName(lit.models?.audit)}) audited every finding against those passages.`,
+    `**Screening, reading and audit.** Records were chosen for screening by how much of the question each would cover, screened by title and abstract and read in full, and each finding was extracted with the verbatim passages it rests on. An independent audit checked every finding against those passages.`,
     lit.stopping ? `**Why the search stopped.** ${lit.stopping}` : '',
-    lit.limits?.length ? `**Limits.** ${lit.limits.join(' ')}` : '',
     // Each figure and table is referred to by the number it prints with.
     `**How the records were narrowed.** ${flowFigure ? `Figure ${numbers.figure} shows the flow of records, and Table ${numbers.table}` : `Table ${numbers.table}`} gives the count at each stage.`,
     flowFigure ? `![How the review narrowed its records: ${thousands(c.discovered)} found, ${thousands(c.screened)} screened, ${thousands(c.retrieved)} read in full, ${thousands(c.reviewed)} included.](${flowFigure}){#fig-review-flow width=85%}` : '',

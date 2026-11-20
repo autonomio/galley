@@ -8,7 +8,7 @@ import type { Behavior, Target } from '../scheduler.js'
 import { arr, enm, obj, str } from '../schema.js'
 import { applyExact, dropUnknownCitations, words } from '../text.js'
 import type { Passage, Section } from '../types.js'
-import { briefBlock, citableKeys, claimsBlock, keyFor, live, manuscriptBlock, now, seatFamily, sectionText } from './common.js'
+import { activeClaims, briefBlock, citableKeys, claimsBlock, keyFor, live, manuscriptBlock, noteForAuthors, now, seatFamily, sectionText } from './common.js'
 import { verifyCitationsSettled } from './truth.js'
 import { literatureBlock, REVIEW_SECTION, REVIEW_SECTION_RULES } from '../literature.js'
 import { simulationSeries } from '../simulations.js'
@@ -75,17 +75,24 @@ ${claimsBlock(paper, section.claimIds) || '(none; this section connects and fram
 Rules:
 - Every factual sentence states one of the claims above or connects them. Add no new factual claims, numbers or names.
 - Cite only with the keys given above, in Pandoc form: [@key] or [@key1; @key2], or @key for a narrative citation. Cite a claim's evidence where the claim is made. Never cite a key that is not listed.
-- A claim without verified evidence is written as a hypothesis, an expectation or an open question, never as an established fact.
+- A claim without verified evidence is stated plainly, like the paper's other claims, and gets a note for the authors saying it has no verified source.
+- notes: everything the authors should know about this section that the text must not say: a claim with no verified source, a limit of the work, a doubt, a caution. Each note gives quote (the exact words of your section it concerns, copied character for character) and note (one or two sentences to the authors).
 - Do not write the section heading. You may use ## subheadings if the section is long.
 - Numbers about how this manuscript itself was produced may be written only as these placeholders, which are filled in from the production record at typesetting:
 ${placeholderGuide()}
 ${section.id === REVIEW_SECTION ? `\n${literatureBlock(paper)}\n\n${REVIEW_SECTION_RULES}\n` : ''}
-Return markdown (the section body) and used_claims (ids of the claims you stated).`,
-            schema: obj({ markdown: str(), used_claims: arr(str()) }),
+Return markdown (the section body), used_claims (ids of the claims you stated) and notes.`,
+            schema: obj({ markdown: str(), used_claims: arr(str()), notes: arr(obj({ quote: str(), note: str() })) }),
           })
           const { text, dropped } = dropUnknownCitations(String(reply.markdown ?? '').trim(), knownKeys(paper))
           if (dropped.length) paper.note('draft', `${section.id}: removed citations to unknown keys ${[...new Set(dropped)].join(', ')}`)
           setPassage(paper, section.id, text, { kind: 'agent', family, model: paper.config.models[family]?.model ?? family, seat: 'author', behavior: 'draft' }, 'first draft')
+          // The caution the text leaves out goes beside it, for the authors.
+          for (const n of reply.notes ?? []) noteForAuthors(paper, { sectionId: section.id, quote: text.includes(String(n.quote ?? '')) ? String(n.quote) : '', text: String(n.note ?? ''), kind: /source|evidence|verif|cit/i.test(String(n.note)) ? 'unverified' : 'caution', seat: 'author', family, behavior: 'draft' })
+          // A claim the section states without a verified source is flagged for the authors even when the draft did not say so.
+          for (const c of activeClaims(paper).filter((k) => section.claimIds.includes(k.id) && k.status === 'unsupported' && (reply.used_claims ?? []).includes(k.id))) {
+            if (!(paper.state.authorNotes ?? []).some((n) => n.sectionId === section.id && n.kind === 'unverified' && n.text.includes(c.id))) noteForAuthors(paper, { sectionId: section.id, quote: '', text: `${c.id} has no verified source: "${c.text}" Cite a source for it, or cut it.`, kind: 'unverified', seat: 'author', family, behavior: 'draft' })
+          }
           paper.save()
         },
       }))
@@ -110,7 +117,7 @@ export const fidelity: Behavior = {
 
 ${STYLE}
 
-Check one section of a manuscript against the claims and evidence it is allowed to state. Report each sentence that says more than its claim or passage supports (overclaim), states a fact that is not among the claims (unsupported), cites a key whose passage does not back the sentence (miscite), contradicts another claim (contradiction), or breaks the style rules (style). For each, give the exact text to replace (old, copied character for character from the section, long enough to be unique) and its replacement (new): the smallest change that makes the sentence faithful. When a citation is wrong, remove or replace its key; never write an author's name in its place. Placeholders like {{run.calls}} are filled in later and are allowed. Report nothing for sentences that are fine.
+Check one section of a manuscript against the claims and evidence it is allowed to state. Report each sentence that says more than its claim or passage supports (overclaim), states a fact that is not among the claims (unsupported), cites a key whose passage does not back the sentence (miscite), contradicts another claim (contradiction), or breaks the style rules (style). For each, give the exact text to replace (old, copied character for character from the section, long enough to be unique) and its replacement (new): the smallest change that makes the sentence faithful. Fix an overclaim by stating exactly what the evidence supports, plainly; never by adding a hedge (may, might, could, appears, suggests) or a caveat. When a citation is wrong, remove or replace its key; never write an author's name in its place. Placeholders like {{run.calls}} are filled in later and are allowed. Report nothing for sentences that are fine.
 
 Section ${section.id} ${section.title} (purpose: ${section.purpose}):
 """

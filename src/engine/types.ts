@@ -225,6 +225,24 @@ export interface Note {
   forHuman?: boolean
 }
 
+/**
+ * What an agent wants the authors to know about a passage, kept beside the text as a comment in the editor and never
+ * printed: a claim with no verified source, a limit of the work, a doubt, a caution. The paper states its work plainly;
+ * the caution stays where the authors see it.
+ */
+export interface AuthorNote {
+  id: string
+  sectionId: string | null
+  /** The words of the text it concerns, copied exactly; empty for a note on the section as a whole. */
+  quote: string
+  text: string
+  kind: 'unverified' | 'limitation' | 'caution'
+  seat: Seat
+  family: Family
+  behavior: string
+  at: string
+}
+
 export interface Calibration {
   planted: number
   caught: number
@@ -357,6 +375,8 @@ export interface PaperState {
   settled: Record<string, 'done' | 'skipped'>
   attempts: Record<string, number>
   notes: Note[]
+  /** Comments for the authors beside the text: the caution agents keep out of the paper. */
+  authorNotes?: AuthorNote[]
   choices?: Record<string, Choice>
   proposals?: Proposal[]
   /** The text galley last wrote to the editor, per section, to tell a person's edits from its own. */

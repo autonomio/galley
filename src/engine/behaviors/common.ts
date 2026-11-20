@@ -7,7 +7,7 @@ import { datasetSources, materialsBlock, measurementsBlock } from '../materials.
 import { simulationsBlock } from '../simulations.js'
 import { literatureBlock } from '../literature.js'
 import { authorYear, citationKey } from '../text.js'
-import type { Citation, Claim, ClaimStatus, Family, Seat, Work } from '../types.js'
+import type { AuthorNote, Citation, Claim, ClaimStatus, Family, Seat, Work } from '../types.js'
 import { worldModelBlock } from '../worldmodel.js'
 
 export const now = () => new Date().toISOString()
@@ -69,7 +69,7 @@ export function describeClaim(paper: Paper, c: Claim): string {
     ? `evidence:\n${cites.join('\n')}`
     : c.status === 'internal' ? 'evidence: the authors\' own work; state it plainly as a property of what this paper presents; do not cite'
       : c.status === 'assumed' ? 'evidence: none needed (common knowledge or a stated premise)'
-        : 'evidence: none verified; present it only as a hypothesis, an expectation or an open question, or leave it out if the section works without it'
+        : 'evidence: none verified; state it plainly as the paper states its own claims, and add a note for the authors that it has no verified source; or leave it out if the section works without it'
   const review = c.origin === 'review' ? `, finding of the systematic review, uncertainty ${c.uncertainty ?? 'moderate'}` : ''
   return `- ${c.id} [${c.kind}${c.loadBearing ? ', load-bearing' : ''}${review}] ${c.text}\n  ${support}`
 }
@@ -110,7 +110,7 @@ export function manuscriptBlock(paper: Paper, withAbstract = true, withLedger = 
   for (const section of outline?.sections ?? []) {
     parts.push(`[${section.id}] # ${section.title}\n\n${fillPlaceholders(sectionText(paper, section.id), record).text}`)
   }
-  if (outline && withLedger && paper.config.ledgerAppendix !== false) parts.push(`[Appendix A, generated from the claim ledger at typesetting: it changes when claims change, and is not edited directly] # Claim ledger\n\n${fillPlaceholders(ledgerAppendix(paper), record).text}`)
+  if (outline && withLedger && paper.config.ledgerAppendix === true) parts.push(`[Appendix A, generated from the claim ledger at typesetting: it changes when claims change, and is not edited directly] # Claim ledger\n\n${fillPlaceholders(ledgerAppendix(paper), record).text}`)
   return parts.join('\n\n')
 }
 
@@ -157,4 +157,15 @@ export function citationEvidenceBlock(paper: Paper): string {
     const c = claim(paper, cite.claimId)
     return `[@${keyFor(paper, work)}] supports ${cite.claimId} ("${c?.text ?? ''}") with the passage: "${cite.passage}"`
   }).join('\n')
+}
+
+/**
+ * A comment for the authors beside the text, never printed: the caution an agent keeps out of the paper (a claim with
+ * no verified source, a limit of the work, a doubt). The same note on the same words is kept once.
+ */
+export function noteForAuthors(paper: Paper, note: Omit<AuthorNote, 'id' | 'at'>): void {
+  const notes = (paper.state.authorNotes ??= [])
+  const text = note.text.trim()
+  if (!text || notes.some((n) => n.sectionId === note.sectionId && n.quote === note.quote && n.text === text)) return
+  notes.push({ ...note, text, id: `N${notes.length + 1}`, at: new Date().toISOString() })
 }

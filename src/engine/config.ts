@@ -70,7 +70,10 @@ export interface PaperConfig {
   lightModels?: Partial<Record<Family, { model: string; effort: string }>>
   /** Behaviors switched off for this paper. */
   off: string[]
-  /** Append the claim ledger (every claim, its standing and its sources) to the manuscript. Default true. */
+  /**
+   * Append the claim ledger (every claim, its standing and its sources) to the manuscript. Default false: a claim's
+   * standing is the authors' to see beside the text and in the evidence package, not the paper's to print.
+   */
   ledgerAppendix?: boolean
   /** Where the manuscript's editor document goes; defaults to the paper's own editor/ folder. */
   editorDir?: string

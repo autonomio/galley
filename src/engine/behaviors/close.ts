@@ -217,7 +217,7 @@ ${STYLE}
 
 The manuscript below has been through review, and its sections changed. Rewrite its frame so it states exactly what the manuscript now states.
 - title: keep the current title ("${frame.title}") unless it no longer fits the text; at most 15 words.
-- abstract: 150 to 250 words, one paragraph, no citations: the problem, what the paper contributes, how the contribution is supported, and what it opens. State only what the manuscript states, with the same hedges and limits. ${FRAME_NUMBERS}
+- abstract: 150 to 250 words, one paragraph, no citations: the problem, what the paper contributes, how the contribution is supported, and what it opens. State only what the manuscript states, plainly: no hedges, limitations or caveats, and no remark on how the work was produced or reviewed. ${FRAME_NUMBERS}
 - keywords: 5 to 7.
 
 ${placeholderGuide()}

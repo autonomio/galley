@@ -20,7 +20,7 @@ import { fillPlaceholders, productionRecord, type Record_ } from './record.js'
 import { software, sourceStatement } from './self.js'
 import { escapeUnknownCitations, squash } from './text.js'
 import type { Annotation, AnnotationAuthor, AnnotationLabel, AnnotationReply } from '../types.js'
-import type { Claim, Family, Finding } from './types.js'
+import type { AuthorNote, Claim, Family, Finding } from './types.js'
 
 function exec(cmd: string, args: string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => execFile(cmd, args, { cwd, timeout: 300_000, maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => error ? reject(new Error(`${cmd} ${args.slice(0, 3).join(' ')}: ${stderr || error.message}`)) : resolve(stdout)))
@@ -210,7 +210,7 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   const decl = paper.config.declarations ?? {}
   // The ledger quotes claims as they stand, placeholders included, so it is filled like every other part of the text.
   const appendices: [string, string][] = []
-  if (paper.config.ledgerAppendix !== false) appendices.push(['Claim ledger', fillPlaceholders(ledgerAppendix(paper), record).text])
+  if (paper.config.ledgerAppendix === true) appendices.push(['Claim ledger', fillPlaceholders(ledgerAppendix(paper), record).text])
   const described = describeData(paper)
   if (described) appendices.push(['The data', described])
   const flow = existsSync(paper.path('build', REVIEW_FLOW)) ? REVIEW_FLOW : null
@@ -258,7 +258,7 @@ function annotationFor(lines: string[], quote: string, fallbackHeading: string):
 const TONES: Record<Family, AnnotationAuthor['tone']> = { claude: 'a', gpt: 'b', gemini: 'c' }
 const agentAuthor = (name: string, family: Family): AnnotationAuthor => ({ name, kind: 'agent', detail: FAMILY_NAMES[family], tone: TONES[family] })
 const refereeAuthor = (seat: string, family: Family) => agentAuthor(`${seat.charAt(0).toUpperCase()}${seat.slice(1)} referee`, family)
-const ANSWER: Record<string, string> = { fixed: 'Fixed.', rebutted: 'Rebutted.', limitation: 'Stated as a limitation.', needs_evidence: 'Needs evidence.' }
+const ANSWER: Record<string, string> = { fixed: 'Fixed.', rebutted: 'Rebutted.', limitation: 'A limitation, left for you.', needs_evidence: 'Needs evidence.' }
 const VERDICT: Record<string, string> = { verified: 'Verified the answer.', disagrees: 'Disagrees.', uncertain: 'Not sure yet.' }
 const SETTLED: Record<string, string> = { fixed: 'Fixed', rebutted: 'Rebutted', limitation: 'Limitation', adjudicated: 'Settled', applied: 'Applied', noted: 'Noted', dropped: 'Dropped' }
 const later = (iso: string | undefined, ms: number) => new Date((iso ? Date.parse(iso) : Date.now()) + ms).toISOString()
@@ -288,10 +288,14 @@ function childAnswers(paper: Paper, parentId: string): AnnotationReply[] {
   return paper.state.findings.filter((c) => c.parent === parentId).flatMap((c) => answers(c))
 }
 
+/** A finding settled as a limitation: never written into the paper, it stays beside the text for the authors. */
+const leftForAuthors = (f: Finding) => f.status === 'limitation' || (f.status === 'adjudicated' && !!f.adjudication?.decision.startsWith('limitation'))
+
 function findingLabels(paper: Paper, f: Finding, resolved: boolean): AnnotationLabel[] {
   const waiting = (paper.state.proposals ?? []).some((p) => p.findingId === f.id && p.state === 'pending')
   const labels: AnnotationLabel[] = [f.severity === 'critical' ? { text: f.severity, tone: 'failed' } : { text: f.severity }]
-  if (waiting) labels.push({ text: 'change waits for you', tone: 'attention' })
+  if (leftForAuthors(f)) labels.push({ text: 'limitation · for you', tone: 'attention' })
+  else if (waiting) labels.push({ text: 'change waits for you', tone: 'attention' })
   else if (resolved) labels.push({ text: SETTLED[f.status] ?? f.status, tone: 'done' })
   else if (f.assignee !== 'agents') labels.push({ text: 'needs you', tone: 'attention' })
   else labels.push({ text: f.dispositions.length ? 'answered' : 'open' })
@@ -301,7 +305,8 @@ function findingLabels(paper: Paper, f: Finding, resolved: boolean): AnnotationL
 /** A referee's finding as a thread: the question opens it, every answer follows, and a person's replies keep their place. */
 function findingThread(paper: Paper, f: Finding, lines: string[], fallbackHeading: string, existing: Annotation | undefined): Annotation {
   const waiting = (paper.state.proposals ?? []).some((p) => p.findingId === f.id && p.state === 'pending')
-  const resolved = !!SETTLED[f.status] && !waiting
+  // A limitation stays open beside the text until a person resolves it there.
+  const resolved = leftForAuthors(f) ? !!existing?.resolved : !!SETTLED[f.status] && !waiting
   // A note the editor has placed keeps its place: the editor re-finds passages as the text changes.
   const place = existing
     ? { range: existing.range, snippet: existing.snippet }
@@ -318,6 +323,23 @@ function findingThread(paper: Paper, f: Finding, lines: string[], fallbackHeadin
   }
   if (replies.length) note.replies = replies
   if (resolved) note.resolved = true
+  return note
+}
+
+const NOTE_KIND: Record<AuthorNote['kind'], string> = { unverified: 'no verified source', limitation: 'limitation', caution: 'caution' }
+
+/** A note an agent left for the authors: a comment beside the passage it concerns, never printed, theirs to resolve. */
+function authorNoteThread(paper: Paper, n: AuthorNote, lines: string[], fallbackHeading: string, existing: Annotation | undefined): Annotation {
+  const place = existing
+    ? { range: existing.range, snippet: existing.snippet }
+    : (({ snippet, ...range }) => ({ range, snippet }))(annotationFor(lines, n.quote, fallbackHeading))
+  const replies = [...theirOwn(existing?.replies), ...childAnswers(paper, `note-${n.id}`)].sort(byTime)
+  const note: Annotation = {
+    id: `galley-note-${n.id}`, ...place, comment: n.text, created_at: n.at, updated_at: replies.at(-1)?.created_at ?? n.at,
+    author: agentAuthor(`${n.seat.charAt(0).toUpperCase()}${n.seat.slice(1)}`, n.family), labels: [{ text: NOTE_KIND[n.kind], tone: 'attention' }],
+  }
+  if (replies.length) note.replies = replies
+  if (existing?.resolved) note.resolved = true
   return note
 }
 
@@ -395,10 +417,13 @@ function writeEditorDocument(paper: Paper, seen?: { doc: string | null, notes: s
     const placed = new Map(existing.map((a) => [a.id, a]))
     const lines = text.split('\n')
     const human = existing.filter((a) => !a.id.startsWith('galley-')).map((a) => withAnswers(paper, a))
+    const heading = (sectionId: string | null | undefined) => s.outline?.sections.find((sec) => sec.id === sectionId)?.title ?? base.title
     const ours = s.findings
-      .filter((f) => f.origin === 'agent' && !f.parent && (f.severity !== 'minor' || f.status === 'noted'))
-      .map((f) => findingThread(paper, f, lines, s.outline?.sections.find((sec) => sec.id === f.sectionId)?.title ?? base.title, placed.get(`galley-${f.id}`)))
-    notes = JSON.stringify({ annotations: [...human, ...ours] }, null, 2)
+      .filter((f) => f.origin === 'agent' && !f.parent && (f.severity !== 'minor' || f.status === 'noted' || leftForAuthors(f)))
+      .map((f) => findingThread(paper, f, lines, heading(f.sectionId), placed.get(`galley-${f.id}`)))
+    // The caution the agents keep out of the paper, beside the words it concerns.
+    const cautions = (s.authorNotes ?? []).map((n) => authorNoteThread(paper, n, lines, heading(n.sectionId), placed.get(`galley-note-${n.id}`)))
+    notes = JSON.stringify({ annotations: [...human, ...ours, ...cautions] }, null, 2)
     if (notes !== notesOnDisk) writeReplacing(notesPath, notes)
     s.editorResolved = ours.filter((a) => a.resolved).map((a) => a.id)
   }
@@ -590,9 +615,9 @@ const NOTE_SETTLE_MS = 15_000
 /** How the referee findings were settled, every material one accounted for. */
 function findingsSummary(record: Record_): string {
   const parts = ([
-    ['run.findings_fixed', 'fixed'], ['run.findings_rebutted', 'rebutted'], ['run.findings_limitation', 'stated as limitations'],
+    ['run.findings_fixed', 'fixed'], ['run.findings_rebutted', 'rebutted'], ['run.findings_limitation', 'left for the authors'],
     ['run.findings_decided', 'decided by a third model family'], ['run.findings_set_aside', 'set aside by a third model family, with the text answering each'],
-    ['run.findings_fallback', 'stated as limitations when adjudication could not settle them'], ['run.findings_yours', 'set aside by the author'], ['run.findings_open', 'still open'],
+    ['run.findings_fallback', 'left for the authors when adjudication could not settle them'], ['run.findings_yours', 'set aside by the author'], ['run.findings_open', 'still open'],
   ] as const).filter(([key]) => Number(record[key]) > 0).map(([key, what]) => `${record[key]} ${what}`)
   return `${record['run.findings']} over ${record['run.rounds']} round${Number(record['run.rounds']) === 1 ? '' : 's'}; ${record['run.findings_material']} material or critical${parts.length ? `: ${parts.join(', ')}` : ''}`
 }
@@ -625,8 +650,14 @@ ${list(s.unreferenced.map((u) => `${u.sectionId}: "${u.quote}"`), 'None.')}
 ` : ''}## Claims the system added (${active.filter((c) => c.origin === 'system').length}). Stand behind each, or cut it
 ${list(active.filter((c) => c.origin === 'system').map((c) => `${c.id} [${c.status}] ${c.text}`), 'None.')}
 
-## Claims stated as hypotheses for lack of evidence (${active.filter((c) => c.status === 'unsupported').length})
+## Claims without a verified source (${active.filter((c) => c.status === 'unsupported').length}). The text states each plainly, and a comment beside it says so: cite a source, or cut it
 ${list(active.filter((c) => c.status === 'unsupported').map((c) => `${c.id}: ${c.text}`), 'None.')}
+
+## Comments the agents left for you beside the text (${(s.authorNotes ?? []).length + s.findings.filter((f) => f.status === 'limitation' || (f.status === 'adjudicated' && f.adjudication?.decision.startsWith('limitation'))).length}). The paper states none of them
+${list([
+    ...(s.authorNotes ?? []).map((n) => `${n.sectionId ?? 'paper'} [${NOTE_KIND[n.kind]}]${n.quote ? ` on "${n.quote.slice(0, 80)}"` : ''}: ${n.text}`),
+    ...s.findings.filter((f) => f.status === 'limitation' || (f.status === 'adjudicated' && f.adjudication?.decision.startsWith('limitation'))).map((f) => `${f.sectionId ?? 'paper'} [limitation, ${f.id}]: ${f.question}`),
+  ], 'None.')}
 
 ## Claims narrowed to what their evidence supports (${active.filter((c) => c.status === 'narrowed').length})
 ${list(active.filter((c) => c.status === 'narrowed').map((c) => `${c.id}: ${c.text}`), 'None.')}

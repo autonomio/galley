@@ -68,7 +68,8 @@ describe('the claim ledger as published', () => {
   it('fills the numbers its claims carry, as the body does', async () => {
     const { buildManuscript } = await import('../../src/engine/render.js')
     dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
-    const paper = Paper.create(join(dir, 'p'), 'seed')
+    // The ledger is printed only when asked for: by default a claim's standing stays beside the text.
+    const paper = Paper.create(join(dir, 'p'), 'seed', { ledgerAppendix: true })
     const s = paper.state
     s.measurements = { A1: { id: 'A1', spec: { id: 'A1', dataset: 'M1', op: 'quantile', column: 'Delay ms', column2: null, by: null, value: '0.99', where: null }, value: '422.2', summary: '99th percentile of Delay ms: 422.2, n = 147', n: 147 } }
     s.claims = [{ id: 'C1', text: 'The 99th-percentile switchover latency is {{data.A1}} ms.', kind: 'contribution', seedQuote: '', origin: 'system', need: 'internal', loadBearing: true, dependsOn: [], status: 'internal', history: [] }]

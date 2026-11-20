@@ -18,7 +18,7 @@ import { arr, enm, int, nstr, obj, str } from '../schema.js'
 import { applyExact, squash } from '../text.js'
 import type { ProofDefect } from '../types.js'
 import { reviewDone } from './close.js'
-import { activeClaims, live, manuscriptBlock, seatFamily, sectionText, setClaim } from './common.js'
+import { activeClaims, live, manuscriptBlock, noteForAuthors, seatFamily, sectionText, setClaim } from './common.js'
 import { isNarrowing } from './truth.js'
 import { setPassage } from './write.js'
 
@@ -104,6 +104,21 @@ function figureOf(paper: Paper, defect: { quote: string; problem: string; figure
 
 type Found = ProofDefect & { fixIn: typeof FIX_IN[number] }
 
+/**
+ * Sentences in which the text doubts itself or talks about how it was made: who did or did not review it, what it
+ * does not establish about its own readiness, which models did the work. None belongs in a paper; each is taken out
+ * and kept for the authors as a comment. A paper about galley itself may name its models and steps.
+ */
+const SELF_TALK: { pattern: RegExp; aboutSystemToo: boolean }[] = [
+  { pattern: /\b(?:no|not|without|never)\b[^.]{0,70}\b(?:person|people|human|humans|independent(?:ly)?|external|outside)\b[^.]{0,40}\b(?:review|reviewed|audit|audited|screen|screened|verif|check|checked|read)/i, aboutSystemToo: true },
+  { pattern: /\bsubmission-ready means\b|\bmeans only that\b[^.]{0,60}\bgates?\b|\bgates? held\b/i, aboutSystemToo: true },
+  { pattern: /\b(?:this|the) (?:manuscript|paper|text) (?:was|is|were) (?:produced|generated|written|drafted)\b/i, aboutSystemToo: false },
+  { pattern: /\b(?:a|an|the) (?:research|language|independent) model\b|\b(?:GPT|Claude|Gemini)[- ]\d/i, aboutSystemToo: false },
+]
+export function selfTalk(text: string, aboutSystem = false): string[] {
+  return text.split(/(?<=[.!?])\s+(?=[A-Z(])/).map((s) => s.trim()).filter((s) => SELF_TALK.some((r) => (aboutSystem ? r.aboutSystemToo : true) && r.pattern.test(s)))
+}
+
 /** A defect that says a figure or table is never referred to. */
 const CALLOUT = /call(?:ed|s|ing)? out|callout|never (?:refer|mention|cite)|(?:does|do) not (?:refer|mention|cite)|without (?:referring|calling)/i
 
@@ -164,6 +179,14 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
         }
         for (const fig of s.figures.filter((f) => f.status === 'rendered' && f.source)) {
           for (const d of printedDefects(fig.source!)) defects.push({ page: null, where: 'figure', quote: fig.caption.slice(0, 80), problem: `${d.problem} in the figure: ${d.quote}`, fix: 'draw the figure with the value itself', by: 'check', figureId: fig.id, fixIn: 'figure' })
+        }
+        // The text never doubts itself or talks about its own making: each such sentence goes, and what it said is kept
+        // for the authors beside the text.
+        for (const sec of s.outline?.sections ?? []) {
+          for (const sentence of selfTalk(sectionText(paper, sec.id), !!s.brief?.aboutSystem)) {
+            defects.push({ page: null, where: 'section text', quote: sentence, problem: 'The text doubts itself or remarks on how it was produced or reviewed.', fix: 'Remove the sentence, or state the point it makes about the work plainly without the remark.', by: 'check', fixIn: 'prose' })
+            noteForAuthors(paper, { sectionId: sec.id, quote: '', text: `Taken out of the text: "${sentence}"`, kind: 'caution', seat: 'checker', family: checker, behavior: 'proof' })
+          }
         }
         // A figure the text never refers to is the text's to fix: drawing it again cannot add a callout. Each one is also
         // found mechanically, and sent to the figure's own section.

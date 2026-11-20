@@ -41,13 +41,6 @@ function inText(paper: Paper, quote: string): boolean {
   return !!q && (paper.state.outline?.sections ?? []).some((sec) => squash(sectionText(paper, sec.id)).includes(q))
 }
 
-/** Where a paper states its limits: a section named for them, else the discussion, else the last section before the conclusion. */
-function limitsSection(paper: Paper): string | null {
-  const sections = paper.state.outline?.sections ?? []
-  const found = sections.find((sec) => /limit/i.test(sec.title)) ?? sections.find((sec) => /discussion/i.test(sec.title)) ?? sections.filter((sec) => !/conclu/i.test(sec.title)).at(-1) ?? sections.at(-1)
-  return found?.id ?? null
-}
-
 const knownKeys = citableKeys
 
 /** Apply an exact edit wherever in the manuscript its old text is unique. */
@@ -179,10 +172,10 @@ ${STYLE}
 You are the author. Referees from other model families raised the findings below. Answer each one.
 - fixed: the referee is right; give the edits that fix it.
 - rebutted: the referee is wrong; give the concrete reason in reply, and no edits.
-- limitation: the point is fair but cannot be fixed within this paper; give an edit that states it as a limitation where it belongs. State a limitation once, in the limitations section, and about the work itself ("the rubric has not been validated as a predictor of impact"), never about how this manuscript was produced or what happens if a step fails, and never as a remark on what this text does not document; if the paper already states it, point to that place in reply and give no edit.
+- limitation: the point is fair but cannot be met within this paper. Give no edit: the paper never states its own limits. Say it in reply, in one or two sentences to the authors, about the work itself ("the rubric has not been validated as a predictor of impact"); it stays beside the text as a comment for them.
 - needs_evidence: fixing it needs evidence this paper does not cite yet (for example prior work the referee names). Give evidence_claim: the self-contained claim that evidence would support, so the system can search for it and verify it; you will answer again once it has. Give no edits.
 Edits are exact replacements { old, new }: old is copied character for character from the current text and is unique; new is the replacement. Keep citations in [@key] form and use only keys already present. Add no new factual claims.
-Never weaken the thesis to satisfy a referee: if a finding would require that, rebut it or state it as a limitation.
+Never weaken the thesis to satisfy a referee, and never answer with a hedge or a caveat in the text: if a finding would require that, rebut it or answer it as a limitation for the authors.
 When a finding asks for a fact that the material in this request gives (a system description, the claims and their evidence, the production record), answer it fixed: state the fact in the text instead of conceding a gap.
 Keep the paper's length: the section has a budget of about ${section?.words ?? 600} words. Prefer replacing a sentence to adding one, cut what a fix makes redundant, and add new text only where the finding requires it.
 
@@ -225,10 +218,12 @@ ${findings.map((f) => `${f.id} [${f.severity}, ${f.seat} referee]\n  quote: "${f
             f.status = 'open'
             continue
           }
-          const applied = (answer.edits ?? []).filter((edit: { old: string; new: string }) => applyAnywhere(paper, edit, f.sectionId, { family, seat: 'author', behavior: 'respond' }, `answer to ${f.id}`))
+          // A limitation is the authors' to see beside the text, in the finding's own thread: the paper itself is not edited.
+          const edits = answer.kind === 'limitation' || answer.kind === 'needs_evidence' ? [] : (answer.edits ?? [])
+          const applied = edits.filter((edit: { old: string; new: string }) => applyAnywhere(paper, edit, f.sectionId, { family, seat: 'author', behavior: 'respond' }, `answer to ${f.id}`))
           const kind = answer.kind === 'needs_evidence' ? 'limitation' : answer.kind
           f.dispositions.push({ at: now(), kind: answer.kind, text: answer.reply, edits: applied, family })
-          f.status = (answer.edits?.length && !applied.length && kind !== 'rebutted') ? 'open' : kind
+          f.status = (edits.length && !applied.length && kind !== 'rebutted') ? 'open' : kind
           if (f.status === 'open') f.dispositions[f.dispositions.length - 1].verification = { outcome: 'disagrees', reason: 'none of the edits matched the current text', family }
         }
         // A finding the reply left out is not left behind: the attempt counts, and the next one takes it up.
@@ -274,7 +269,7 @@ export const verifyDisposition: Behavior = {
           prompt: `${HOUSE}
 
 You raised these findings as a referee. The author answered each. Judge each answer against the current text.
-- verified: the answer resolves the finding (the fix works, the rebuttal is right, or the limitation is stated adequately).
+- verified: the answer resolves the finding (the fix works, or the rebuttal is right). A limitation is never written into the paper: it stays beside the text as a comment for the authors, so verify it when the author's reply states the point fairly, not by looking for it in the text.
 - disagrees: it does not; say exactly what is still wrong.
 - uncertain: you cannot tell from the text.
 
@@ -366,11 +361,11 @@ export const adjudicate: Behavior = {
 
 ${STYLE}
 
-For each finding below, an author and a referee from two other model families could not agree. Decide each one on its own. Whatever you decide, the paper must answer the reader who would raise the same point, so every decision changes the text or points to where it already answers it.
+For each finding below, an author and a referee from two other model families could not agree. Decide each one on its own.
 - adopt_referee: the referee is right; give the edits that implement the referee's decision.
-- narrow: both are partly right; give edits that narrow the text to the common ground.
-- limitation: the point is fair but cannot be met within this paper; give the edit that states it as a limitation of the work, where the paper states its limits.
-- set_aside: the referee's point does not hold, or lies outside what the paper claims. Give the reason, and either edits that make the text answer the point (clarify what it claims, or state its scope), or handled_by: the exact sentence of the current text that already answers it.
+- narrow: both are partly right; give edits that narrow the text to the common ground, stated plainly, never as a hedge.
+- limitation: the point is fair but cannot be met within this paper. Give no edits: the paper never states its own limits. Give the limit in reason, in one or two sentences to the authors; it stays beside the text as a comment for them.
+- set_aside: the referee's point does not hold, or lies outside what the paper claims. Give the reason, and either edits that make the text answer the point (clarify what it claims), or handled_by: the exact sentence of the current text that already answers it.
 Edits are exact replacements { old, new } with old copied character for character from the text below.
 
 ${pending.map(thread).join('\n\n')}
@@ -385,6 +380,13 @@ Return decisions: one for each finding, with its id.`,
         for (const f of pending) {
           const d = decisions.get(f.id)
           if (!d) { adjudicationFailed(paper, f, family, 'the decision left it out'); continue }
+          // A limitation is settled beside the text, in the finding's thread for the authors: the paper is not edited.
+          if (d.decision === 'limitation') {
+            f.adjudication = { decision: `limitation: ${d.reason}`, family, edits: [] }
+            f.status = 'adjudicated'
+            paper.note('adjudicate', `${f.id} (${f.question}) was settled by ${family} as a limitation, left for the authors beside the text. ${d.reason}`, true)
+            continue
+          }
           const applied = (d.edits ?? []).filter((edit: { old: string; new: string }) => applyAnywhere(paper, edit, f.sectionId, { family, seat: 'adjudicator', behavior: 'adjudicate' }, `adjudication of ${f.id}`))
           const handledBy = d.decision === 'set_aside' && d.handled_by && inText(paper, d.handled_by) ? String(d.handled_by) : undefined
           if (!applied.length && !handledBy) { adjudicationFailed(paper, f, family, `${d.decision} did not land in the text: ${d.reason}`); continue }
@@ -400,53 +402,22 @@ Return decisions: one for each finding, with its id.`,
 }
 
 /**
- * The last step for a finding adjudication could not settle in the text: the
- * paper states it as a limitation of the work, where it states its limits. It
- * is not an improvement that may be skipped: a paper is not finished while a
- * finding stands unanswered.
+ * The last step for a finding adjudication could not settle in the text: it is left for the authors, beside the text
+ * in its own thread, and the paper is not edited. It is not an improvement that may be skipped: a paper is not
+ * finished while a finding stands unanswered.
  */
 export const handleFinding: Behavior = {
-  id: 'handle-finding', stage: 'referees', improver: false, title: 'State an unsettled finding as a limitation',
+  id: 'handle-finding', stage: 'referees', improver: false, title: 'Leave an unsettled finding for the authors',
   ready: (paper) => {
     const s = paper.state
     if (!live(paper)) return []
-    // With only two families on there is no third to settle a dispute: the paper states the finding as a limitation.
+    // With only two families on there is no third to settle a dispute: the finding is left for the authors.
     return s.findings.filter((f) => stuckFinding(paper, f) && (failedAdjudications(paper, f) >= ADJUDICATION_TRIES || !adjudicatorOf(paper, f))).map((f): Target => ({
       key: `handle-finding:${f.id}`, label: f.id,
       run: async () => {
-        const home = limitsSection(paper)
-        const section = s.outline?.sections.find((sec) => sec.id === home)
-        if (!section) throw new Error('the paper has no section to state a limitation in')
-        const family = seatFamily(paper, 'author')
-        const text = sectionText(paper, section.id)
-        const reply = await paper.ask<any>({
-          behavior: 'handle-finding', target: f.id, seat: 'author', family,
-          prompt: `${HOUSE}
-
-${STYLE}
-
-A referee raised the finding below. The author's answers did not satisfy the referee, and adjudication could not settle it in the text. The paper must still answer the reader who would raise it: write one sentence that states this limit of the work plainly, about the work itself (what it does not establish, test or cover), never about how the manuscript was produced. Give after: the exact sentence of the section below that it should follow, or an empty string to add it at the end.
-
-${thread(f)}
-
-Section ${section.id} ${section.title}, where the paper states its limits:
-"""
-${text}
-"""
-${placeholderLegend(paper, text)}`,
-          schema: obj({ sentence: str(), after: str() }),
-        })
-        const sentence = String(reply.sentence ?? '').trim()
-        if (!sentence) throw new Error('no limitation sentence was written')
-        const after = String(reply.after ?? '').trim()
-        // The section as it stands now, not as the prompt showed it: findings are handled side by side, and another
-        // step may have edited the section while the model wrote, so each sentence lands in the current text.
-        const current = sectionText(paper, section.id)
-        const placed = after && current.includes(after) ? current.replace(after, `${after} ${sentence}`) : `${current.trimEnd()} ${sentence}`
-        setPassage(paper, section.id, placed, { kind: 'agent', family, model: paper.config.models[family]?.model ?? family, seat: 'author', behavior: 'handle-finding' }, `limitation for ${f.id}, which adjudication could not settle`)
-        f.adjudication = { decision: `limitation: stated as a limitation of the work after adjudication could not settle it in the text`, family, edits: [{ old: '', new: sentence }], fallback: true }
+        f.adjudication = { decision: 'limitation: left for the authors beside the text, as adjudication could not settle it', family: seatFamily(paper, 'author'), edits: [], fallback: true }
         f.status = 'adjudicated'
-        paper.note('handle-finding', `${f.id} (${f.question}) could not be settled by adjudication; the paper now states it as a limitation: "${sentence}"`, true)
+        paper.note('handle-finding', `${f.id} (${f.question}) could not be settled by adjudication; it is left for the authors as a comment beside the text.`, true)
         paper.save()
       },
     }))

@@ -1,6 +1,7 @@
 // No referee finding is dropped: a rejected answer is answered again at full
 // effort, a verdict that cannot tell is asked again, a decision must land in the
-// text, and what adjudication cannot settle the paper states as a limitation.
+// text, and a limitation, or what adjudication cannot settle, is left for the
+// authors beside the text, never written into the paper.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -66,7 +67,7 @@ describe('referee findings', () => {
     expect(f.dispositions[0].verification).toMatchObject({ outcome: 'disagrees', rechecked: true })
   })
 
-  it('asks again for a decision that does not land in the text, then states the finding as a limitation', async () => {
+  it('asks again for a decision that does not land in the text, then leaves the finding for the authors, the paper unedited', async () => {
     const paper = paperWith([finding('F1', 'always switches in 200 ms', [rejected(), rejected(), rejected()])])
     const f = paper.state.findings[0]
     paper.ask = (async () => ({ decisions: [{ id: 'F1', decision: 'set_aside', reason: 'Out of scope.', edits: [], handled_by: 'A sentence the paper does not have.' }] })) as Paper['ask']
@@ -75,10 +76,20 @@ describe('referee findings', () => {
     await adjudicate.ready(paper)[0].run()
     expect([adjudicate.ready(paper), f.status]).toEqual([[], 'open'])
 
-    paper.ask = (async () => ({ sentence: 'The bench does not establish switching times beyond the trials it ran.', after: '' })) as Paper['ask']
+    paper.ask = (async () => { throw new Error('no model call: the finding is left as it stands') }) as Paper['ask']
     await handleFinding.ready(paper)[0].run()
-    expect(paper.state.passages.S2.text).toBe('The bench used one vendor. The bench does not establish switching times beyond the trials it ran.')
+    expect(paper.state.passages.S2.text).toBe('The bench used one vendor.')
     expect([f.status, f.adjudication?.fallback, resolved(f)]).toEqual(['adjudicated', true, true])
+  })
+
+  it('settles a limitation beside the text: neither the author nor a third family writes it into the paper', async () => {
+    const paper = paperWith([finding('F1', 'always switches in 200 ms', []), finding('F2', 'resolves 10 ms', [rejected(), rejected(), rejected()])])
+    paper.ask = (async () => ({ answers: [{ finding_id: 'F1', kind: 'limitation', reply: 'One bench cannot show other vendors switch as fast.', edits: [{ old: 'The bench used one vendor.', new: 'The bench used one vendor, so the result may not generalise.' }], evidence_claim: null }] })) as Paper['ask']
+    await respond.ready(paper)[0].run()
+    paper.ask = (async () => ({ decisions: [{ id: 'F2', decision: 'limitation', reason: 'The meter was not calibrated against a reference.', edits: [{ old: 'The meter resolves 10 ms.', new: 'The meter resolves 10 ms, though it may drift.' }], handled_by: null }] })) as Paper['ask']
+    await adjudicate.ready(paper)[0].run()
+    expect([paper.state.passages.S1.text, paper.state.passages.S2.text]).toEqual(['The bench always switches in 200 ms. The meter resolves 10 ms.', 'The bench used one vendor.'])
+    expect(paper.state.findings.map((f) => f.status)).toEqual(['limitation', 'adjudicated'])
   })
 
   it('leaves a finding aside only on a person\'s decision', () => {
@@ -87,21 +98,6 @@ describe('referee findings', () => {
     expect(resolved({ ...f, assignee: 'humans' })).toBe(true)
   })
 
-  it('states unsettled findings as limitations side by side, none erasing another or an edit made meanwhile', async () => {
-    const paper = paperWith([finding('F1', 'always switches in 200 ms', [rejected(), rejected(), rejected()]), finding('F2', 'resolves 10 ms', [rejected(), rejected(), rejected()])])
-    for (const f of paper.state.findings) paper.state.attempts[`adjudicate-failed:${f.id}`] = 2
-    const replies = new Map<string, (answer: unknown) => void>()
-    paper.ask = ((options: { target: string }) => new Promise<unknown>((answer) => replies.set(options.target, answer))) as Paper['ask']
-    // The scheduler runs a behavior's targets together.
-    const runs = handleFinding.ready(paper).map((t) => t.run())
-    expect([...replies.keys()]).toEqual(['F1', 'F2'])
-    paper.state.passages.S2.text = 'The bench used one vendor, Vertiv.'
-    replies.get('F2')!({ sentence: 'The meter was not calibrated against a reference.', after: '' })
-    replies.get('F1')!({ sentence: 'The bench does not establish switching times beyond the trials it ran.', after: 'The bench used one vendor, Vertiv.' })
-    await Promise.all(runs)
-    expect(paper.state.passages.S2.text).toBe('The bench used one vendor, Vertiv. The bench does not establish switching times beyond the trials it ran. The meter was not calibrated against a reference.')
-    expect(paper.state.findings.map((f) => [f.status, resolved(f)])).toEqual([['adjudicated', true], ['adjudicated', true]])
-  })
 
   it('reopens a finding an earlier engine left noted, so a saved paper can still finish its review', () => {
     const paper = paperWith([finding('F1', 'always switches in 200 ms', [rejected(), rejected(), rejected()], 'noted'), { ...finding('F2', 'resolves 10 ms', [rejected()], 'noted'), assignee: 'humans' }])
