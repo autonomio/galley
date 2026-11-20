@@ -57,9 +57,15 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = ''): HTML
   return node
 }
 
-/** Set text only when it changed, so an unchanged poll touches nothing. */
+/**
+ * Set text only when it changed, so an unchanged poll touches nothing; and change it in place, so a line that ticks
+ * (how long ago the paper last changed) keeps its node and redraws nothing around it.
+ */
 function setText(node: HTMLElement, text: string): void {
-  if (node.textContent !== text) node.textContent = text
+  if (node.textContent === text) return
+  const only = node.childNodes.length === 1 && node.firstChild!.nodeType === Node.TEXT_NODE ? node.firstChild as Text : null
+  if (only) only.data = text
+  else node.textContent = text
 }
 
 function faceHTML(seat: string, family: string | null): string {
