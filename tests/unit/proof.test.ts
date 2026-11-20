@@ -4,11 +4,12 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { printedDefects, proof } from '../../src/engine/behaviors/proof.js'
+import { calledOut, printedDefects, proof } from '../../src/engine/behaviors/proof.js'
 import { figure } from '../../src/engine/behaviors/write.js'
 import { Paper } from '../../src/engine/paper.js'
 import { contentHash, numberEquations, printedQuotes } from '../../src/engine/render.js'
 import { ledgerAppendix } from '../../src/engine/behaviors/common.js'
+import { readableReason } from '../../src/engine/literature.js'
 
 let dir = ''
 afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }) })
@@ -27,6 +28,10 @@ describe('what must never be printed', () => {
     const paper = Paper.create(join(dir, 'p'), 'seed')
     paper.state.claims = [{ id: 'C1', kind: 'common_knowledge', status: 'assumed', text: 'Gradients flow backwards.' } as Paper['state']['claims'][number]]
     expect(ledgerAppendix(paper)).toContain('**C1** (common knowledge;')
+    // A review reason whose spaces were lost gives way to the one the selection gave for the same publication.
+    const bundle = { research: { paper_selection: { selection: { decisions: [{ work_id: 'W1', reason: 'Domestic storage FCR ICT architecture.' }] } } } }
+    expect(readableReason('FCRICTarchitectureanddelayinjections;storage', 'W1', bundle)).toBe('Domestic storage FCR ICT architecture.')
+    expect(readableReason('Measured hybrid hydro tracking.', 'W1', bundle)).toBe('Measured hybrid hydro tracking.')
   })
 
   it('numbers display equations and turns their labels into those numbers', () => {
@@ -62,7 +67,9 @@ describe('the typeset review', () => {
     expect(s.passages.S1.text).toBe('The switch takes 422 ms, as Figure 1 shows.')
     expect(s.figures[0]).toMatchObject({ status: 'planned' })
     expect(s.figures[0].revise).toContain('an unfilled placeholder')
-    expect(s.proof).toMatchObject({ rounds: 1, fixed: 2, left: [] })
+    // The unresolved reference also leaves Figure 1 with no callout; the check finds that too, and the author's one call fixes both.
+    expect(s.proof).toMatchObject({ rounds: 1, fixed: 3, left: [] })
+    expect(calledOut('as Figures 1–3 show, and Fig. 5', 2) && calledOut('see Figure 4', 4) && !calledOut('Figure 14', 1)).toBe(true)
     // The first drawing's step is settled, so drawing it again is a step of its own, and the new drawing a new revision.
     expect(figure.ready(paper).map((t) => t.key)).toEqual(['figure:F1:redraw1'])
     const before = contentHash(paper)

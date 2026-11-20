@@ -339,6 +339,7 @@ export function describeData(paper: Paper): string {
     const rows = datasetRows(paper, m)
     const columns = rows.length ? Object.keys(rows[0]) : []
     const lines: string[] = []
+    let numeric = 0
     for (const name of columns) {
       const values: number[] = []
       let missing = 0
@@ -350,15 +351,19 @@ export function describeData(paper: Paper): string {
         values.push(x)
       }
       if (missing < 0 || values.length < 3) continue
+      // Past the fifteenth numeric column only the count goes on, so the caption can say how many are left out.
+      if (++numeric > 15) continue
       const sorted = Float64Array.from(values).sort() as unknown as number[]
       lines.push(`| ${name.replace(/\|/g, '/')} | ${values.length.toLocaleString('en-US')} | ${missing.toLocaleString('en-US')} | ${f(mean(values))} | ${f(sd(values))} | ${f(quantileOf(sorted, 0.5))} | ${f(quantileOf(sorted, 0.05))} | ${f(quantileOf(sorted, 0.95))} | ${f(quantileOf(sorted, 0.99))} | ${f(sorted[0])} | ${f(sorted[sorted.length - 1])} |`)
-      if (lines.length >= 15) break
     }
     if (!lines.length) return ''
-    return `**${m.id}: ${m.name}**, ${rows.length.toLocaleString('en-US')} rows\n\n| Column | n | Missing | Mean | SD | Median | P5 | P95 | P99 | Min | Max |\n|:---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n${lines.join('\n')}`
+    const shown = numeric > lines.length ? `; the first ${lines.length} of its ${numeric} numeric columns` : ''
+    // The dataset's name is the table's caption, so it is numbered and never left at the foot of a page without its table.
+    // The rule's dashes set the column widths: the column names get the room, each number a narrow column.
+    return `| Column | n | Missing | Mean | SD | Median | P5 | P95 | P99 | Min | Max |\n|:-------------------|------:|------:|------:|-----:|------:|-----:|-----:|-----:|-----:|-----:|\n${lines.join('\n')}\n\n: ${m.id}: ${m.name}, ${rows.length.toLocaleString('en-US')} rows${shown}.`
   }).filter(Boolean)
   if (!tables.length) return ''
-  return `Each dataset as it was analysed, described by galley from the data itself: for every numeric column, the number of values, the missing values, the mean, the standard deviation, the median, the 5th, 95th and 99th percentiles, the minimum and the maximum.\n\n${tables.join('\n\n')}`
+  return `Each dataset as it was analysed, described by galley from the data itself: for every numeric column, the number of values, the missing values, the mean, the standard deviation, the median, the 5th, 95th and 99th percentiles, the minimum and the maximum. The percentiles interpolate linearly between order statistics, so they can differ slightly from quantiles the text computes another way.\n\n${tables.join('\n\n')}`
 }
 
 // Separators from 10,000 on, so a year reads as 2015, not 2,015.

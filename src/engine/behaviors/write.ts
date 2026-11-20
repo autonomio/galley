@@ -156,11 +156,13 @@ export const figure: Behavior = {
         const dir = paper.path('build', 'figures')
         mkdirSync(dir, { recursive: true })
         const lastError = paper.state.notes.filter((n) => n.behavior === `figure:${fig.id}`).pop()?.text
+        // Drawn again after review, a figure follows the section as it now reads, so the two say the same.
+        const sectionNow = paper.state.passages[fig.sectionId]?.text.slice(0, 9000) ?? ''
         const reply = await paper.ask<any>({
           behavior: 'figure', target: fig.id, seat: 'author', family: seatFamily(paper, 'author'),
           prompt: `${HOUSE}
 
-Draw one figure for the paper as a standalone Typst document (Typst 0.15). Use only built-in Typst: rect, circle, ellipse, line, polygon, path, place, grid, stack, box, block, align, text, table, arrows drawn with line and polygon. Do not import packages. Design it at the width it will be printed: start with #set page(width: 16cm, height: auto, margin: 6pt) and #set text(font: "New Computer Modern", size: 9pt), keep every label at 8pt or larger, and keep the figure no wider than it is tall by more than about two to one, so it stays legible on a printed page; stack or wrap rows rather than running one long row. Keep it clean and legible in greyscale with one accent colour (rgb("#2b5797")). The figure must show only what the paper describes; no invented data.
+Draw one figure for the paper as a standalone Typst document (Typst 0.15). Use only built-in Typst: rect, circle, ellipse, line, polygon, path, place, grid, stack, box, block, align, text, table, arrows drawn with line and polygon. Do not import packages. Design it at the width it will be printed: start with #set page(width: 16cm, height: auto, margin: 6pt) and #set text(font: "New Computer Modern", size: 9pt), keep every label at 8pt or larger, and keep the figure no wider than it is tall by more than about two to one, so it stays legible on a printed page; stack or wrap rows rather than running one long row. Keep it clean and legible in greyscale with one accent colour (rgb("#2b5797")). The figure must show only what the paper describes; no invented data. Print no internal identifier (no claim, dataset, scenario, simulation, plan or section id such as C12, D1, S2 or P3): name each thing as the text names it.
 
 ${briefBlock(paper)}
 Figure: ${fig.caption}
@@ -168,15 +170,17 @@ Specification: ${fig.spec}
 Section it illustrates: ${paper.state.outline!.sections.find((sec) => sec.id === fig.sectionId)?.title}
 Relevant claims:
 ${claimsBlock(paper, paper.state.outline!.sections.find((sec) => sec.id === fig.sectionId)?.claimIds ?? [])}
-${simulationSeries(paper) ? `\n${simulationSeries(paper)}\nChart a simulation only from these values, and label the axes with the quantities and units the paper uses.` : ''}
+${sectionNow ? `\nThe section as it now reads; the figure and its caption must agree with it (its counts, categories, statuses and wording):\n"""\n${sectionNow}\n"""\n` : ''}${simulationSeries(paper) ? `\n${simulationSeries(paper)}\nChart a simulation only from these values, and label the axes with the quantities and units the paper uses.` : ''}
 ${lastError ? `\nThe previous attempt failed to compile with: ${lastError}\nFix that.` : ''}${fig.revise ? `\nIn the typeset paper, a reader found this in the figure: ${fig.revise}\nDraw it again without that defect.` : ''}
 A number may be written as its {{placeholder}}; it is filled in with its recorded value before the figure is drawn.
 
-Return typst (the complete document source).`,
-          schema: obj({ typst: str() }),
+Return typst (the complete document source), and caption: the caption as it should print under the figure. Keep the current caption unless it no longer matches the figure as drawn or the section as it reads; never name an internal identifier in it.`,
+          schema: obj({ typst: str(), caption: str() }),
         })
-        // A figure is a picture: its numbers are written in before it is drawn, never left as placeholders.
+        // A figure is a picture: its numbers are written in before it is drawn, never left as placeholders. No label is
+        // set smaller than 8pt, whatever the drawing asked for, so it stays legible at the size it is printed.
         const source = fillPlaceholders(String(reply.typst ?? ''), productionRecord(paper)).text
+          .replace(/size:\s*(\d+(?:\.\d+)?)pt/g, (setting: string, size: string) => Number(size) < 8 ? 'size: 8pt' : setting)
         writeFileSync(`${dir}/${fig.id}.typ`, source)
         try {
           await typst(['compile', `${fig.id}.typ`, `${fig.id}.png`, '--ppi', '250'], dir)
@@ -189,6 +193,7 @@ Return typst (the complete document source).`,
         fig.status = 'rendered'
         fig.file = `figures/${fig.id}.png`
         fig.source = source
+        if (String(reply.caption ?? '').trim()) fig.caption = String(reply.caption).trim()
         delete fig.revise
         paper.save()
       },

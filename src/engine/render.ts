@@ -66,7 +66,10 @@ async function references(paper: Paper): Promise<Record<string, unknown>[]> {
 
 const yamlString = (text: string) => JSON.stringify(text)
 
-function disclosure(paper: Paper, record: Record_): string {
+/** Every pipe table in Markdown has one rule line under its header, and Typst numbers every table, so this counts them. */
+export const tablesIn = (markdown: string) => (markdown.match(/^\|(?:\s*:?-{3,}:?\s*\|)+\s*$/gm) ?? []).length
+
+function disclosure(paper: Paper, record: Record_, table = 1): string {
   const seats = paper.config.seats
   const referees = [...new Set(paper.config.referees.map((r) => r.family))].map((f) => FAMILY_NAMES[f]).join(' and ')
   const lit = paper.state.literature?.status === 'done' ? paper.state.literature : null
@@ -85,7 +88,7 @@ function disclosure(paper: Paper, record: Record_): string {
   const sources = wm
     ? ` Its sources come from the world model "${wm.name}", a Resolvent world model of ${wm.claims.toLocaleString('en-US')} claims resting on the verbatim passages of ${wm.sources.toLocaleString('en-US')} sources${wm.only ? '; no other literature was searched' : ', searched first, and then the literature through Canary over OpenAlex'}. For each claim galley searched the world model's sources, and ${FAMILY_NAMES[seats.checker]} chose the passages, copied verbatim from each source's excerpt. Bibliographic records come from the DOI registries.`
     : ' Literature search ran through Canary over OpenAlex; bibliographic records come from the DOI registries.'
-  return `This manuscript was produced with ${software()} from a seed text written by the author. ${FAMILY_NAMES[seats.author]} extracted the seed's claims, planned the argument, drafted every section and answered the referees. ${FAMILY_NAMES[seats.checker]} ${wm?.only ? 'selected candidate passages' : 'wrote the literature searches, selected candidate passages'} and checked each section against its claims. ${seats.challenger === seats.verifier ? `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting and verified ${everyCitation} against the passage it rests on.` : `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting, and ${FAMILY_NAMES[seats.verifier]} verified ${everyCitation} against the passage it rests on.`} Referee reports came from ${referees}, never from the family that drafted the text, and each answer to a material finding was verified by the referee family that raised it.${settled}${sources}${fromWeb}${review}${simulated} No model reviewed its own work. The production journal that accompanies this manuscript records every step, model call, verdict and decision with its time, and the evidence package holds each claim with the verbatim passage and verdict behind every citation.
+  return `This manuscript was produced with ${software()} from a seed text written by the author. ${FAMILY_NAMES[seats.author]} extracted the seed's claims, planned the argument, drafted every section and answered the referees. ${FAMILY_NAMES[seats.checker]} ${wm?.only ? 'selected candidate passages' : 'wrote the literature searches, selected candidate passages'} and checked each section against its claims. ${seats.challenger === seats.verifier ? `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting and verified ${everyCitation} against the passage it rests on.` : `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting, and ${FAMILY_NAMES[seats.verifier]} verified ${everyCitation} against the passage it rests on.`} Referee reports came from ${referees}, never from the family that drafted the text, and each answer to a material finding was verified by the referee family that raised it.${settled}${sources}${fromWeb}${review}${simulated} No model reviewed its own work. The production journal that accompanies this manuscript records every step, model call, verdict and decision with its time, and the evidence package holds each claim with the verbatim passage and verdict behind every citation. Table ${table} gives the run in numbers.
 
 | Production record | |
 |---|---|
@@ -96,6 +99,8 @@ function disclosure(paper: Paper, record: Record_): string {
 | Citations | ${record['run.citations_verified']} verified, ${record['run.citations_rejected']} rejected |
 ${sims.length ? `| Simulations | ${sims.map((r) => `${r.id}: ${methodWords(r.result.method)}, ${sizeOf(r.result)}; ${r.result.provenance.ok ? 'every check passed' : `${r.result.provenance.checks.filter((c) => !c.ok).length} check(s) noted`}`).join('; ')} |\n` : ''}${lit ? `| Systematic review | ${record['lit.discovered']} records identified, ${record['lit.screened']} screened, ${record['lit.reviewed']} read in full and included; ${record['lit.findings']} findings, ${record['lit.audited']} audited |\n` : ''}| Referee findings | ${findingsSummary(record)} |
 | Verifier calibration | ${record['run.calibration'] === 'none to check' ? 'no verified citations to check' : `${record['run.calibration']} planted defective citations caught; ${record['run.calibration_controls']} unaltered controls accepted`} |
+
+: The production record of this manuscript.
 `
 }
 
@@ -122,18 +127,35 @@ export function numberEquations(texts: string[]): string[] {
 /** The systematic review's flow figure, drawn from Canary's counts when the paper is typeset. */
 const REVIEW_FLOW = 'figures/review-flow.png'
 
-/** Typst settings both PDFs share: display equations carry their number, and a heading never breaks a word across lines. */
-const TYPST_HEADER = '#set math.equation(numbering: "(1)")\n#show heading: set text(hyphenate: false)'
+/**
+ * Typst settings both PDFs share: display equations carry their number, a heading never breaks a word across lines,
+ * and a table is set a size smaller than the text and may run on to the next page (pandoc puts each table in a figure,
+ * which otherwise cannot break, so a long table ran past the foot of the page and over itself).
+ */
+const TYPST_HEADER = [
+  '#set math.equation(numbering: "(1)")',
+  '#show heading: set text(hyphenate: false)',
+  '#show figure.where(kind: table): set block(breakable: true)',
+  '#show table: set text(size: 9pt)',
+].join('\n')
+
+const UNITS = 'ns|µs|ms|s|min|h|Hz|kHz|MHz|GHz|mV|V|kV|mA|A|W|kW|MW|GW|Wh|kWh|MWh|J|kJ|K|°C|dB|dBm|B|kB|MB|GB|TB|ppm|%|mm|cm|m|km|g|kg'
 
 /**
- * Single quotes as they are printed. Pandoc hands Typst straight quotes, and Typst opens a quote after a full stop or a
- * plus sign, so "et al.'s" and "RSR++'s" printed with an opening quote. Every straight single quote outside math and
- * code is written as the curly one it is: opening after a space or an opening bracket, an apostrophe or closing quote
- * otherwise. The PDF and Typst are then written with pandoc's smart quotes off, so they stay as written.
+ * The text as a typesetter prints it, outside math and code:
+ * - Single quotes are curly. Pandoc hands Typst straight quotes, and Typst opens a quote after a full stop or a plus
+ *   sign, so "et al.'s" and "RSR++'s" printed with an opening quote. A quote after a space or an opening bracket opens;
+ *   any other is an apostrophe or a closing quote. The PDF and Typst are written with pandoc's smart quotes off, so
+ *   they stay as written.
+ * - A number keeps its unit on the same line (a no-break space, which LaTeX and Word keep too).
  */
 export function printedQuotes(text: string): string {
-  return text.replace(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$|`[^`\n]*`)|'/g, (_, kept: string | undefined, at: number) =>
-    kept ?? (/[\s([{“"—–/]/.test(text[at - 1] ?? ' ') ? '‘' : '’'))
+  const pattern = new RegExp(`(\\$\\$[\\s\\S]*?\\$\\$|\\$[^$\\n]+?\\$|\`[^\`\\n]*\`)|'|(?<=\\d) (?=(?:${UNITS})(?![\\p{L}\\d]))`, 'gu')
+  return text.replace(pattern, (match: string, kept: string | undefined, at: number) => {
+    if (kept) return kept
+    if (match === ' ') return ' '
+    return /[\s([{“"—–/]/.test(text[at - 1] ?? ' ') ? '‘' : '’'
+  })
 }
 
 export async function buildManuscript(paper: Paper): Promise<{ markdown: string; refs: Record<string, unknown>[]; record: Record_ }> {
@@ -179,12 +201,14 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   const described = describeData(paper)
   if (described) appendices.push(['The data', described])
   const flow = existsSync(paper.path('build', REVIEW_FLOW)) ? REVIEW_FLOW : null
-  const review = reviewAppendix(paper, (workId) => s.works[workId] ? `[@${keyFor(paper, s.works[workId])}]` : workId, flow)
-  if (review) appendices.push(['The systematic review: protocol, queries and included publications', review])
+  // The review's flow figure and tables come after every figure and table before them, and are referred to by number.
+  const numbers = { figure: body.join('\n\n').match(/\]\([^)]*\)\{#fig-/g)?.length ?? 0, table: tablesIn([...body, ...appendices.map(([, text]) => text)].join('\n\n')) }
+  const review = reviewAppendix(paper, (workId) => s.works[workId] ? `[@${keyFor(paper, s.works[workId])}]` : workId, flow, { figure: numbers.figure + 1, table: numbers.table + 1 })
+  if (review) appendices.push(['The literature review: protocol, queries and included publications', review])
   appendices.forEach(([title, text], i) => body.push(`# Appendix ${String.fromCharCode(65 + i)}: ${title} {.unnumbered}\n\n${text}`))
-  body.push(`# Use of AI and production record {.unnumbered}\n\n${disclosure(paper, record)}`)
+  body.push(`# Use of AI and production record {.unnumbered}\n\n${disclosure(paper, record, tablesIn(body.join('\n\n')) + 1)}`)
   const evidencePackage = 'Every claim in this manuscript, the evidence it rests on and the verbatim passages of its sources are available as an evidence package accompanying it (claims, evidence and sources in the Resolvent format).'
-  const reproduction = runsOf(paper).length ? ` The simulations can be rerun, and every simulated number checked against this manuscript, with the reproduction package that accompanies it (simulation/: node simulate.mjs --verify, or index.html in a browser).` : ''
+  const reproduction = runsOf(paper).length ? ` The simulations can be rerun, and every simulated number checked against this manuscript, with the reproduction package that accompanies it (simulation/: \`node simulate.mjs --verify\`, or index.html in a browser).` : ''
   const data = availabilityStatement(paper)
   body.push(`# Data and code availability {.unnumbered}\n\n${decl.availability || `${data ? `${data} ` : ''}${s.brief?.aboutSystem ? `${sourceStatement()} ` : ''}${evidencePackage}${reproduction}`}`)
   // A declaration only the author can make is printed once they have made it; until then the sign-off asks for it.
@@ -739,7 +763,7 @@ export function contentHash(paper: Paper): string {
     claims: s.claims.map((c) => [c.id, c.status, c.text]),
     findings: s.findings.map((f) => [f.id, f.status, f.dispositions.length]), citations: s.citations.map((c) => [c.id, c.status]),
     // A figure drawn again is a new revision, though its status is the same as before.
-    figures: s.figures.map((f) => [f.id, f.status, f.source ?? null]), title: paper.config.title, authors: paper.config.authors, decl: paper.config.declarations,
+    figures: s.figures.map((f) => [f.id, f.status, f.source ?? null, f.caption]), title: paper.config.title, authors: paper.config.authors, decl: paper.config.declarations,
   })).digest('hex').slice(0, 16)
 }
 

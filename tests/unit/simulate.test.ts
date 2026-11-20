@@ -77,9 +77,10 @@ describe('the claim ledger as published', () => {
     s.frame = { title: 'Latency', abstract: 'a', keywords: [], limitations: '', opens: '' }
     s.figures = [{ id: 'fig1', caption: 'Switchover delay; the 99th percentile is {{data.A1}} ms.', spec: '', sectionId: 'S1', status: 'rendered', file: 'figures/fig1.png' }]
     const { markdown } = await buildManuscript(paper)
-    expect(markdown).toContain('the 99th percentile is 422.2 ms.](figures/fig1.png)')
+    // A number keeps its unit on the same line: they are joined by a no-break space.
+    expect(markdown).toContain('the 99th percentile is 422.2 ms.](figures/fig1.png)')
     const ledger = markdown.slice(markdown.indexOf('# Appendix A'))
-    expect(ledger).toContain('The 99th-percentile switchover latency is 422.2 ms.')
+    expect(ledger).toContain('The 99th-percentile switchover latency is 422.2 ms.')
     expect(markdown).not.toContain('{{data.')
   })
 })

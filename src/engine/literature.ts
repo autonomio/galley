@@ -4,6 +4,7 @@
 // model audit each one. Galley turns the finished research bundle into ledger
 // claims with verified citations and a section of the paper.
 import { spawn } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import { canaryPython, openalexKey } from './evidence.js'
 import type { Paper } from './paper.js'
 import type { Citation, Claim, LiteratureReview, Section, Work } from './types.js'
@@ -124,7 +125,8 @@ export function withReviewSection(sections: Section[], totalWords: number): Sect
   const scale = rest > 0 ? Math.max(0.5, (rest - share) / rest) : 1
   const scaled = sections.map((s) => ({ ...s, words: Math.max(150, Math.round(s.words * scale)) }))
   const review: Section = {
-    id: REVIEW_SECTION, title: 'Systematic Literature Review', words: share, claimIds: [], figureIds: [],
+    // Named plainly, so it fits whichever designation the text and its referees settle on.
+    id: REVIEW_SECTION, title: 'Literature Review', words: share, claimIds: [], figureIds: [],
     purpose: 'Reports the systematic review of prior work carried out for this paper: how the literature was searched, screened and read, what it establishes, where studies disagree or are silent, and where this paper stands relative to it.',
   }
   return [...scaled.slice(0, 1), review, ...scaled.slice(1)]
@@ -322,13 +324,28 @@ export function reviewFlowTypst(lit: LiteratureReview): string | null {
  * were narrowed, every query it ran and every publication it included, each one
  * cited so that it appears in the references.
  */
-export function reviewAppendix(paper: Paper, cite: (workId: string) => string, flowFigure: string | null): string {
+/** Words run together with their spaces lost ("FCRICTarchitectureanddelayinjections"), links aside. */
+const runOn = (text: string) => /[A-Za-z;,]{30,}/.test(text.replace(/https?:\/\/\S+/g, ''))
+
+/**
+ * Why a publication was included, readable: Canary's screening sometimes writes a reason with its spaces lost, and then
+ * the reason its selection gave for the same publication stands in; with neither readable, none is printed.
+ */
+export function readableReason(reason: string, workId: string, bundle: any): string {
+  if (!runOn(reason)) return reason
+  const decision = (bundle?.research?.paper_selection?.selection?.decisions ?? []).find((d: any) => d?.work_id === workId)
+  return [decision?.reason, decision?.coverage_contribution].map((t) => tidy(String(t ?? ''))).find((t) => t && !runOn(t)) ?? ''
+}
+
+export function reviewAppendix(paper: Paper, cite: (workId: string) => string, flowFigure: string | null, numbers = { figure: 1, table: 1 }): string {
   const lit = paper.state.literature
   if (lit?.status !== 'done' || !lit.protocol || !lit.counts) return ''
   const c = lit.counts
   const included = lit.included ?? []
   const order = (role: string) => role === 'core' ? 0 : 1
-  const rows = [...included].sort((a, b) => order(a.role) - order(b.role)).map((i) => `| ${cite(i.workId)} | ${i.role} | ${cell(i.reason) || '—'} |`)
+  let bundle: unknown = null
+  try { if (lit.bundle && existsSync(paper.path(lit.bundle))) bundle = JSON.parse(readFileSync(paper.path(lit.bundle), 'utf8')) } catch { /* the reasons stand as they were kept */ }
+  const rows = [...included].sort((a, b) => order(a.role) - order(b.role)).map((i) => `| ${cite(i.workId)} | ${i.role} | ${cell(readableReason(i.reason, i.workId, bundle)) || '—'} |`)
   return [
     `The systematic review reported in this paper was carried out with Canary, searched on ${lit.searchedOn}. This appendix gives its protocol, how its records were narrowed, every query it ran and every publication it included, so that it can be checked and repeated.`,
     `**Question.** ${lit.question}`,
@@ -337,9 +354,12 @@ export function reviewAppendix(paper: Paper, cite: (workId: string) => string, f
     `**Screening, reading and audit.** A research model (${modelName(lit.models?.research)}) read the queries' results and chose which records to screen by how much of the question each would cover, screened them by title and abstract, retrieved and read the open-access full texts, and extracted each finding with the verbatim passages it rests on. An independent model (${modelName(lit.models?.audit)}) audited every finding against those passages.`,
     lit.stopping ? `**Why the search stopped.** ${lit.stopping}` : '',
     lit.limits?.length ? `**Limits.** ${lit.limits.join(' ')}` : '',
+    // Each figure and table is referred to by the number it prints with.
+    `**How the records were narrowed.** ${flowFigure ? `Figure ${numbers.figure} shows the flow of records, and Table ${numbers.table}` : `Table ${numbers.table}`} gives the count at each stage.`,
     flowFigure ? `![How the review narrowed its records: ${thousands(c.discovered)} found, ${thousands(c.screened)} screened, ${thousands(c.retrieved)} read in full, ${thousands(c.reviewed)} included.](${flowFigure}){#fig-review-flow width=85%}` : '',
-    `| Stage | Records |\n|:---|---:|\n| Found by the searches | ${thousands(c.discovered)} |\n| Chosen and screened by title and abstract | ${thousands(c.screened)} |\n| Excluded on title and abstract | ${thousands(c.excludedScreening ?? Math.max(0, c.screened - c.retrieved))} |\n| Open-access full texts retrieved and read | ${thousands(c.retrieved)} |\n| Excluded after reading the full text | ${thousands(c.excludedFullText ?? Math.max(0, c.retrieved - c.reviewed))} |\n| Included | ${thousands(c.reviewed)} (${c.core} core, ${c.supporting} supporting) |`,
+    `| Stage | Records |\n|:---|---:|\n| Found by the searches | ${thousands(c.discovered)} |\n| Chosen and screened by title and abstract | ${thousands(c.screened)} |\n| Excluded on title and abstract | ${thousands(c.excludedScreening ?? Math.max(0, c.screened - c.retrieved))} |\n| Open-access full texts retrieved and read | ${thousands(c.retrieved)} |\n| Excluded after reading the full text | ${thousands(c.excludedFullText ?? Math.max(0, c.retrieved - c.reviewed))} |\n| Included | ${thousands(c.reviewed)} (${c.core} core, ${c.supporting} supporting) |\n\n: Records at each stage of the review.`,
     `**The ${lit.protocol.queries.length} queries.**\n\n${lit.protocol.queries.map((q, i) => `${i + 1}. ${q}`).join('\n')}`,
-    rows.length ? `**The ${rows.length} included publications.** Core studies answer the question directly; supporting studies inform it.\n\n| Publication | Role | Why it was included |\n|:---|:---|:---|\n${rows.join('\n')}` : '',
+    // The rule's dashes set the column widths: the reason gets most of the line.
+    rows.length ? `**The ${rows.length} included publications.** Table ${numbers.table + 1} lists them. Core studies answer the question directly; supporting studies inform it.\n\n| Publication | Role | Why it was included |\n|:--------------|:---------|:---------------------------|\n${rows.join('\n')}\n\n: The publications the review included.` : '',
   ].filter(Boolean).join('\n\n')
 }

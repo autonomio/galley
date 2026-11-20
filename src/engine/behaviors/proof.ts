@@ -104,6 +104,21 @@ function figureOf(paper: Paper, defect: { quote: string; problem: string; figure
 
 type Found = ProofDefect & { fixIn: typeof FIX_IN[number] }
 
+/** A defect that says a figure or table is never referred to. */
+const CALLOUT = /call(?:ed|s|ing)? out|callout|never (?:refer|mention|cite)|(?:does|do) not (?:refer|mention|cite)|without (?:referring|calling)/i
+
+/** Whether the text refers to figure n: "Figure 3", "Fig. 3", "Figures 2 and 3", "Figures 1–3". */
+export function calledOut(text: string, n: number): boolean {
+  const figures = /\b(?:Figures?|Figs?\.)\s+(\d+)((?:\s*(?:,|and|&|–|-|to)\s*\d+)*)/g
+  for (const m of text.matchAll(figures)) {
+    const numbers = [Number(m[1]), ...[...m[2].matchAll(/\d+/g)].map((x) => Number(x[0]))]
+    if (numbers.includes(n)) return true
+    // A range: "Figures 1–3" refers to 2 as well.
+    if (/–|-|to/.test(m[2]) && n > numbers[0] && n < numbers.at(-1)!) return true
+  }
+  return false
+}
+
 export const proof: Behavior = {
   id: 'proof', stage: 'close', improver: true, title: 'Read the typeset paper',
   ready: (paper) => {
@@ -150,6 +165,14 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
         for (const fig of s.figures.filter((f) => f.status === 'rendered' && f.source)) {
           for (const d of printedDefects(fig.source!)) defects.push({ page: null, where: 'figure', quote: fig.caption.slice(0, 80), problem: `${d.problem} in the figure: ${d.quote}`, fix: 'draw the figure with the value itself', by: 'check', figureId: fig.id, fixIn: 'figure' })
         }
+        // A figure the text never refers to is the text's to fix: drawing it again cannot add a callout. Each one is also
+        // found mechanically, and sent to the figure's own section.
+        for (const d of defects) if (d.fixIn === 'figure' && CALLOUT.test(d.problem)) d.fixIn = 'prose'
+        const prose = (s.outline?.sections ?? []).map((sec) => sectionText(paper, sec.id)).join('\n')
+        printedFigures(paper).forEach((fig, i) => {
+          if (calledOut(prose, i + 1) || defects.some((d) => CALLOUT.test(d.problem) && figureOf(paper, d) === fig.id)) return
+          defects.push({ page: null, where: 'figure', quote: `Figure ${i + 1}`, problem: `Figure ${i + 1} is never referred to in the text.`, fix: `Refer to it as Figure ${i + 1} in the sentence that discusses what it shows.`, by: 'check', figureId: fig.id, fixIn: 'prose' })
+        })
 
         const rounds = (s.proof?.rounds ?? 0) + 1
         const left: ProofDefect[] = []
