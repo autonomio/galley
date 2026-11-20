@@ -439,7 +439,10 @@ ${placeholderLegend(paper, text)}`,
         const sentence = String(reply.sentence ?? '').trim()
         if (!sentence) throw new Error('no limitation sentence was written')
         const after = String(reply.after ?? '').trim()
-        const placed = after && text.includes(after) ? text.replace(after, `${after} ${sentence}`) : `${text.trimEnd()} ${sentence}`
+        // The section as it stands now, not as the prompt showed it: findings are handled side by side, and another
+        // step may have edited the section while the model wrote, so each sentence lands in the current text.
+        const current = sectionText(paper, section.id)
+        const placed = after && current.includes(after) ? current.replace(after, `${after} ${sentence}`) : `${current.trimEnd()} ${sentence}`
         setPassage(paper, section.id, placed, { kind: 'agent', family, model: paper.config.models[family]?.model ?? family, seat: 'author', behavior: 'handle-finding' }, `limitation for ${f.id}, which adjudication could not settle`)
         f.adjudication = { decision: `limitation: stated as a limitation of the work after adjudication could not settle it in the text`, family, edits: [{ old: '', new: sentence }], fallback: true }
         f.status = 'adjudicated'

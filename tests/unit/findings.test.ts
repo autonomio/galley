@@ -1,12 +1,13 @@
 // No referee finding is dropped: a rejected answer is answered again at full
 // effort, a verdict that cannot tell is asked again, a decision must land in the
 // text, and what adjudication cannot settle the paper states as a limitation.
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { adjudicate, handleFinding, resolved, respond, verifyDisposition } from '../../src/engine/behaviors/review.js'
 import { Paper } from '../../src/engine/paper.js'
+import { importProposalDecisions } from '../../src/engine/render.js'
 import type { Disposition, Finding } from '../../src/engine/types.js'
 
 let dir = ''
@@ -84,5 +85,40 @@ describe('referee findings', () => {
     const f = finding('F1', 'always switches in 200 ms', [], 'noted')
     expect(resolved(f)).toBe(false)
     expect(resolved({ ...f, assignee: 'humans' })).toBe(true)
+  })
+
+  it('states unsettled findings as limitations side by side, none erasing another or an edit made meanwhile', async () => {
+    const paper = paperWith([finding('F1', 'always switches in 200 ms', [rejected(), rejected(), rejected()]), finding('F2', 'resolves 10 ms', [rejected(), rejected(), rejected()])])
+    for (const f of paper.state.findings) paper.state.attempts[`adjudicate-failed:${f.id}`] = 2
+    const replies = new Map<string, (answer: unknown) => void>()
+    paper.ask = ((options: { target: string }) => new Promise<unknown>((answer) => replies.set(options.target, answer))) as Paper['ask']
+    // The scheduler runs a behavior's targets together.
+    const runs = handleFinding.ready(paper).map((t) => t.run())
+    expect([...replies.keys()]).toEqual(['F1', 'F2'])
+    paper.state.passages.S2.text = 'The bench used one vendor, Vertiv.'
+    replies.get('F2')!({ sentence: 'The meter was not calibrated against a reference.', after: '' })
+    replies.get('F1')!({ sentence: 'The bench does not establish switching times beyond the trials it ran.', after: 'The bench used one vendor, Vertiv.' })
+    await Promise.all(runs)
+    expect(paper.state.passages.S2.text).toBe('The bench used one vendor, Vertiv. The bench does not establish switching times beyond the trials it ran. The meter was not calibrated against a reference.')
+    expect(paper.state.findings.map((f) => [f.status, resolved(f)])).toEqual([['adjudicated', true], ['adjudicated', true]])
+  })
+
+  it('reopens a finding an earlier engine left noted, so a saved paper can still finish its review', () => {
+    const paper = paperWith([finding('F1', 'always switches in 200 ms', [rejected(), rejected(), rejected()], 'noted'), { ...finding('F2', 'resolves 10 ms', [rejected()], 'noted'), assignee: 'humans' }])
+    paper.save()
+    const opened = Paper.open(join(dir, 'p'))
+    expect(opened.state.findings.map((f) => [f.id, f.status, f.assignee])).toEqual([['F1', 'open', 'agents'], ['F2', 'noted', 'humans']])
+    expect(adjudicate.ready(opened).map((t) => t.label)).toEqual(['1 finding(s) in S1 by gemini'])
+  })
+
+  it('a person who declines every change proposed for a finding settles it themselves', () => {
+    const paper = paperWith([finding('F1', 'always switches in 200 ms', [rejected()])])
+    paper.config.editorDir = dir
+    paper.config.editorDoc = 'paper'
+    paper.state.proposals = [{ id: 'P1', findingId: 'F1', description: 'Narrow it.', old: 'always switches', new: 'switches', by: 'claude', state: 'pending' }]
+    writeFileSync(join(dir, 'paper.proposals.json'), JSON.stringify({ proposals: [{ id: 'P1', state: 'declined' }] }))
+    importProposalDecisions(paper)
+    const f = paper.state.findings[0]
+    expect([f.status, f.assignee, resolved(f)]).toEqual(['noted', 'humans', true])
   })
 })

@@ -66,7 +66,9 @@ async function pagesOf(paper: Paper): Promise<{ text: string[]; images: string[]
   let images: string[] = []
   try {
     await run('pdftoppm', ['-r', '70', '-png', '-l', String(MAX_PAGES), pdf, join(dir, 'page')], dir)
-    images = readdirSync(dir).filter((f) => /^page-\d+\.png$/.test(f)).sort().map((f) => join(dir, f))
+    // In page order by number, however the renderer pads it: page-2 before page-10.
+    const page = (f: string) => Number(f.match(/\d+/)![0])
+    images = readdirSync(dir).filter((f) => /^page-\d+\.png$/.test(f)).sort((a, b) => page(a) - page(b)).map((f) => join(dir, f))
   } catch { /* text only */ }
   return { text, images }
 }

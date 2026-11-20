@@ -412,7 +412,9 @@ export function importProposalDecisions(paper: Paper): number {
       f.status = 'fixed'
       f.assignee = 'agents'
     } else {
+      // Declining every change proposed for a finding is the person's decision: it is theirs, and settled.
       f.status = 'noted'
+      f.assignee = 'humans'
       paper.note('proposals', `You declined the changes proposed for ${f.id} (${f.question}).`)
     }
   }
