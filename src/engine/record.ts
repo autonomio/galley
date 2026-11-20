@@ -64,7 +64,7 @@ export function productionRecord(paper: Paper): Record_ {
     // Every simulated number, at the precision its Monte Carlo error supports.
     ...simulationPlaceholders(paper),
     // Numbers from the authors' data, as galley computed them.
-    ...Object.fromEntries(Object.values(s.measurements ?? {}).map((m) => [`data.${m.id}`, m.value])),
+    ...Object.fromEntries(Object.values(s.measurements ?? {}).flatMap((m) => [[`data.${m.id}`, m.value], [`data.${m.id}.n`, m.n.toLocaleString('en-US')], ...(m.ci ? [[`data.${m.id}.ci`, m.ci]] : [])])),
   }
 }
 

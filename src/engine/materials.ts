@@ -287,6 +287,49 @@ export function profileDataset(rows: Row[]): DatasetProfile {
   return { rows: rows.length, columns }
 }
 
+/** A quantile by linear interpolation between order statistics (the common definition, type 7). */
+function quantileOf(sorted: number[], p: number): number {
+  const at = (sorted.length - 1) * p
+  const lo = Math.floor(at)
+  const hi = Math.ceil(at)
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (at - lo)
+}
+
+/**
+ * The data as it was analysed, described by galley from the data itself, never by a model: for each dataset, every
+ * numeric column's count, missing values, mean, standard deviation, median, 5th, 95th and 99th percentiles,
+ * minimum and maximum. The paper prints it as an appendix, so a reader can check every number against the data.
+ */
+export function describeData(paper: Paper): string {
+  const datasets = (paper.config.materials ?? []).filter((m) => m.kind === 'dataset')
+  if (!datasets.length) return ''
+  const f = (x: number) => Number.isFinite(x) ? fmt(x) : '—'
+  const tables = datasets.map((m) => {
+    const rows = datasetRows(paper, m)
+    const columns = rows.length ? Object.keys(rows[0]) : []
+    const lines: string[] = []
+    for (const name of columns) {
+      const values: number[] = []
+      let missing = 0
+      for (const r of rows) {
+        const v = r[name]
+        if (isMissing(v)) { missing++; continue }
+        const x = asNumber(v)
+        if (x === null) { values.length = 0; missing = -1; break }
+        values.push(x)
+      }
+      if (missing < 0 || values.length < 3) continue
+      const sorted = Float64Array.from(values).sort() as unknown as number[]
+      lines.push(`| ${name.replace(/\|/g, '/')} | ${values.length.toLocaleString('en-US')} | ${missing.toLocaleString('en-US')} | ${f(mean(values))} | ${f(sd(values))} | ${f(quantileOf(sorted, 0.5))} | ${f(quantileOf(sorted, 0.05))} | ${f(quantileOf(sorted, 0.95))} | ${f(quantileOf(sorted, 0.99))} | ${f(sorted[0])} | ${f(sorted[sorted.length - 1])} |`)
+      if (lines.length >= 15) break
+    }
+    if (!lines.length) return ''
+    return `**${m.id}: ${m.name}**, ${rows.length.toLocaleString('en-US')} rows\n\n| Column | n | Missing | Mean | SD | Median | P5 | P95 | P99 | Min | Max |\n|:---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n${lines.join('\n')}`
+  }).filter(Boolean)
+  if (!tables.length) return ''
+  return `Each dataset as it was analysed, described by galley from the data itself: for every numeric column, the number of values, the missing values, the mean, the standard deviation, the median, the 5th, 95th and 99th percentiles, the minimum and the maximum.\n\n${tables.join('\n\n')}`
+}
+
 // Separators from 10,000 on, so a year reads as 2015, not 2,015.
 const fmt = (n: number) => Math.abs(n) >= 10000 ? n.toLocaleString('en-US', { maximumFractionDigits: 1 }) : Math.abs(n) >= 1000 ? String(Math.round(n * 10) / 10) : Number(n.toPrecision(4)).toString()
 
@@ -372,7 +415,14 @@ export function availabilityStatement(paper: Paper): string {
 export function measurementsBlock(paper: Paper): string {
   const ms = Object.values(paper.state.measurements ?? {})
   if (!ms.length) return ''
-  return `MEASUREMENTS computed on the authors' machine from their datasets. A number from the data appears in the text only as its placeholder, {{data.<id>}} (for example {{data.A1}}), which is filled in when the paper is typeset; never write it as a figure.\n${ms.map((m) => `${m.id}: ${m.summary}`).join('\n')}`
+  const a = paper.state.analysis
+  const checks = a?.runs ? Object.entries(a.runs).flatMap(([id, r]) => r.ok ? r.checks.map((c) => `${id}: ${c.assumption}: ${c.holds ? 'holds' : 'does not hold'} (${c.method}${c.p !== undefined ? `, p = ${c.p.toPrecision(2)}` : ''}). ${c.note}`) : []) : []
+  const how = a?.mode === 'code'
+    ? `\nHow they were computed: each analysis below ran as code on the authors' machine, as planned${a.reviewed ? ' and reviewed by a statistician' : ''}, for a paper in ${a.field || 'its field'}. The field's conventions: ${a.conventions.join(' ')}\n${a.prepare?.ok && a.prepare.report ? `The shared preparation every analysis started from, as it ran (the paper reports each exclusion with its count):\n${a.prepare.report.steps.map((st) => `- ${st.step}${st.rows_before !== undefined && st.rows_after !== undefined ? ` (${st.rows_before} rows to ${st.rows_after})` : ''}: ${st.note}`).join('\n')}\nShared definitions: ${a.prepare.report.definitions.join(' ')}` : `Preparation applied first: ${a.preparation.join(' ') || 'none'}`}\nThe analyses: ${a.plan.filter((p) => a.runs?.[p.id]?.ok).map((p) => `${p.id} ${p.question} (method: ${p.method}; uncertainty: ${p.uncertainty})`).join('; ')}`
+    : ''
+  return `MEASUREMENTS computed on the authors' machine from their datasets. A number from the data appears in the text only as its placeholder, {{data.<id>}} (for example {{data.A1}}), with its interval as {{data.<id>.ci}} where it has one and its n as {{data.<id>.n}}; they are filled in when the paper is typeset, so never write them as figures. The paper states each number with its n, and with its interval when it has one.${how}
+${ms.map((m) => `${m.id}: ${m.summary}${m.ci ? ` [interval: {{data.${m.id}.ci}}]` : ''}`).join('\n')}${checks.length ? `\nASSUMPTION CHECKS, which the paper reports where it uses the analysis, with what follows when one does not hold:\n${checks.join('\n')}` : ''}${a?.notComputed?.length ? `\nPLANNED BUT NOT COMPUTED. These did not run, so the paper never describes them, their methods or their results, and never says the paper reports them: ${a.notComputed.map((n) => `${n.id} (${n.question})`).join('; ')}.` : ''}
+The methods describe only the analyses above, with the methods, intervals and checks recorded here; never describe an analysis, an interval, a model fit or a check that is not listed.`
 }
 
 // ---------------------------------------------------------------- analyses
@@ -397,9 +447,15 @@ export interface AnalysisSpec {
 
 export interface Measurement {
   id: string
-  spec: AnalysisSpec
+  /** The built-in operation that computed it; a result of analysis code has none. */
+  spec?: AnalysisSpec
+  /** The planned analysis whose code printed it, and the name it printed it under. */
+  analysis?: string
+  name?: string
   /** The number a sentence cites, as text, filled in for {{data.<id>}}. */
   value: string
+  /** Its confidence interval as text ("95% CI 400 ms to 437 ms"), filled in for {{data.<id>.ci}}. */
+  ci?: string
   /** The full result in words, for the author and the evidence package. */
   summary: string
   n: number

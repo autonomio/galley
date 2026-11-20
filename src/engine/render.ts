@@ -11,7 +11,7 @@ import { FAMILY_NAMES, lightName, lightSpecFor } from './config.js'
 import { cleanCsl, cslForDoi, cslFromWork } from './evidence.js'
 import type { Paper } from './paper.js'
 import { LIT_PLACEHOLDERS, modelName, reviewAppendix, reviewFlowTypst } from './literature.js'
-import { availabilityStatement, datasetSources } from './materials.js'
+import { availabilityStatement, datasetSources, describeData } from './materials.js'
 import { methodWords, runsOf, sizeOf } from './simulations.js'
 import { writeReproduction } from './simulation/index.js'
 import { PLACEHOLDERS } from './prompts.js'
@@ -159,6 +159,8 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   // The ledger quotes claims as they stand, placeholders included, so it is filled like every other part of the text.
   const appendices: [string, string][] = []
   if (paper.config.ledgerAppendix !== false) appendices.push(['Claim ledger', fillPlaceholders(ledgerAppendix(paper), record).text])
+  const described = describeData(paper)
+  if (described) appendices.push(['The data', described])
   const flow = existsSync(paper.path('build', REVIEW_FLOW)) ? REVIEW_FLOW : null
   const review = reviewAppendix(paper, (workId) => s.works[workId] ? `[@${keyFor(paper, s.works[workId])}]` : workId, flow)
   if (review) appendices.push(['The systematic review: protocol, queries and included publications', review])
@@ -597,6 +599,11 @@ Canary run ${s.literature.key}, searched ${s.literature.searchedOn}: ${s.literat
 ` : ''}${runsOf(paper).length ? `## Simulations: check what each one assumes
 ${runsOf(paper).map((r) => `${r.id} ${r.title} (${methodWords(r.result.method)}, ${sizeOf(r.result)}, seed ${r.result.provenance.seed}${r.result.provenance.ok ? '' : `; checks: ${r.result.provenance.checks.filter((c) => !c.ok).map((c) => c.detail).join('; ')}`})\n${r.result.spec.inputs.map((i) => `- ${i.name} ~ ${i.dist}: ${r.assumptions.find((a) => a.name === i.name)?.basis ?? 'no basis given'}`).join('\n')}`).join('\n\n')}
 
+` : ''}${s.analysis?.plan.length ? `## The analysis of your data: check it is the one your field expects
+Field: ${s.analysis.field || 'not named'}. ${s.analysis.mode === 'code' ? `The analyses ran as code in a sandbox on ${Object.entries(s.analysis.environment ?? {}).map(([k, v]) => `${k} ${v}`).join(', ')}; each script is in analysis/.` : 'The analyses ran as galley\'s built-in operations.'} ${s.analysis.reviewed ? `The plan was reviewed by a statistician (${FAMILY_NAMES[s.analysis.reviewed.family]}): ${s.analysis.reviewed.notes.join(' ')}` : 'The plan was not reviewed.'}
+${s.analysis.prepare?.report ? `The shared preparation, as it ran:\n${list(s.analysis.prepare.report.steps.map((st) => `${st.step}${st.rows_before !== undefined && st.rows_after !== undefined ? ` (${st.rows_before} rows to ${st.rows_after})` : ''}: ${st.note}`), 'No steps reported.')}\n` : ''}${list(Object.entries(s.analysis.runs ?? {}).flatMap(([id, r]) => r.checks.filter((c) => !c.holds).map((c) => `${id}: the assumption "${c.assumption}" does not hold (${c.method}). ${c.note}`)), 'Every assumption check held.')}
+${s.analysis.notComputed?.length ? `Planned but not computed, so the paper does not describe them:\n${list(s.analysis.notComputed.map((n) => `${n.id} ${n.question}: ${n.why.split('\n').at(-1)}`), '')}` : ''}
+
 ` : ''}## Your datasets: check where each one comes from
 ${list((paper.config.datasets ?? []).map((u) => `${u.id} "${u.name}"${u.version ? `, version ${u.version}` : ''}: ${u.producedBy === 'others' ? 'produced by others' : 'produced by you'}${u.doi ? `, DOI ${u.doi}` : u.url ? `, at ${u.url}` : ', not published'}${u.describedIn ? `, first reported in ${u.describedIn}` : ''}${u.licence ? `, licence ${u.licence}` : ''}; ${u.private ? 'private' : 'shared'}; files ${u.materials.join(', ')}`), 'None given as datasets.')}
 
@@ -670,8 +677,32 @@ function exportEvidence(paper: Paper): void {
   if (s.literature?.status === 'done') writeFileSync(join(root, 'literature-review.json'), JSON.stringify({ question: s.literature.question, canary_run: s.literature.key, searched: s.literature.searchedOn, models: s.literature.models, protocol: s.literature.protocol, counts: s.literature.counts, disagreements: s.literature.contradictions, open_questions: s.literature.gaps, findings: s.literature.claimIds }, null, 2))
   // Measurements carry their exact specification, so anyone holding the data can recompute every number.
   const measurements = Object.values(s.measurements ?? {})
-  if (measurements.length) writeFileSync(join(root, 'measurements.json'), JSON.stringify(measurements.map((m) => ({ id: m.id, dataset: (paper.config.materials ?? []).find((x) => x.id === m.spec.dataset)?.name ?? m.spec.dataset, spec: m.spec, result: m.summary, n: m.n })), null, 2) + '\n')
-  writeFileSync(join(root, 'README.md'), `# Evidence package\n\nThe claims of this manuscript, the evidence each rests on, and the verbatim passages of its sources, as Resolvent records (claims/, evidence/, sources/). Copy them into a Resolvent world model to admit them there.${measurements.length ? '\n\nmeasurements.json holds every number the manuscript states about the authors\' data, with the analysis that produced it.' : ''}\n`)
+  if (measurements.length) writeFileSync(join(root, 'measurements.json'), JSON.stringify(measurements.map((m) => m.spec
+    ? { id: m.id, dataset: (paper.config.materials ?? []).find((x) => x.id === m.spec!.dataset)?.name ?? m.spec.dataset, spec: m.spec, result: m.summary, n: m.n }
+    : { id: m.id, analysis: m.analysis, name: m.name, value: m.value, ci: m.ci ?? null, n: m.n, result: m.summary, code: `analysis/${m.analysis}/analysis.py` }), null, 2) + '\n')
+  // The analysis as planned, reviewed and run: the field's conventions, the preparation, each analysis with its checks, and what did not run.
+  const a = s.analysis
+  if (a?.plan.length) writeFileSync(join(root, 'analysis.json'), JSON.stringify({ field: a.field, conventions: a.conventions, preparation: a.preparation, mode: a.mode, reviewed_by: a.reviewed?.family ?? null, review_notes: a.reviewed?.notes ?? [], environment: a.environment ?? null, preparation_report: a.prepare?.report ?? null, analyses: a.plan.map((p) => ({ ...p, ran: a.runs?.[p.id]?.ok ?? false, results: a.runs?.[p.id]?.results ?? [], checks: a.runs?.[p.id]?.checks ?? [] })), not_computed: a.notComputed ?? [] }, null, 2) + '\n')
+  writeFileSync(join(root, 'README.md'), `# Evidence package\n\nThe claims of this manuscript, the evidence each rests on, and the verbatim passages of its sources, as Resolvent records (claims/, evidence/, sources/). Copy them into a Resolvent world model to admit them there.${measurements.length ? '\n\nmeasurements.json holds every number the manuscript states about the authors\' data, with the analysis that produced it; analysis.json holds the analysis plan, its review, and each analysis\'s results and assumption checks.' : ''}\n`)
+}
+
+/** The analyses as runnable code: each analysis's script, with what it needs and how to run it on the data. */
+function writeAnalysisPackage(paper: Paper, dir: string): void {
+  const a = paper.state.analysis
+  if (a?.mode !== 'code' || !a.runs) return
+  mkdirSync(dir, { recursive: true })
+  for (const [id, run] of Object.entries(a.runs)) {
+    if (!run.ok) continue
+    mkdirSync(join(dir, id), { recursive: true })
+    copyFileSync(paper.path('analysis', id, 'analysis.py'), join(dir, id, 'analysis.py'))
+  }
+  // The shared preparation on its own: run it to see each step with the rows it kept (every analysis.py holds it too).
+  if (a.prepare?.ok && existsSync(paper.path('analysis', 'preparation', 'prepare.py'))) {
+    mkdirSync(join(dir, 'preparation'), { recursive: true })
+    copyFileSync(paper.path('analysis', 'preparation', 'prepare.py'), join(dir, 'preparation', 'prepare.py'))
+  }
+  const datasets = (paper.config.materials ?? []).filter((m) => m.kind === 'dataset')
+  writeFileSync(join(dir, 'README.md'), `# The analyses\n\nEach folder holds one analysis of the paper's data as it ran, for galley, in a sandbox with no network. To run one, write a data.json that maps each dataset id to the CSV file holding it, then run \`python analysis.py data.json\`; it prints the results and the assumption checks as JSON.\n\nDatasets:\n${datasets.map((d) => `- ${d.id}: ${d.name}`).join('\n')}\n\nIt ran on ${Object.entries(a.environment ?? {}).map(([k, v]) => `${k} ${v}`).join(', ') || 'Python with numpy, scipy, pandas and statsmodels'}.\n`)
 }
 
 // ---------------------------------------------------------------- typeset
@@ -734,6 +765,8 @@ export async function typeset(paper: Paper): Promise<string[]> {
     if (existsSync(join(build, REVIEW_FLOW))) copyFileSync(join(build, REVIEW_FLOW), join(out, REVIEW_FLOW))
   }
   exportEvidence(paper)
+  // The analyses of the authors' data, as the code that ran them.
+  try { writeAnalysisPackage(paper, join(out, 'analysis')) } catch (error) { paper.note('typeset', `The analysis package was not written: ${(error as Error).message.slice(0, 200)}`) }
   // The runnable reproduction of the paper's simulations: a reader reruns them and checks every simulated number with Node or a browser.
   if (runsOf(paper).length) {
     try { writeReproduction(join(out, 'simulation'), runsOf(paper), { title: paper.config.title || paper.state.frame?.title }) } catch (error) { paper.note('typeset', `The simulation reproduction package was not written: ${(error as Error).message.slice(0, 200)}`) }
@@ -743,7 +776,7 @@ export async function typeset(paper: Paper): Promise<string[]> {
   try { syncEditor(paper) } catch (error) { paper.note('typeset', `The editor copy of the manuscript was not written: ${(error as Error).message.slice(0, 200)}`) }
   try {
     rmSync(join(out, 'submission.zip'), { force: true })
-    await exec('zip', ['-qr', 'submission.zip', ...made, 'manuscript.md', 'refs.json', 'evidence', 'production-journal.jsonl', ...(existsSync(join(out, 'figures')) ? ['figures'] : []), ...(existsSync(join(out, 'simulation')) ? ['simulation'] : [])], out)
+    await exec('zip', ['-qr', 'submission.zip', ...made, 'manuscript.md', 'refs.json', 'evidence', 'production-journal.jsonl', ...(existsSync(join(out, 'figures')) ? ['figures'] : []), ...(existsSync(join(out, 'analysis')) ? ['analysis'] : []), ...(existsSync(join(out, 'simulation')) ? ['simulation'] : [])], out)
     made.push('submission.zip')
   } catch { /* the folder itself is the package */ }
   return made

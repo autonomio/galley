@@ -277,6 +277,35 @@ export interface LiteratureReview {
   claimIds?: string[]
 }
 
+/** One planned analysis of the authors' data: what it asks, how, with what uncertainty, and how its assumptions are checked. */
+export interface PlannedAnalysis {
+  id: string
+  claims: string[]
+  question: string
+  method: string
+  uncertainty: string
+  assumptions: string[]
+  checks: string[]
+  datasets: string[]
+}
+
+export interface DataAnalysis {
+  field: string
+  conventions: string[]
+  preparation: string[]
+  plan: PlannedAnalysis[]
+  /** code: the analyses ran as code in the sandbox; operations: galley's built-in operations measured instead. */
+  mode: 'code' | 'operations'
+  reviewed?: { family: Family; notes: string[] }
+  runs?: Record<string, { ok: boolean; code: string; results: { name: string; value: number; unit?: string; n?: number; count?: number; ci_low?: number; ci_high?: number; ci_level?: number; method: string }[]; checks: { assumption: string; method: string; statistic?: number; p?: number; holds: boolean; note: string }[]; error?: string; attempts: number; ms: number }>
+  /** The shared preparation every analysis starts from: its code, and what it reported (each step with the rows it kept, and the shared definitions). */
+  prepare?: { ok: boolean; code: string; report?: { steps: { step: string; rows_before?: number; rows_after?: number; note: string }[]; definitions: string[] }; error?: string }
+  /** Planned analyses that did not run: the paper never describes them. */
+  notComputed?: { id: string; question: string; why: string }[]
+  /** The Python and package versions the analyses ran on. */
+  environment?: Record<string, string>
+}
+
 /** A printing defect found in the typeset paper: by the reader (a model reading the pages) or by the mechanical check. */
 export interface ProofDefect {
   page: number | null
@@ -332,6 +361,8 @@ export interface PaperState {
   editorResolved?: string[]
   /** The typeset review: how many readings, what the last one found, how many defects were fixed and what is left for a person. */
   proof?: { rounds: number; hash: string; defects: ProofDefect[]; fixed: number; left: ProofDefect[] }
+  /** The analysis of the authors' data: the field's conventions, the preparation, the reviewed plan, and what each analysis's code printed. */
+  analysis?: DataAnalysis
   /** Replies a person wrote in the editor that are already findings. */
   repliesSeen?: string[]
   /** A title a person gave the paper in the editor; it stands over the system's. */
