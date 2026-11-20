@@ -150,7 +150,8 @@ export const figure: Behavior = {
     const s = paper.state
     if (!live(paper) || !s.outline) return []
     return s.figures.filter((f) => f.status === 'planned').map((fig): Target => ({
-      key: `figure:${fig.id}`, label: fig.id,
+      // A figure a reader sent back is drawn again as a step of its own: the first drawing's step is long settled.
+      key: fig.redraws ? `figure:${fig.id}:redraw${fig.redraws}` : `figure:${fig.id}`, label: fig.id,
       run: async () => {
         const dir = paper.path('build', 'figures')
         mkdirSync(dir, { recursive: true })

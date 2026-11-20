@@ -162,6 +162,8 @@ export interface Figure {
   source?: string
   /** A defect a reader found in the typeset figure, for the next drawing to fix. */
   revise?: string
+  /** How many times a reader sent it back: each drawing again is a step of its own. */
+  redraws?: number
 }
 
 export interface Frame {

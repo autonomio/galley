@@ -165,6 +165,7 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
               // The figure is drawn again with the defect named.
               const figure = s.figures.find((f) => f.id === fig)!
               figure.revise = [figure.revise, `${d.problem} ${d.fix}`.trim()].filter(Boolean).join(' ')
+              if (figure.status !== 'planned') figure.redraws = (figure.redraws ?? 0) + 1
               figure.status = 'planned'
               fixed++
             } else if (d.fixIn === 'ledger') ledger.push(d)

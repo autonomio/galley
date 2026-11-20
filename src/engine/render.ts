@@ -728,7 +728,8 @@ export function contentHash(paper: Paper): string {
     // The claim ledger is printed as an appendix, so a restated claim is a new revision too.
     claims: s.claims.map((c) => [c.id, c.status, c.text]),
     findings: s.findings.map((f) => [f.id, f.status, f.dispositions.length]), citations: s.citations.map((c) => [c.id, c.status]),
-    figures: s.figures.map((f) => [f.id, f.status]), title: paper.config.title, authors: paper.config.authors, decl: paper.config.declarations,
+    // A figure drawn again is a new revision, though its status is the same as before.
+    figures: s.figures.map((f) => [f.id, f.status, f.source ?? null]), title: paper.config.title, authors: paper.config.authors, decl: paper.config.declarations,
   })).digest('hex').slice(0, 16)
 }
 

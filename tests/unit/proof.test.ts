@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { printedDefects, proof } from '../../src/engine/behaviors/proof.js'
+import { figure } from '../../src/engine/behaviors/write.js'
 import { Paper } from '../../src/engine/paper.js'
 import { contentHash, numberEquations } from '../../src/engine/render.js'
 
@@ -52,5 +53,21 @@ describe('the typeset review', () => {
     expect(s.figures[0]).toMatchObject({ status: 'planned' })
     expect(s.figures[0].revise).toContain('an unfilled placeholder')
     expect(s.proof).toMatchObject({ rounds: 1, fixed: 2, left: [] })
+    // The first drawing's step is settled, so drawing it again is a step of its own, and the new drawing a new revision.
+    expect(figure.ready(paper).map((t) => t.key)).toEqual(['figure:F1:redraw1'])
+    const before = contentHash(paper)
+    Object.assign(s.figures[0], { status: 'rendered', source: '#text[p99 422 ms]' })
+    const redrawn = contentHash(paper)
+    Object.assign(s.figures[0], { source: '#text[p99 {{data.A5}} ms]' })
+    expect(new Set([before, redrawn, contentHash(paper)]).size).toBe(3)
+  })
+
+  it('draws again a figure an earlier engine sent back under its settled first step, so the paper can finish', () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const paper = Paper.create(join(dir, 'p'), 'seed')
+    paper.state.outline = { sections: [{ id: 'S1', title: 'Results', purpose: '', claimIds: [], words: 300, figureIds: ['F1'] }], style: '', glossary: [] }
+    paper.state.figures = [{ id: 'F1', caption: 'c', spec: '', sectionId: 'S1', status: 'planned', revise: 'A label overlaps the axis.' }]
+    paper.settle('figure:F1', 'done')
+    expect(figure.ready(Paper.open(paper.dir)).map((t) => t.key)).toEqual(['figure:F1:redraw1'])
   })
 })

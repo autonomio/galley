@@ -142,6 +142,11 @@ export class Paper {
     if (!state.outcome || state.outcome === 'ready_for_submission') {
       for (const f of state.findings ?? []) if (f.status === 'noted' && f.assignee !== 'humans') f.status = 'open'
     }
+    // An earlier engine sent a figure back to be drawn again under its first drawing's step, which was settled, so it
+    // was never drawn and the paper could not be typeset again. Such a figure is now a redraw of its own.
+    for (const fig of state.figures ?? []) {
+      if (fig.status === 'planned' && fig.revise && !fig.redraws && `figure:${fig.id}` in (state.settled ?? {})) fig.redraws = 1
+    }
     return new Paper(dir, state, Paper.readConfig(dir))
   }
 
