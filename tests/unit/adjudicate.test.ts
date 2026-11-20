@@ -36,7 +36,7 @@ describe('adjudication', () => {
       prompts.push(options.prompt)
       return { decisions: [
         { id: 'F1', decision: 'narrow', reason: 'Only the median is 200 ms.', edits: [{ old: 'always switches in 200 ms', new: 'switches in a median of 200 ms' }] },
-        { id: 'F2', decision: 'adopt_author', reason: 'The meter spec says so.', edits: [] },
+        { id: 'F2', decision: 'set_aside', reason: 'The meter spec says so.', edits: [], handled_by: 'The meter resolves 10 ms.' },
       ] }
     }) as Paper['ask']
     await targets[0].run()
@@ -46,6 +46,6 @@ describe('adjudication', () => {
     expect(prompts[0]).not.toContain('Every product is served.')
     expect(s.passages.S1.text).toBe('The bench switches in a median of 200 ms. The meter resolves 10 ms.')
     expect(s.findings.map((f) => f.status)).toEqual(['adjudicated', 'adjudicated', 'open'])
-    expect(s.findings[1].adjudication?.decision).toMatch(/^adopt_author/)
+    expect(s.findings[1].adjudication).toMatchObject({ setAside: true, handledBy: 'The meter resolves 10 ms.' })
   })
 })

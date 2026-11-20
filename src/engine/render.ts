@@ -56,7 +56,7 @@ function disclosure(paper: Paper, record: Record_): string {
   const everyCitation = lit ? 'every citation outside the systematic review' : 'every citation'
   // Answering, judging and settling single findings run on the lighter settings; the statement names them.
   const settling = [...new Set([seats.author, ...paper.config.referees.map((r) => r.family)])].map((f) => lightName(lightSpecFor(paper.config, f)))
-  const settled = paper.state.round >= 1 ? ` Answering findings, judging the answers and settling disputes ran on lighter reasoning settings (${settling.join(', ')}).` : ''
+  const settled = paper.state.round >= 1 ? ` A first answer to a finding and the first verdict on it ran on lighter reasoning settings (${settling.join(', ')}); later answers, second verdicts and every adjudication ran at full effort.` : ''
   const sims = runsOf(paper)
   const simulated = sims.length ? ` The Monte Carlo simulation${sims.length > 1 ? 's' : ''} (${sims.map((r) => `${r.id}, ${methodWords(r.result.method)} with ${sizeOf(r.result)}, seed ${r.result.provenance.seed}`).join('; ')}) ran on the authors' machine with galley's simulation engine, from a specification ${FAMILY_NAMES[seats.author]} wrote; every simulated number in the text is filled in from that run at the precision its Monte Carlo error supports, and the evidence package holds each specification with its results, so every number can be reproduced.` : ''
   const review = lit ? ` The systematic review ${paper.config.literatureReview === 'load-bearing' ? 'this paper reports' : 'reported in its own section'} was carried out with Canary: ${modelName(lit.models?.research)} planned the search of OpenAlex, screened the candidates, read the full texts and quoted the passages behind each finding, and ${modelName(lit.models?.audit)} audited every finding against those passages; the review's citations rest on them.` : ''
@@ -69,7 +69,7 @@ function disclosure(paper: Paper, record: Record_): string {
 | Claims | ${record['run.claims']} (${record['run.claims_seed']} from the seed, ${record['run.claims_added']} added; ${record['run.claims_narrowed']} narrowed; ${record['run.claims_unsupported']} stated as hypotheses) |
 | Works screened | ${record['run.works_screened']} |
 | Citations | ${record['run.citations_verified']} verified, ${record['run.citations_rejected']} rejected |
-${sims.length ? `| Simulations | ${sims.map((r) => `${r.id}: ${methodWords(r.result.method)}, ${sizeOf(r.result)}; ${r.result.provenance.ok ? 'every check passed' : `${r.result.provenance.checks.filter((c) => !c.ok).length} check(s) noted`}`).join('; ')} |\n` : ''}${lit ? `| Systematic review | ${record['lit.discovered']} records identified, ${record['lit.screened']} screened, ${record['lit.reviewed']} read in full and included; ${record['lit.findings']} findings, ${record['lit.audited']} audited |\n` : ''}| Referee findings | ${record['run.findings']} (${record['run.findings_material']} material or critical; ${record['run.findings_resolved']} resolved; ${record['run.findings_adjudicated']} adjudicated) over ${record['run.rounds']} round(s) |
+${sims.length ? `| Simulations | ${sims.map((r) => `${r.id}: ${methodWords(r.result.method)}, ${sizeOf(r.result)}; ${r.result.provenance.ok ? 'every check passed' : `${r.result.provenance.checks.filter((c) => !c.ok).length} check(s) noted`}`).join('; ')} |\n` : ''}${lit ? `| Systematic review | ${record['lit.discovered']} records identified, ${record['lit.screened']} screened, ${record['lit.reviewed']} read in full and included; ${record['lit.findings']} findings, ${record['lit.audited']} audited |\n` : ''}| Referee findings | ${findingsSummary(record)} |
 | Verifier calibration | ${record['run.calibration'] === 'none to check' ? 'no verified citations to check' : `${record['run.calibration']} planted defective citations caught; ${record['run.calibration_controls']} unaltered controls accepted`} |
 `
 }
@@ -477,6 +477,16 @@ export function importHumanNotes(paper: Paper, json?: string): number {
 // How long a note must sit unchanged before galley takes it as written.
 const NOTE_SETTLE_MS = 15_000
 
+/** How the referee findings were settled, every material one accounted for. */
+function findingsSummary(record: Record_): string {
+  const parts = ([
+    ['run.findings_fixed', 'fixed'], ['run.findings_rebutted', 'rebutted'], ['run.findings_limitation', 'stated as limitations'],
+    ['run.findings_decided', 'decided by a third model family'], ['run.findings_set_aside', 'set aside by a third model family, with the text answering each'],
+    ['run.findings_fallback', 'stated as limitations when adjudication could not settle them'], ['run.findings_yours', 'set aside by the author'], ['run.findings_open', 'still open'],
+  ] as const).filter(([key]) => Number(record[key]) > 0).map(([key, what]) => `${record[key]} ${what}`)
+  return `${record['run.findings']} over ${record['run.rounds']} round(s); ${record['run.findings_material']} material or critical${parts.length ? `: ${parts.join(', ')}` : ''}`
+}
+
 // ---------------------------------------------------------------- sign-off
 
 function signoff(paper: Paper, record: Record_): string {
@@ -510,6 +520,12 @@ ${list(active.filter((c) => c.status === 'narrowed').map((c) => `${c.id}: ${c.te
 
 ## Decisions made by a third model family, and notes left for you
 ${list(s.notes.filter((n) => n.forHuman).map((n) => n.text), 'None.')}
+
+## Findings a third model family set aside (${s.findings.filter((f) => f.adjudication?.setAside).length}). Check that each reason holds
+${list(s.findings.filter((f) => f.adjudication?.setAside).map((f) => `${f.id}: ${f.question} Reason: ${f.adjudication!.decision.replace(/^set_aside: /, '')} ${f.adjudication!.handledBy ? `Answered by: "${f.adjudication!.handledBy}"` : `Answered by the edits: ${f.adjudication!.edits.map((e) => `"${e.new}"`).join('; ')}`}`), 'None.')}
+
+## Findings stated as limitations because adjudication could not settle them (${s.findings.filter((f) => f.adjudication?.fallback).length})
+${list(s.findings.filter((f) => f.adjudication?.fallback).map((f) => `${f.id}: ${f.question} The paper now says: "${f.adjudication!.edits[0]?.new ?? ''}"`), 'None.')}
 
 ## Threads assigned to people
 ${list(s.findings.filter((f) => f.assignee === 'humans' && f.status === 'open').map((f) => `${f.id}: ${f.question}`), 'None.')}

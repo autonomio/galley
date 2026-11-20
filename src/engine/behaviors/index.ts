@@ -3,7 +3,7 @@
 import type { Behavior } from '../scheduler.js'
 import { calibrate, finalFrame, ready, reconcile, reprofile, typeset } from './close.js'
 import { extract, outline, plan, position, reformulate, reviewIdea, selectDirection } from './front.js'
-import { adjudicate, closeRound, referee, respond, verifyDisposition } from './review.js'
+import { adjudicate, closeRound, handleFinding, referee, respond, verifyDisposition } from './review.js'
 import { findEvidence, reassess, verify } from './truth.js'
 import { draft, fidelity, figure, frame as firstFrame } from './write.js'
 import { analyzeData } from './data.js'
@@ -28,8 +28,8 @@ export const LADDER: Behavior[] = [
   // Truth: every external claim gets a verified passage, or is hedged.
   findEvidence, verify, reassess, calibrate,
   draft, figure, fidelity, frame,
-  // Referees: other families review; the author answers; a third family settles.
-  referee, closeRound, respond, verifyDisposition, adjudicate,
+  // Referees: other families review; the author answers; a third family settles; what it cannot settle becomes a limitation.
+  referee, closeRound, respond, verifyDisposition, adjudicate, handleFinding,
   // Close: the ledger is made to say what the reviewed text says, then the paper is profiled and typeset.
   reconcile, reprofile, typeset, ready,
 ]

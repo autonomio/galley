@@ -64,7 +64,9 @@ Three model families take different seats, and no family reviews its own work.
 | Referees | GPT-6.2 Sol and Gemini 4 Carbon | methods, field, citations and editor seats; families rotate between rounds and never include the author's |
 | Adjudicator | the third family | settles a finding the author and referee could not agree on |
 
-Every seat runs at full reasoning (Claude and GPT at xhigh, Gemini as Carbon at high), except the three steps that settle single referee findings: the author's answer, the referee's judgment of it and the adjudicator's decision run on lighter settings, Claude and GPT at medium effort and Gemini as Hydrogen (`gemini-4-hydrogen-medium`). The families and the rule that no family judges its own work stay the same; the AI statement names both settings.
+Every seat runs at full reasoning (Claude and GPT at xhigh, Gemini as Carbon at high), except the first answer to a referee finding and the referee's first judgment of it, which run on lighter settings: Claude and GPT at medium effort and Gemini as Hydrogen (`gemini-4-hydrogen-medium`). Once a referee rejects an answer, the author answers again at full effort; a judgment that cannot tell is asked again at full effort; adjudication always runs at full effort. The families and the rule that no family judges its own work stay the same; the AI statement names both settings.
+
+No referee finding is dropped. Every finding, minor ones included, ends in one of these ways: fixed, rebutted or stated as a limitation with the agreement of the referee who raised it; decided by the third family, with the decision made in the text; set aside by the third family because the point does not hold, with the sentence of the text that answers it; or, when adjudication cannot settle it in the text, stated as a limitation of the work. Only a person can set a finding aside without the text answering it, by resolving its thread in the editor. A paper is ready only when every finding has ended one of these ways, and the AI statement and the sign-off sheet say how many ended each way.
 
 Each family runs through its own CLI with no tools and no delegation: Claude through `claude`, GPT through Codex (the CLI the ChatGPT app ships, which knows Sol 6.2), Gemini through `agy`. Literature search runs through Canary's search runtime over OpenAlex; bibliographic records come from the DOI registries.
 
@@ -96,13 +98,14 @@ Behaviors are atomic: each reads the paper's state, does one thing, and writes i
 | 18 | frame | manuscript | every section is checked, and again once the ledger is reconciled | title, abstract, keywords; rewritten from the reviewed text |
 | 19 | referee | referees | framed, nothing open | four seats review the whole manuscript |
 | 20 | close-round | referees | every seat reported | ends the round |
-| 21 | respond | referees | a material finding is open | fixed, rebutted, or stated as a limitation |
-| 22 | verify-disposition | referees | an answer is unverified | the referee who raised it judges the answer |
-| 23 | adjudicate | referees | a finding is still disputed at the cap | the third family decides |
-| 24 | reconcile | close | the review is done | a family other than the author's reads the final text against every claim: confirmed, narrowed to the text's wording, or dropped as no longer stated |
-| 25 | reprofile | close | the review is done | the finished paper against the seven factors |
-| 26 | typeset | skeleton | the text changed | PDF, LaTeX, Word, editor document, evidence package, sign-off |
-| 27 | ready | close | every gate holds on one revision | ready for submission |
+| 21 | respond | referees | a finding is open | fixed, rebutted, or stated as a limitation; after a rejected answer, at full effort |
+| 22 | verify-disposition | referees | an answer is unverified | the referee who raised it judges the answer; a verdict that cannot tell is asked again |
+| 23 | adjudicate | referees | a finding is still disputed at the cap | the third family decides, and the decision lands in the text |
+| 24 | handle-finding | referees | adjudication could not settle a finding | the paper states it as a limitation of the work |
+| 25 | reconcile | close | the review is done | a family other than the author's reads the final text against every claim: confirmed, narrowed to the text's wording, or dropped as no longer stated |
+| 26 | reprofile | close | the review is done | the finished paper against the seven factors |
+| 27 | typeset | skeleton | the text changed | PDF, LaTeX, Word, editor document, evidence package, sign-off |
+| 28 | ready | close | every gate holds on one revision | ready for submission |
 
 The skeleton (extract, plan, outline, draft, frame, typeset, ready) is what makes a paper exist. Everything else is an improver: it can make the paper better but can never stop it. An improver that fails twice is settled as skipped, its effect is written down (a claim without evidence is hedged; a figure is left out), and the paper moves on. A model provider at a usage limit is waited out for up to about six hours (a subscription's window), never counted as a failure; when the provider says when its quota resets, the call is tried again just after that; only a longer limit pauses the run, and running it again resumes it. A search index that is unavailable (OpenAlex pauses keyless search under heavy load) is waited out for up to three hours, retrying less often as the wait grows; after that the search is given up and the claims it was for are hedged.
 

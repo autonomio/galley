@@ -172,11 +172,13 @@ export interface Frame {
 
 export interface Disposition {
   at: string
-  kind: 'fixed' | 'rebutted' | 'limitation' | 'needs_evidence'
+  /** unanswered: an attempt that gave no answer; it still counts, so the finding moves on to adjudication. */
+  kind: 'fixed' | 'rebutted' | 'limitation' | 'needs_evidence' | 'unanswered'
   text: string
   edits: { old: string; new: string }[]
   family: Family
-  verification?: { outcome: 'verified' | 'disagrees' | 'uncertain'; reason: string; family: Family }
+  /** rechecked: judged a second time at full effort, after a first verdict that could not tell. */
+  verification?: { outcome: 'verified' | 'disagrees' | 'uncertain'; reason: string; family: Family; rechecked?: boolean }
 }
 
 export interface Finding {
@@ -201,7 +203,12 @@ export interface Finding {
   assignee: 'agents' | 'humans' | 'both'
   origin: 'agent' | 'human'
   dispositions: Disposition[]
-  adjudication?: { decision: string; family: Family; edits: { old: string; new: string }[] }
+  /**
+   * How a third family settled it. setAside: the referee's point was judged not to hold, and handledBy is the
+   * sentence of the text that answers it. fallback: adjudication could not settle it in the text, so the paper
+   * states it as a limitation.
+   */
+  adjudication?: { decision: string; family: Family; edits: { old: string; new: string }[]; setAside?: boolean; handledBy?: string; fallback?: boolean }
 }
 
 export interface Note {
