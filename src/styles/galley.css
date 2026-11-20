@@ -428,7 +428,7 @@
 .galley-note-actions { display: flex; justify-content: flex-end; padding: 0 var(--galley-sp-3) var(--galley-sp-3); margin-top: calc(var(--galley-sp-2) * -1); }
 .galley-note.is-resolved .galley-thread { opacity: 0.75; }
 
-/* Room a host can fill: a strip under the toolbar, a block above the text, a pane beside the page. */
+/* Room a host can fill: a strip under the toolbar, a block above the text, a pane beside the page and one before it. */
 .galley-slot[data-slot="header"] { flex: none; }
 .galley-slot[data-slot="top"] { flex: none; width: 100%; max-width: var(--galley-w-page); margin: 0 auto; }
 .galley-slot[data-slot="side"] {
@@ -438,6 +438,14 @@
   display: flex;
   flex-direction: column;
   border-left: var(--galley-line-hair) solid var(--galley-line);
+  background: var(--galley-canvas);
+}
+.galley-slot[data-slot="start"] {
+  flex: none;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: var(--galley-line-hair) solid var(--galley-line);
   background: var(--galley-canvas);
 }
 .galley-slot:empty { display: none; }
