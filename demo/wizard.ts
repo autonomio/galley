@@ -6,6 +6,8 @@ import type { EditorAction } from '../src/index.js'
 interface Seat { family: string; name: string; model: string }
 interface Context {
   openalexKey: boolean
+  /** The model families galley can use, with the model behind each. */
+  families?: Seat[]
   seats: Record<'author' | 'checker' | 'challenger' | 'verifier', Seat>
   referees: string[]
   defaults: { venue: string; words: number; rounds: number; dial: string; citations: string; literatureReview?: boolean; simulation?: boolean }
@@ -23,6 +25,19 @@ interface DatasetItem {
   /** A dataset given by its link: the published record it comes from, what the record says, and its files as listed there. */
   record?: string; creators?: string; remote?: { name: string; size: number }[]; recordState?: 'reading' | 'read' | 'failed'
 }
+const FAMILY_ORDER = ['claude', 'gpt', 'gemini']
+type SeatName = 'author' | 'checker' | 'challenger' | 'verifier'
+
+/** The seats for the families that are on, as the engine deals them: the author keeps its family if on, else the first on writes; checking seats never go to the author's family. */
+function dealSeats(context: Context | null, on: string[]): Record<SeatName, Seat | undefined> {
+  const base = context?.seats
+  const families = on.length ? FAMILY_ORDER.filter((f) => on.includes(f)) : FAMILY_ORDER
+  const info = (family: string) => context?.families?.find((f) => f.family === family) ?? Object.values(base ?? {}).find((s) => s.family === family)
+  const author = base && families.includes(base.author.family) ? base.author.family : families[0]
+  const away = (f?: string) => f && f !== author && families.includes(f) ? f : families.find((x) => x !== author)!
+  return { author: info(author), checker: info(away(base?.checker.family)), challenger: info(away(base?.challenger.family)), verifier: info(away(base?.verifier.family)) }
+}
+
 /** A link to a published dataset galley can read: a Zenodo record or its DOI. */
 const DATASET_RECORD = /zenodo\.org\/(api\/)?(records?|deposit|uploads)\/\d+|10\.5281\/zenodo\.\d+/i
 
@@ -80,7 +95,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   const datasets: DatasetItem[] = []
   let step = 0
   let context: Context | null = null
-  const settings = { author: '', affiliation: '', funding: '', competingInterests: '', acknowledgements: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, reviewRole: 'supporting', simulation: false, simulationRole: 'supporting', webSources: true }
+  const settings = { author: '', affiliation: '', funding: '', competingInterests: '', acknowledgements: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, reviewRole: 'supporting', simulation: false, simulationRole: 'supporting', webSources: true, families: [...FAMILY_ORDER] }
 
   const dialog = h('dialog', { class: 'gw', 'aria-labelledby': 'gw-title' })
   const trail = h('ol', { class: 'gw-trail' })
@@ -267,8 +282,15 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       el.addEventListener('input', () => { settings[key] = el.value })
       return el
     }
-    const seats = context?.seats
+    const seats = dealSeats(context, settings.families)
     const seatRow = (seat: string, s?: Seat) => h('tr', {}, h('th', { text: seat }), h('td', { text: s?.name ?? '—' }), h('td', { class: 'gw-mono', text: s?.model ?? '' }))
+    const familyBox = (f: Seat) => {
+      const on = settings.families.includes(f.family)
+      const box = h('input', { type: 'checkbox', 'aria-label': f.name, ...(on ? { checked: true } : {}), ...(on && settings.families.length <= 2 ? { disabled: true } : {}) })
+      box.addEventListener('change', () => { settings.families = box.checked ? FAMILY_ORDER.filter((x) => x === f.family || settings.families.includes(x)) : settings.families.filter((x) => x !== f.family); render() })
+      return h('label', { class: 'gw-check' }, box, h('span', { text: f.name }), h('span', { class: 'gw-mono gw-help', text: f.model }))
+    }
+    const families = context?.families ?? FAMILY_ORDER.map((family) => Object.values(context?.seats ?? {}).find((s) => s.family === family)).filter((s): s is Seat => !!s)
     return [
       h('h2', { id: 'gw-title', class: 'gw-title', text: 'How the paper is made' }),
       field('Author', h('div', { class: 'gw-pair' }, input('author', 'Name'), input('affiliation', 'Affiliation')), 'Set in the byline when the paper is typeset; never sent to a model.'),
@@ -287,7 +309,8 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
         ['mixed', 'You pick the load-bearing ones', 'Those claims wait for you to choose among sources a, b and c.'],
         ['choose', 'You pick every one', 'Every claim that needs a source waits for your choice.'],
       ])),
-      field('Seats', h('table', { class: 'gw-seats' }, h('tbody', {}, seatRow('author', seats?.author), seatRow('checker', seats?.checker), seatRow('challenger', seats?.challenger), seatRow('verifier', seats?.verifier))), 'No family judges its own work; a third family settles what an author and a referee cannot agree on.'),
+      field('Models', h('div', { class: 'gw-stack' }, ...families.map(familyBox)), 'Turn a family off and its seats pass to the others: with Claude off, GPT writes. At least two stay on, so one writes and another checks. You can change this later in the project\'s settings, and a running paper follows from its next step.'),
+      field('Seats', h('table', { class: 'gw-seats' }, h('tbody', {}, seatRow('author', seats.author), seatRow('checker', seats.checker), seatRow('challenger', seats.challenger), seatRow('verifier', seats.verifier))), settings.families.length >= 3 ? 'No family judges its own work; a third family settles what an author and a referee cannot agree on.' : 'No family judges its own work. With two families there is no third to settle a dispute, so what an author and a referee cannot agree on is stated as a limitation of the work.'),
       field('Web sources', (() => {
         const box = h('input', { type: 'checkbox', 'aria-label': 'Primary sources from the web', ...(settings.webSources ? { checked: true } : {}) })
         box.addEventListener('change', () => { settings.webSources = box.checked; render() })
@@ -324,8 +347,8 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
 
   // ---------------------------------------------------------------- 4. start
   function startStep(): (Node | null)[] {
-    const s = context?.seats
-    const m = (seat: keyof Context['seats']) => s?.[seat]?.model ?? seat
+    const s = dealSeats(context, settings.families)
+    const m = (seat: SeatName) => s[seat]?.model ?? seat
     const searches = context?.openalexKey ? 'two' : 'one'
     // A step that runs alongside the others shows its own time but adds little to the whole.
     const plan: [string, string, string, number, boolean?][] = [
@@ -421,7 +444,7 @@ interface StatusData {
   cost: { calls: number; tokensInM: number; hours: number }
   typeset: boolean
   seed: string
-  settings: { literatureReview: boolean | string; simulation: boolean | string; rounds: number; words: number; venue: string; authors: string[]; materials: string[] }
+  settings: { literatureReview: boolean | string; simulation: boolean | string; rounds: number; words: number; venue: string; authors: string[]; materials: string[]; families?: string[]; seats?: Record<string, string> }
 }
 
 const clock = (iso: string | Date) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
@@ -436,8 +459,11 @@ function settingRows(d: StatusData): [string, string][] {
     ['Length', `${d.settings.words.toLocaleString('en-US')} words · ${d.settings.rounds} referee round${d.settings.rounds === 1 ? '' : 's'} · ${d.settings.venue}`],
     ['Authors', d.settings.authors.join('; ') || 'not set'],
     ['Materials', d.settings.materials.join('; ') || 'none'],
+    ['Models', `${(d.settings.families ?? FAMILY_ORDER).map((f) => FAMILY_LABEL[f] ?? f).join(', ')}${d.settings.seats ? ` · ${d.settings.seats.author} writes` : ''}`],
   ]
 }
+
+const FAMILY_LABEL: Record<string, string> = { claude: 'Claude Opus 5.5', gpt: 'GPT-6.2 Sol', gemini: 'Gemini 4 Carbon' }
 
 /** Where a paper stands, kept current while the window is open. */
 export function openPaperStatus(slug: string, open?: (manuscript: string) => void): void {
@@ -452,6 +478,25 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
   document.body.append(dialog)
   dialog.showModal()
   close.focus()
+
+  /** The project's model families, changed here: a running paper deals its seats again at its next step. */
+  const modelsControl = (d: StatusData) => {
+    const current = d.settings.families ?? FAMILY_ORDER
+    const note = h('p', { class: 'gw-help', text: 'Turn a family off and its seats pass to the others (with Claude off, GPT writes). A running paper follows from its next step.' })
+    const boxes = FAMILY_ORDER.map((family) => {
+      const on = current.includes(family)
+      const box = h('input', { type: 'checkbox', 'aria-label': FAMILY_LABEL[family], ...(on ? { checked: true } : {}), ...(on && current.length <= 2 ? { disabled: true } : {}) })
+      box.addEventListener('change', async () => {
+        const next = box.checked ? FAMILY_ORDER.filter((x) => x === family || current.includes(x)) : current.filter((x) => x !== family)
+        note.textContent = 'Saving …'
+        const response = await fetch(`/api/galley-papers/${encodeURIComponent(slug)}/models`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ families: next }) })
+        note.textContent = response.ok ? 'Saved. The paper follows from its next step.' : `Not saved: ${await response.text()}`
+        void load()
+      })
+      return h('label', { class: 'gw-check' }, box, h('span', { text: FAMILY_LABEL[family] }))
+    })
+    return h('div', { class: 'gw-field' }, h('div', { class: 'gw-label', text: 'Models' }), h('div', { class: 'gw-stack' }, ...boxes), note)
+  }
 
   const draw = (d: StatusData) => {
     // The window redraws every 10 s; what the person unfolded to read, and where they scrolled, stays put.
@@ -486,6 +531,7 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
       h('dl', { class: 'gw-figures' }, ...rows.flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])),
       h('details', { class: 'gw-seed', open: seedOpen }, h('summary', { text: 'Settings and seed' }),
         h('dl', { class: 'gw-figures' }, ...settingRows(d).flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])),
+        modelsControl(d),
         h('blockquote', { class: 'gw-quote', text: d.seed || '(empty)' })),
     ].filter((x) => !!x) as HTMLElement[])
     body.scrollTop = scroll

@@ -50,7 +50,8 @@ export function codexBin(): string {
   return process.env.GALLEY_CODEX_BIN || (existsSync(APP_CODEX) ? APP_CODEX : 'codex')
 }
 
-const TIMEOUTS: Record<Family, number> = { claude: 25 * 60_000, gpt: 30 * 60_000, gemini: 40 * 60_000 }
+// A watchdog for a call that hangs, the same for every family: a call at full effort on a large request can run long.
+const TIMEOUTS: Record<Family, number> = { claude: 40 * 60_000, gpt: 40 * 60_000, gemini: 40 * 60_000 }
 
 const LIMIT_WORDS = /usage limit|rate[ _-]?limit|quota|resource_exhausted|too many requests|\b429\b|overloaded|server_overloaded/i
 // A provider that cannot be reached is waited out like a limit: an unattended run at night outlasts a network blip.

@@ -60,6 +60,10 @@ test('the paper wizard walks through seed, materials and settings, and starts th
   await wizard.getByRole('radiogroup', { name: 'Systematic literature review: its part in the paper' }).getByRole('radio', { name: 'Main contribution' }).click()
   await expect(wizard).toContainText('The paper is the systematic review')
   await expect(wizard).toContainText('key found: two searches per claim')
+  // With Claude off, GPT writes and Gemini checks.
+  await wizard.getByRole('checkbox', { name: 'Claude Opus 5.5' }).uncheck()
+  await expect(wizard.locator('.gw-seats tr').first()).toContainText('GPT-6.2 Sol')
+  await expect(wizard.getByRole('checkbox', { name: 'GPT-6.2 Sol' })).toBeDisabled()
 
   await wizard.getByRole('button', { name: 'Next: Start' }).click()
   await expect(wizard).toContainText('Measure your data')
@@ -71,7 +75,7 @@ test('the paper wizard walks through seed, materials and settings, and starts th
   await wizard.getByRole('button', { name: 'Start the paper' }).click()
   await expect(wizard.getByRole('heading', { name: 'Writing the paper' })).toBeVisible()
 
-  expect(posted!.settings).toMatchObject({ author: 'Ada Lovelace', rounds: 1, dial: 'autonomous', citations: 'auto', literatureReview: true, reviewRole: 'load-bearing', simulation: true, simulationRole: 'supporting' })
+  expect(posted!.settings).toMatchObject({ author: 'Ada Lovelace', rounds: 1, dial: 'autonomous', citations: 'auto', literatureReview: true, reviewRole: 'load-bearing', simulation: true, simulationRole: 'supporting', families: ['gpt', 'gemini'] })
   expect(posted!.materials).toEqual([{ name: 'https://example.org/survey', url: 'https://example.org/survey' }])
   expect(posted!.datasets).toEqual([expect.objectContaining({
     name: 'trees', producedBy: 'others', doi: 'https://doi.org/10.5281/zenodo.123', private: true,

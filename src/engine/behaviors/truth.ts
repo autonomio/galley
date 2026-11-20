@@ -1,6 +1,7 @@
 // Every external claim gets evidence from Canary's search, a verbatim passage
 // from the work itself, and a verdict from a family that did not propose it.
 import { createHash } from 'node:crypto'
+import { familiesOn } from '../config.js'
 import { canarySearch, openalexKeyed, SourceUnavailable, workFromHit, type QueryResult, type SearchHit } from '../evidence.js'
 import type { Paper } from '../paper.js'
 import { HOUSE } from '../prompts.js'
@@ -24,7 +25,7 @@ const needsEvidence = (c: Claim) => c.need === 'external' && c.status === 'open'
 
 /** A claim the scholarly index had nothing for, still waiting for its look at primary sources on the web (when the paper uses them). */
 export const awaitsWebSearch = (paper: Paper, c: Claim) =>
-  paper.config.webSources !== false && c.need === 'external' && c.status === 'unsupported' && !paper.state.attempts[`web:${c.id}`]
+  paper.config.webSources !== false && familiesOn(paper.config).includes('gpt') && c.need === 'external' && c.status === 'unsupported' && !paper.state.attempts[`web:${c.id}`]
 
 function needsSearch(paper: Paper, c: Claim): boolean {
   return needsEvidence(c) && !paper.state.candidates.some((k) => k.claimId === c.id) && !paper.state.choices?.[c.id]

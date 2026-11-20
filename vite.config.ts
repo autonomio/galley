@@ -116,6 +116,22 @@ function papersPlugin(): Plugin {
         // document's name. A project started before this keeps its <name>-paper folder and is still found.
         const legacy = join(papers, `${slug}-paper`)
         const paperDir = existsSync(join(legacy, 'state.json')) ? legacy : join(papers, slug)
+        if (sub === 'models' && req.method === 'POST') {
+          // The project's model families, changed from its settings: a running paper deals its seats again at its next step.
+          if (!existsSync(join(paperDir, 'paper.json'))) { res.statusCode = 404; res.end(); return }
+          let body = ''
+          req.on('data', (chunk) => { body += chunk })
+          req.on('end', () => {
+            const families = (JSON.parse(body || '{}').families ?? []).filter((f: unknown) => ['claude', 'gpt', 'gemini'].includes(String(f)))
+            if (families.length < 2) { res.statusCode = 400; res.end('choose at least two model families'); return }
+            execFile(process.execPath, [cli, 'models', paperDir, families.join(',')], { timeout: 30_000 }, (error, stdout, stderr) => {
+              if (error) { res.statusCode = 500; res.end(String(stderr || error.message)); return }
+              res.setHeader('Content-Type', 'application/json')
+              res.end(stdout)
+            })
+          })
+          return
+        }
         if (sub === 'choices') {
           // "For this claim, choose a, b or c": the open choices, and a person's answer to one.
           const statePath = join(paperDir, 'state.json')
@@ -192,6 +208,9 @@ function papersPlugin(): Plugin {
           if (s.simulation === true) args.push('--simulation', s.simulationRole === 'load-bearing' ? 'load-bearing' : 'yes')
           // Primary sources from the web are on unless the person turned them off.
           if (s.webSources === false) args.push('--web-sources', 'no')
+          // The model families the paper may use, when the person turned one off.
+          const families = Array.isArray(s.families) ? (s.families as unknown[]).map(String).filter((f) => ['claude', 'gpt', 'gemini'].includes(f)) : []
+          if (families.length >= 2 && families.length < 3) args.push('--models', families.join(','))
           // Uploaded files are written under their own names for the engine to copy into the paper; links pass as they are.
           const inbox = join(tmpdir(), `galley-materials-${slug}-${stamp}`)
           for (const m of materials as { name?: string; url?: string; data?: string; private?: boolean }[]) {

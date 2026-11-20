@@ -90,6 +90,38 @@ export interface PaperConfig {
   literatureReview?: boolean | 'load-bearing'
   /** Include a Monte Carlo simulation the author designs and galley runs on this machine: in support, or (load-bearing) as what the main contribution rests on. */
   simulation?: boolean | 'load-bearing'
+  /**
+   * The model families this paper may use; all three unless set. A family that is off hands its seats on: the author's
+   * seat goes to the first family on (Claude, GPT, Gemini), and every checking seat to a family other than the author's.
+   */
+  families?: Family[]
+}
+
+export const FAMILIES: Family[] = ['claude', 'gpt', 'gemini']
+
+/** The families a paper may use, in the order the author's seat prefers them. */
+export const familiesOn = (config: Pick<PaperConfig, 'families'>): Family[] => FAMILIES.filter((f) => (config.families ?? FAMILIES).includes(f))
+
+/**
+ * Seats for the families that are on. The author keeps its family if it is on, else the first family on writes; every
+ * seat that checks the author's work (checker, challenger, verifier, the referees) keeps its family if that is on and
+ * is not the author's, else goes to a family that is, so no family ever checks its own writing.
+ */
+export function applyFamilies<T extends Pick<PaperConfig, 'families' | 'seats' | 'referees'>>(config: T): T {
+  const on = familiesOn(config)
+  if (on.length < 2) throw new Error('a paper needs at least two model families: one writes, another checks')
+  const author = on.includes(config.seats.author) ? config.seats.author : on[0]
+  const away = (f: Family) => f !== author && on.includes(f) ? f : on.find((x) => x !== author)!
+  return {
+    ...config,
+    seats: { author, checker: away(config.seats.checker), challenger: away(config.seats.challenger), verifier: away(config.seats.verifier) },
+    referees: config.referees.map((r) => ({ ...r, family: away(r.family) })),
+  }
+}
+
+/** The family that settles a dispute between the author and a referee: one that is neither, among those on; none when only two are on. */
+export function adjudicatorFor(config: Pick<PaperConfig, 'families'>, author: Family, raising: Family): Family | null {
+  return familiesOn(config).find((f) => f !== author && f !== raising) ?? null
 }
 
 export const DEFAULT_REFEREES: RefereeSeat[] = [
@@ -145,10 +177,4 @@ export function specFor(config: PaperConfig, family: Family): ModelSpec {
 export function lightSpecFor(config: PaperConfig, family: Family): ModelSpec {
   const chosen = config.lightModels?.[family] ?? LIGHT_MODELS[family]
   return { family, model: chosen.model, effort: chosen.effort }
-}
-
-/** The family that is neither of the two given: the third voice for adjudication. */
-export function thirdFamily(...taken: Family[]): Family {
-  const families: Family[] = ['claude', 'gpt', 'gemini']
-  return families.find((f) => !taken.includes(f)) ?? families.find((f) => f !== taken[0])!
 }

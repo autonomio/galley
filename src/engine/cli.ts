@@ -13,12 +13,12 @@
 //   galley ladder                    the behaviors, in ladder order
 //   galley doctor                    check that every model, tool and source answers
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { LADDER } from './behaviors/index.js'
 import { answerChoice } from './behaviors/truth.js'
-import { defaultConfig, FAMILY_MODELS, FAMILY_NAMES } from './config.js'
+import { applyFamilies, defaultConfig, FAMILIES, familiesOn, FAMILY_MODELS, FAMILY_NAMES } from './config.js'
 import { budgetLine, canaryPython, canarySearch, openalexBudget, openalexKeyed, SEARCH_CREDITS } from './evidence.js'
 import { callModel, codexBin, resetHintMs } from './models.js'
 import { Paper } from './paper.js'
@@ -49,6 +49,15 @@ function option(value: string | undefined): true | 'load-bearing' | undefined {
   if (!value) return undefined
   if (/^load[-_ ]?bearing$|^main$|^central$/i.test(value)) return 'load-bearing'
   return /^(yes|true|on|systematic)$/i.test(value) ? true : undefined
+}
+
+/** Model families as a list (claude,gpt,gemini): at least two, so one writes and another checks. */
+function modelsFlag(value: string): Family[] {
+  const families = [...new Set(value.split(/[,\s]+/).map((v) => v.trim().toLowerCase()).filter(Boolean))] as Family[]
+  const unknown = families.filter((f) => !FAMILIES.includes(f))
+  if (unknown.length) throw new Error(`unknown model families: ${unknown.join(', ')} (choose from ${FAMILIES.join(', ')})`)
+  if (families.length < 2) throw new Error('choose at least two model families: one writes, another checks')
+  return families
 }
 
 function positional(): string[] {
@@ -144,6 +153,9 @@ function statusData(paper: Paper): Record<string, unknown> {
       rounds: paper.config.rounds, words: paper.config.words, venue: paper.config.venue,
       authors: paper.config.authors.map((a) => a.affiliation ? `${a.name}, ${a.affiliation}` : a.name),
       materials: (paper.config.materials ?? []).map((m) => `${m.name}${m.kind === 'dataset' ? (m.private ? ' (private dataset)' : ' (shared dataset)') : m.kind === 'link' ? ' (link)' : ''}`),
+      // The model families the paper may use, and who sits where for them; a change takes effect at the next step.
+      families: familiesOn(paper.config),
+      seats: Object.fromEntries(Object.entries(paper.config.seats).map(([seat, family]) => [seat, FAMILY_NAMES[family]])),
     },
   }
 }
@@ -285,6 +297,7 @@ async function main(): Promise<void> {
         ...(option(flag('literature-review')) !== undefined ? { literatureReview: option(flag('literature-review')) } : {}),
         ...(option(flag('simulation')) !== undefined ? { simulation: option(flag('simulation')) } : {}),
         ...(/^(no|off|false)$/i.test(flag('web-sources') ?? '') ? { webSources: false } : {}),
+        ...(flag('models') ? { families: modelsFlag(flag('models')!) } : {}),
       })
       console.log(`Paper created in ${dir}`)
       if (command === 'write') await run(dir)
@@ -365,14 +378,28 @@ async function main(): Promise<void> {
     }
     case 'context': {
       // What a host shows before a paper starts: who sits where, the defaults, and whether literature search has a key.
-      const config = defaultConfig()
+      // With --models, the seats as they are dealt for those families.
+      const config = applyFamilies({ ...defaultConfig(), ...(flag('models') ? { families: modelsFlag(flag('models')!) } : {}) })
       console.log(JSON.stringify({
         openalexKey: openalexKeyed(),
+        families: familiesOn(config).map((family) => ({ family, name: FAMILY_NAMES[family], model: FAMILY_MODELS[family].model })),
         seats: Object.fromEntries(Object.entries(config.seats).map(([seat, family]) => [seat, { family, name: FAMILY_NAMES[family], model: FAMILY_MODELS[family].model }])),
         referees: config.referees.map((r) => r.seat),
         defaults: { venue: config.venue, words: config.words, rounds: config.rounds, dial: config.dial, citations: config.citations, literatureReview: false, simulation: false },
         review: REVIEW_SETTINGS,
       }))
+      return
+    }
+    case 'models': {
+      // Which model families a paper may use: written to its paper.json; a running paper deals its seats again at its next step.
+      const [dir, list] = positional()
+      if (!dir || !list) throw new Error('usage: galley models <dir> claude,gpt,gemini')
+      const path = resolve(dir, 'paper.json')
+      const config = JSON.parse(readFileSync(path, 'utf8'))
+      config.families = modelsFlag(list)
+      writeFileSync(path, JSON.stringify(config, null, 2) + '\n')
+      const dealt = Paper.readConfig(resolve(dir))
+      console.log(JSON.stringify({ families: familiesOn(dealt), seats: dealt.seats, referees: dealt.referees.map((r) => ({ seat: r.seat, family: r.family })) }))
       return
     }
     case 'ladder':

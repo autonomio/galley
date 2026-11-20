@@ -2,7 +2,7 @@
 // whole manuscript; the author answers each material finding; the referee who
 // raised it verifies the answer; a third family settles what stays disputed.
 // Minor findings are fixed in place by whoever saw them, with no thread.
-import { thirdFamily } from '../config.js'
+import { adjudicatorFor, familiesOn } from '../config.js'
 import type { Paper } from '../paper.js'
 import { HOUSE, STYLE } from '../prompts.js'
 import type { Behavior, Target } from '../scheduler.js'
@@ -14,12 +14,11 @@ import { resolved } from '../findings.js'
 import { activeClaims, briefBlock, citableKeys, citationEvidenceBlock, claimsBlock, live, manuscriptBlock, nextClaimId, now, placeholderLegend, seatFamily, sectionText } from './common.js'
 import { setPassage } from './write.js'
 
-const families: Family[] = ['claude', 'gpt', 'gemini']
 
 /** Referee seats for a round. Families rotate between rounds and never include the author's. */
 export function refereesFor(paper: Paper, round: number): { seat: string; family: Family; brief: string }[] {
   const author = paper.config.seats.author
-  const others = families.filter((f) => f !== author)
+  const others = familiesOn(paper.config).filter((f) => f !== author)
   return paper.config.referees.map((ref, i) => {
     let family = ref.family === author ? others[i % others.length] : ref.family
     if (round > 1 && others.length > 1) family = others[(others.indexOf(family) + round - 1) % others.length]
@@ -324,6 +323,8 @@ function adjudicationFailed(paper: Paper, f: Finding, family: Family, why: strin
   paper.journal({ event: 'adjudication-unsettled', finding: f.id, family, why })
 }
 const stuckFinding = (paper: Paper, f: Finding) => f.status === 'open' && f.dispositions.length >= paper.config.fixAttempts && f.assignee !== 'humans'
+/** The family that settles a finding: one that is neither the author's nor the referee's, when a third family is on. */
+const adjudicatorOf = (paper: Paper, f: Finding) => adjudicatorFor(paper.config, paper.config.seats.author, f.family)
 
 /**
  * Findings an author and a referee could not settle go to the third family at
@@ -340,10 +341,10 @@ export const adjudicate: Behavior = {
   ready: (paper) => {
     const s = paper.state
     if (!live(paper)) return []
-    const stuck = s.findings.filter((f) => stuckFinding(paper, f) && failedAdjudications(paper, f) < ADJUDICATION_TRIES)
+    const stuck = s.findings.filter((f) => stuckFinding(paper, f) && failedAdjudications(paper, f) < ADJUDICATION_TRIES && adjudicatorOf(paper, f))
     const groups = new Map<string, { sectionId: string | null; family: Family; findings: Finding[] }>()
     for (const f of stuck) {
-      const family = thirdFamily(paper.config.seats.author, f.family)
+      const family = adjudicatorOf(paper, f)!
       const key = `${f.sectionId ?? 'paper'}|${family}`
       const group = groups.get(key) ?? { sectionId: f.sectionId, family, findings: [] }
       group.findings.push(f)
@@ -409,7 +410,8 @@ export const handleFinding: Behavior = {
   ready: (paper) => {
     const s = paper.state
     if (!live(paper)) return []
-    return s.findings.filter((f) => stuckFinding(paper, f) && failedAdjudications(paper, f) >= ADJUDICATION_TRIES).map((f): Target => ({
+    // With only two families on there is no third to settle a dispute: the paper states the finding as a limitation.
+    return s.findings.filter((f) => stuckFinding(paper, f) && (failedAdjudications(paper, f) >= ADJUDICATION_TRIES || !adjudicatorOf(paper, f))).map((f): Target => ({
       key: `handle-finding:${f.id}`, label: f.id,
       run: async () => {
         const home = limitsSection(paper)

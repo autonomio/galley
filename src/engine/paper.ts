@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { defaultConfig, lightSpecFor, specFor, type PaperConfig } from './config.js'
+import { applyFamilies, defaultConfig, familiesOn, lightSpecFor, specFor, type PaperConfig } from './config.js'
 import { callModel, ModelFailure, RateLimited, resetHintMs, type CallResult } from './models.js'
 import type { Schema } from './schema.js'
 import type { Family, Note, PaperState, Seat } from './types.js'
@@ -143,7 +143,25 @@ export class Paper {
     const path = join(dir, 'paper.json')
     const overrides = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}
     const base = defaultConfig()
-    return { ...base, ...overrides, seats: { ...base.seats, ...(overrides.seats || {}) } }
+    // The seats follow the families the paper may use.
+    return applyFamilies({ ...base, ...overrides, seats: { ...base.seats, ...(overrides.seats || {}) } })
+  }
+
+  /**
+   * A change of model families in paper.json (from the project's settings) takes effect at the next step of a running
+   * paper: the seats are dealt again for the families now on. Returns whether anything changed.
+   */
+  refreshFamilies(): boolean {
+    const path = this.path('paper.json')
+    if (!existsSync(path)) return false
+    let families: Family[] | undefined
+    try { families = JSON.parse(readFileSync(path, 'utf8')).families } catch { return false }
+    if (JSON.stringify(familiesOn({ families })) === JSON.stringify(familiesOn(this.config))) return false
+    const fresh = Paper.readConfig(this.dir)
+    this.config = { ...this.config, families: fresh.families, seats: fresh.seats, referees: fresh.referees }
+    this.journal({ event: 'families', families: familiesOn(this.config), seats: this.config.seats })
+    this.say(`Models now: ${familiesOn(this.config).join(', ')}; ${Object.entries(this.config.seats).map(([seat, f]) => `${seat} ${f}`).join(', ')}`)
+    return true
   }
 
   path(...parts: string[]): string {
