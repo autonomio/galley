@@ -354,6 +354,9 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
   close.focus()
 
   const draw = (d: StatusData) => {
+    // The window redraws every 10 s; what the person unfolded to read, and where they scrolled, stays put.
+    const seedOpen = !!body.querySelector<HTMLDetailsElement>('details.gw-seed')?.open
+    const scroll = body.scrollTop
     const current = d.stages.findIndex((s) => !s.done)
     const done = d.outcome === 'ready_for_submission'
     const state = done
@@ -381,10 +384,11 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
         : d.running && d.waiting ? h('div', { class: 'gw-box' }, h('div', { class: 'gw-label', text: 'Now' }), h('p', { class: 'gw-now' }, h('span', { class: 'gw-now-what' }, h('strong', { text: `Waiting for ${d.waiting.name}` }), h('span', { class: 'gw-now-who', text: d.waiting.resetsIn === null ? 'Usage limit; it carries on by itself.' : d.waiting.resetsIn > 0 ? `Usage quota; resets in ${ago(d.waiting.resetsIn)}.` : 'Usage quota has reset.' })), h('span', { class: 'gw-mono gw-now-time', text: `next try in ${ago(d.waiting.seconds)}` })))
         : d.running ? h('div', { class: 'gw-box' }, h('div', { class: 'gw-label', text: 'Now' }), h('p', { class: 'gw-now' }, h('span', { class: 'gw-help', text: 'Between steps; the next one starts in a moment.' }))) : null,
       h('dl', { class: 'gw-figures' }, ...rows.flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])),
-      h('details', { class: 'gw-seed' }, h('summary', { text: 'Settings and seed' }),
+      h('details', { class: 'gw-seed', open: seedOpen }, h('summary', { text: 'Settings and seed' }),
         h('dl', { class: 'gw-figures' }, ...settingRows(d).flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])),
         h('blockquote', { class: 'gw-quote', text: d.seed || '(empty)' })),
     ].filter((x) => !!x) as HTMLElement[])
+    body.scrollTop = scroll
     // The paper is this document now; a project from before has its own document to open.
     openButton.hidden = !(d.typeset && open) || d.slug === slug
     openButton.onclick = () => { dialog.close(); open?.(d.slug) }
