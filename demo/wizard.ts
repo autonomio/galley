@@ -24,7 +24,13 @@ interface DatasetItem {
   name: string; files: { file: File; detail: string }[]; producedBy: 'authors' | 'others'; doi: string; version: string; describedIn: string; licence: string; private: boolean
   /** A dataset given by its link: the published record it comes from, what the record says, and its files as listed there. */
   record?: string; creators?: string; remote?: { name: string; size: number }[]; recordState?: 'reading' | 'read' | 'failed'
+  /** A database: its connection (a saved name, or the line and where ClickHouse was found) and which database, with its size. */
+  db?: { connection?: string; line?: string; via?: string; host?: string; container?: string; url?: string; user?: string; database: string; summary: string }
 }
+/** A ClickHouse found from one connection line, with its databases. */
+interface FoundDatabase { via: string; label: string; url?: string; user?: string; host?: string; container?: string; version: string; databases: { name: string; tables: number; rows: number; bytes: number }[] }
+const size = (bytes: number) => bytes >= 2 ** 30 ? `${(bytes / 2 ** 30).toFixed(1)} GiB` : `${Math.max(1, Math.round(bytes / 2 ** 20))} MiB`
+const rowsText = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(1)} billion rows` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} million rows` : `${n.toLocaleString('en-US')} rows`
 const FAMILY_ORDER = ['claude', 'gpt', 'gemini']
 type SeatName = 'author' | 'checker' | 'challenger' | 'verifier'
 
@@ -93,6 +99,13 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   const paragraphs = text.split(/\n\s*\n/).filter((p) => p.trim()).length
   const items: Item[] = []
   const datasets: DatasetItem[] = []
+  // Connecting a database: what one line found, and the connections saved on the machine running galley.
+  let found: FoundDatabase[] | null = null
+  let finding: 'idle' | 'finding' | 'failed' = 'idle'
+  let findError = ''
+  let foundLine = ''
+  let allDatabases = false
+  let saved: { name: string; via: string; host?: string; url?: string; container?: string; database: string }[] | null = null
   let step = 0
   let context: Context | null = null
   const settings = { author: '', affiliation: '', funding: '', competingInterests: '', acknowledgements: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, reviewRole: 'supporting', simulation: false, simulationRole: 'supporting', webSources: true, families: [...FAMILY_ORDER] }
@@ -181,6 +194,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       h('p', { class: 'gw-lead', text: 'Besides the literature, a paper can rest on your own material: data, notes, drafts, pages.' }),
       drop,
       h('div', { class: 'gw-linkrow' }, url, h('button', { type: 'button', class: 'gw-btn', text: 'Add link', onclick: addLink }), h('label', { class: 'gw-btn gw-folder' }, folder, 'Choose a folder')),
+      databaseRow(),
       ...datasets.map(datasetCard),
       list,
       privateSets ? h('p', { class: 'gw-note' }, h('strong', { text: 'Private datasets stay on this machine. ' }), 'The models see only a summary of each column and the results galley computes here, and every number the paper states about your data comes from those results.') : null,
@@ -204,7 +218,9 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
         h('span', { class: 'gw-kind gw-kind--dataset', 'aria-hidden': 'true' }), text('name', 'Dataset name'),
         segmented([['Private', true], ['Shared', false]], d.private, (v) => { d.private = v; render() }, `Who may read ${d.name}`),
         h('button', { type: 'button', class: 'gw-x', 'aria-label': `Remove ${d.name}`, text: '×', onclick: () => { datasets.splice(index, 1); render() } })),
-      ...(d.record ? [
+      ...(d.db ? [
+        h('p', { class: 'gw-help', text: `Database ${d.db.database}: ${d.db.summary}. Read-only: the analyses take only the extracts they need from it, as queries aggregated in the database, and every query goes into the evidence package.` }),
+      ] : d.record ? [
         h('p', { class: 'gw-help', text: d.recordState === 'reading' ? `Reading ${d.record} …`
           : d.recordState === 'failed' ? `The record at ${d.record} could not be read. Check the link; galley tries again when the paper starts.`
             : `Published by ${d.creators || 'its creators'}${d.version ? `, version ${d.version}` : ''}${d.licence ? `, ${d.licence}` : ''}${d.doi ? `, DOI ${d.doi}` : ''}. The paper cites it by this record.` }),
@@ -216,14 +232,70 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
           h('button', { type: 'button', class: 'gw-x', 'aria-label': `Remove ${f.file.name}`, text: '×', onclick: () => { d.files.splice(i, 1); if (!d.files.length) datasets.splice(index, 1); render() } })))),
         h('label', { class: 'gw-btn gw-addfiles' }, more, 'Add files to this dataset'),
       ]),
-      row('Who produced it', segmented([['I or my group', 'authors'], ['Others', 'others']], d.producedBy, (v) => { d.producedBy = v as DatasetItem['producedBy']; render() }, `Who produced ${d.name}`)),
-      row('Published as', text('doi', 'Published as', 'DOI or link, if published')),
-      row('Version', text('version', 'Version', 'Version, if any')),
-      row('First reported in', text('describedIn', 'First reported in', 'DOI or link of the paper that first reported it')),
-      row('Licence', text('licence', 'Licence', 'Licence, if any')),
+      row(d.db ? 'Who keeps it' : 'Who produced it', segmented([['I or my group', 'authors'], ['Others', 'others']], d.producedBy, (v) => { d.producedBy = v as DatasetItem['producedBy']; render() }, `Who produced ${d.name}`)),
+      ...(d.db ? [] : [
+        row('Published as', text('doi', 'Published as', 'DOI or link, if published')),
+        row('Version', text('version', 'Version', 'Version, if any')),
+        row('First reported in', text('describedIn', 'First reported in', 'DOI or link of the paper that first reported it')),
+        row('Licence', text('licence', 'Licence', 'Licence, if any')),
+      ]),
       h('p', { class: 'gw-help', text: d.producedBy === 'others' || d.doi || d.describedIn
         ? 'The paper analyses this data and cites it where it describes it, never as measurements made for this paper.'
         : 'Data you produced for this paper is your own work. If it was published before, give where, and the paper cites it.' }))
+  }
+
+  /**
+   * Connect a database with one line: user@server (reached over SSH with your keys) or a clickhouse:// address. galley
+   * finds the ClickHouse there and lists its databases; pick one and it becomes a dataset. A connection used before can
+   * be picked by its name.
+   */
+  function databaseRow(): HTMLElement {
+    if (saved === null) {
+      saved = []
+      void fetch('/api/galley-papers/_databases').then((r) => r.ok ? r.json() : []).then((list) => { saved = list; if (saved?.length) render() }).catch(() => {})
+    }
+    const line = h('input', { type: 'text', class: 'gw-input', value: foundLine, placeholder: 'user@server, or clickhouse://user:password@host:8123', 'aria-label': 'Database connection' })
+    const find = async () => {
+      foundLine = line.value.trim()
+      if (!foundLine) return
+      finding = 'finding'
+      found = null
+      allDatabases = false
+      render()
+      try {
+        // The line may carry a password: it goes in the body, never in a URL.
+        const response = await fetch('/api/galley-papers/_databases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ line: foundLine }) })
+        if (!response.ok) throw new Error(await response.text())
+        found = await response.json()
+        finding = 'idle'
+      } catch (error) {
+        finding = 'failed'
+        findError = (error as Error).message
+      }
+      render()
+    }
+    line.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); void find() } })
+    const use = (db: DatasetItem['db'], name: string) => {
+      datasets.push({ name, files: [], producedBy: 'authors', doi: '', version: '', describedIn: '', licence: '', private: true, db })
+      found = null
+      render()
+    }
+    // A server can hold many databases, most of them empty or small: the ten largest that hold data first, the rest on request.
+    const offered = (found ?? []).flatMap((f) => f.databases.map((d) => ({ f, d }))).sort((a, b) => b.d.bytes - a.d.bytes)
+    const first = offered.filter(({ d }) => d.rows > 0).slice(0, 10)
+    const shown = allDatabases ? offered : first
+    const options = shown.map(({ f, d }) => h('li', { class: 'gw-row gw-row--file' },
+      h('span', { class: 'gw-row-main' }, h('span', { class: 'gw-mono gw-row-name', text: d.name }), h('span', { class: 'gw-row-detail', text: `${d.tables} tables · ${rowsText(d.rows)} · ${size(d.bytes)} · ClickHouse ${f.version}, ${f.label}` })),
+      h('button', { type: 'button', class: 'gw-btn', text: 'Use', 'aria-label': `Use ${d.name}`, onclick: () => use({ line: foundLine, via: f.via, host: f.host, container: f.container, url: f.url, user: f.user, database: d.name, summary: `${d.tables} tables · ${rowsText(d.rows)} · ${size(d.bytes)} · ClickHouse ${f.version} · ${f.label}` }, d.name) })))
+    return h('div', { class: 'gw-field' },
+      h('div', { class: 'gw-label', text: 'Connect a database' }),
+      h('div', { class: 'gw-linkrow' }, line, h('button', { type: 'button', class: 'gw-btn', text: finding === 'finding' ? 'Connecting …' : 'Connect', onclick: () => void find(), ...(finding === 'finding' ? { disabled: true } : {}) })),
+      saved?.length ? h('div', { class: 'gw-stack' }, ...saved.map((c) => h('button', { type: 'button', class: 'gw-btn gw-saved', text: `Use ${c.name}`, onclick: () => use({ connection: c.name, database: c.database, summary: `saved connection: ${c.name}` }, c.database) }))) : null,
+      finding === 'failed' ? h('p', { class: 'gw-attention', text: `Not connected: ${findError}` }) : null,
+      found && !offered.length ? h('p', { class: 'gw-help', text: 'No ClickHouse that galley can query was found there.' }) : null,
+      options.length ? h('ul', { class: 'gw-list' }, ...options) : null,
+      offered.length > shown.length ? h('button', { type: 'button', class: 'gw-btn gw-saved', text: `Show all ${offered.length} databases`, onclick: () => { allDatabases = true; render() } }) : null,
+      h('p', { class: 'gw-help', text: 'Read-only: galley takes from it only the extracts the analyses need, as queries aggregated in the database. A server is reached over SSH with the keys of the machine that runs galley, which keeps the connection under a name for everyone who uses it; a password never reaches a paper or a model.' }))
   }
 
   /** A dataset by its link: the card shows what the record says at once; the files are downloaded when the paper starts. */
@@ -393,7 +465,10 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       const materials = await Promise.all(items.map(async (item) => item.kind === 'link'
         ? { name: item.name, url: item.url }
         : { name: item.name, private: item.private, data: await base64(item.file!) }))
-      const sets = await Promise.all(datasets.map(async (d) => d.record
+      const sets = await Promise.all(datasets.map(async (d) => d.db
+        // A database: where it was found (or its saved connection's name) and which one; the server keeps the connection.
+        ? { database: d.db, name: d.name, producedBy: d.producedBy, private: d.private }
+        : d.record
         // A dataset by its link: the engine reads the record and downloads its files; the person's answers go with it.
         ? { record: d.record, name: d.recordState === 'read' ? d.name : '', producedBy: d.producedBy, describedIn: d.describedIn, private: d.private }
         : {

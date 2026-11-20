@@ -6,7 +6,7 @@ import { extract, outline, plan, position, reformulate, reviewIdea, selectDirect
 import { adjudicate, closeRound, handleFinding, referee, respond, verifyDisposition } from './review.js'
 import { findEvidence, reassess, verify } from './truth.js'
 import { draft, fidelity, figure, frame as firstFrame } from './write.js'
-import { analyzeData, planAnalysis, reviewAnalysisPlan } from './data.js'
+import { analyzeData, extractData, planAnalysis, reviewAnalysisPlan } from './data.js'
 import { literatureReview } from './literature.js'
 import { simulateModel } from './simulate.js'
 import { proof } from './proof.js'
@@ -23,7 +23,7 @@ export const LADDER: Behavior[] = [
   // When asked for: a systematic review of the literature, by Canary, in the background.
   literatureReview,
   // With the authors' data: plan the analysis to the field's standard, have a statistician review it, run it, then argue.
-  planAnalysis, reviewAnalysisPlan, analyzeData,
+  planAnalysis, reviewAnalysisPlan, extractData, analyzeData,
   // When asked for: the Monte Carlo simulation the argument needs, run on this machine.
   simulateModel,
   plan, outline,

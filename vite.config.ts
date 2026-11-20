@@ -98,6 +98,30 @@ function papersPlugin(): Plugin {
           res.end(execFileSync(process.execPath, [cli, 'context']).toString())
           return
         }
+        if (slugPart === '_databases') {
+          // POST { line } (user@server, or a clickhouse:// address): every ClickHouse found there, with its databases.
+          // GET: the connections saved on the machine that runs galley, passwords left out. The line may carry a
+          // password, so it travels in the body and reaches the CLI on its stdin, never in a URL or a process argument.
+          if (!existsSync(cli)) { res.statusCode = 503; res.end('build galley first: npm run build'); return }
+          const answer = (input?: string) => {
+            const child = execFile(process.execPath, [cli, 'db', ...(input ? ['-'] : [])], { timeout: 120_000 }, (error, stdout, stderr) => {
+              if (error) { res.statusCode = 502; res.end(String(stderr || error.message).split('\n').filter(Boolean).at(-1) ?? 'the server could not be reached'); return }
+              res.setHeader('Content-Type', 'application/json')
+              res.end(stdout)
+            })
+            child.stdin?.end(input ?? '')
+          }
+          if (req.method !== 'POST') { answer(); return }
+          let body = ''
+          req.on('data', (chunk) => { body += chunk })
+          req.on('end', () => {
+            let line = ''
+            try { line = String(JSON.parse(body || '{}').line ?? '').trim() } catch { /* answered below */ }
+            if (!/^([\w.-]+@[\w.-]+|(clickhouses?|https?):\/\/\S+)$/i.test(line) || line.length > 1000) { res.statusCode = 400; res.end('user@server, or a clickhouse:// or http(s):// address'); return }
+            answer(line)
+          })
+          return
+        }
         if (slugPart === '_record') {
           // What a dataset's published record says (a Zenodo record or its DOI), for the wizard to show before the paper starts.
           const link = new URL(req.url || '/', 'http://localhost').searchParams.get('link') ?? ''
@@ -223,8 +247,19 @@ function papersPlugin(): Plugin {
           }
           // A dataset is one unit of one or more files: they go in a folder of their own, with a manifest of where the data comes from.
           const short = (value: unknown, max: number) => { const v = String(value ?? '').trim(); return v && v.length <= max ? v : undefined }
-          for (const [i, d] of (datasets as { name?: string; record?: string; files?: { name?: string; data?: string }[]; producedBy?: string; version?: string; doi?: string; describedIn?: string; licence?: string; citation?: string; private?: boolean }[]).entries()) {
+          for (const [i, d] of (datasets as { name?: string; record?: string; database?: Record<string, unknown>; files?: { name?: string; data?: string }[]; producedBy?: string; version?: string; doi?: string; describedIn?: string; licence?: string; citation?: string; private?: boolean }[]).entries()) {
             const folder = join(inbox, `dataset-${i + 1}`)
+            // A database: its connection (a saved name, or where it was found) and which database; the engine saves the
+            // connection on this machine and reads the database's schema. The manifest is read once and removed.
+            if (d.database && typeof d.database.database === 'string') {
+              const db = d.database
+              const pick = (k: string, max = 300) => typeof db[k] === 'string' ? short(db[k], max) : undefined
+              mkdirSync(folder, { recursive: true })
+              const manifest = join(folder, 'database.json')
+              writeFileSync(manifest, JSON.stringify({ connection: pick('connection'), line: pick('line'), via: db.via === 'http' ? 'http' : db.via === 'ssh' ? 'ssh' : undefined, host: pick('host'), container: pick('container'), url: pick('url'), user: pick('user'), password: pick('password', 500), database: pick('database', 200), name: short(d.name, 200), producedBy: d.producedBy === 'authors' ? 'authors' : 'others', private: d.private !== false }), { mode: 0o600 })
+              args.push('--database', manifest)
+              continue
+            }
             // A dataset given by its link: the engine reads the record and downloads its files, with the person's answers on top.
             if (d.record && /^(https?:\/\/\S+|10\.\d{4,9}\/\S+)$/i.test(d.record)) {
               mkdirSync(folder, { recursive: true })

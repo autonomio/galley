@@ -113,6 +113,51 @@ test('a link to a published dataset becomes a dataset, read from its record and 
   expect(posted!.datasets).toEqual([{ record: 'https://zenodo.org/records/19781923', name: 'VPP latency measurements', producedBy: 'others', describedIn: '', private: false }])
 })
 
+test('one line connects a database: its databases are listed, one becomes a private dataset, and a saved connection is one click', async ({ page }) => {
+  const dir = process.env.GALLEY_E2E_DIR!
+  const slug = `seed-${Date.now()}`
+  writeFileSync(join(dir, `${slug}.md`), `# Spot trades\n\n${'How often do large trades move the price within a second? '.repeat(10)}\n`)
+  let discovery: Record<string, unknown> | null = null
+  let discoveryUrl = ''
+  let posted: { datasets: Record<string, unknown>[] } | null = null
+  await page.route('**/api/galley-papers/_databases', (route) => {
+    if (route.request().method() !== 'POST') return route.fulfill({ json: [{ name: 'markets on db.example.org', kind: 'clickhouse', via: 'http', url: 'https://db.example.org:8443', user: 'reader', database: 'markets' }] })
+    discovery = route.request().postDataJSON()
+    discoveryUrl = route.request().url()
+    return route.fulfill({ json: [{ via: 'ssh', label: 'clickhouse on root@trades.example.org', host: 'root@trades.example.org', container: 'clickhouse', version: '26.8.1', databases: [{ name: 'origo', tables: 41, rows: 8_200_000_000, bytes: 140_000_000_000 }, { name: 'scratch_empty', tables: 5, rows: 0, bytes: 0 }] }] })
+  })
+  await page.route(`**/api/galley-papers/${slug}`, async (route) => {
+    if (route.request().method() !== 'POST') return route.fulfill({ status: 404, body: '' })
+    posted = route.request().postDataJSON()
+    return route.fulfill({ status: 202, json: {} })
+  })
+  await page.goto(`/?doc=${slug}`)
+  await page.waitForFunction((s) => window.galley?.slug === s, slug)
+  await page.locator('[data-action="write-paper"]').click()
+  const wizard = page.locator('dialog.gw')
+  await wizard.getByRole('button', { name: 'Next: Materials' }).click()
+
+  await wizard.getByLabel('Database connection').fill('root@trades.example.org')
+  await wizard.getByRole('button', { name: 'Connect', exact: true }).click()
+  await expect(wizard.locator('.gw-row', { hasText: 'origo' })).toContainText('41 tables')
+  expect(discovery).toEqual({ line: 'root@trades.example.org' })
+  expect(discoveryUrl).not.toContain('trades.example.org')
+  await expect(wizard.locator('.gw-row', { hasText: 'scratch_empty' })).toBeHidden()
+  await expect(wizard.getByRole('button', { name: 'Show all 2 databases' })).toBeVisible()
+  await wizard.getByRole('button', { name: 'Use origo' }).click()
+  await expect(wizard.locator('.gw-dataset', { hasText: 'Database origo' })).toContainText('Read-only')
+  await wizard.getByRole('button', { name: 'Use markets on db.example.org' }).click()
+  await expect(wizard.locator('.gw-dataset')).toHaveCount(2)
+
+  for (const step of ['Next: Settings', 'Next: Start']) await wizard.getByRole('button', { name: step }).click()
+  await wizard.getByRole('button', { name: 'Start the paper' }).click()
+  await expect(wizard.getByRole('heading', { name: 'Writing the paper' })).toBeVisible()
+  expect(posted!.datasets).toEqual([
+    { database: expect.objectContaining({ line: 'root@trades.example.org', via: 'ssh', host: 'root@trades.example.org', container: 'clickhouse', database: 'origo' }), name: 'origo', producedBy: 'authors', private: true },
+    { database: expect.objectContaining({ connection: 'markets on db.example.org', database: 'markets' }), name: 'markets', producedBy: 'authors', private: true },
+  ])
+})
+
 test('a seed that already has a paper shows where the paper stands, and opens the manuscript once it is typeset', async ({ page }) => {
   const dir = process.env.GALLEY_E2E_DIR!
   const slug = `seed-${Date.now()}`

@@ -302,6 +302,8 @@ export interface DataAnalysis {
   prepare?: { ok: boolean; code: string; report?: { steps: { step: string; rows_before?: number; rows_after?: number; note: string }[]; definitions: string[] }; error?: string }
   /** Planned analyses that did not run: the paper never describes them. */
   notComputed?: { id: string; question: string; why: string }[]
+  /** What the analyses took from a database: each extract's SQL, run read-only by galley, and the table it made. */
+  extracts?: { id: string; database: string; purpose: string; sql: string; ok: boolean; rows?: number; material?: string; sha256?: string; error?: string; ms?: number }[]
   /** The Python and package versions the analyses ran on. */
   environment?: Record<string, string>
 }

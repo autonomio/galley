@@ -13,7 +13,7 @@
 //   galley ladder                    the behaviors, in ladder order
 //   galley doctor                    check that every model, tool and source answers
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { LADDER } from './behaviors/index.js'
@@ -26,7 +26,8 @@ import { editorDir, productionRecord, syncEditor, typeset } from './render.js'
 import { runPaper, Stalled } from './scheduler.js'
 import { obj, bool } from './schema.js'
 import { DOES } from './self.js'
-import { addDatasets, addMaterials, type DatasetManifest } from './materials.js'
+import { addDatabase, addDatasets, addMaterials, type DatasetManifest } from './materials.js'
+import { discover, parseConnectionLine, publicConnection, readConnections, type DatabaseSpec } from './databases.js'
 import { datasetFromRecord, isDatasetRecord, readRecord } from './records.js'
 import { reviewDone } from './behaviors/close.js'
 import { REVIEW_SETTINGS } from './literature.js'
@@ -60,6 +61,14 @@ function modelsFlag(value: string): Family[] {
   return families
 }
 
+/** A database manifest, read once: one that carries a password is removed as soon as it is read; the password goes to the connections file only. */
+function readDatabaseManifest(path: string): DatabaseSpec {
+  const spec = JSON.parse(readFileSync(path, 'utf8')) as DatabaseSpec
+  const lined = spec.line ? parseConnectionLine(spec.line) : null
+  if (spec.password || (lined?.via === 'http' && lined.password)) rmSync(path, { force: true })
+  return spec
+}
+
 function positional(): string[] {
   const out: string[] = []
   for (let i = 0; i < args.length; i++) {
@@ -78,7 +87,7 @@ function slugFromSeed(seed: string, file: string): string {
 /** What each behavior is doing, in words a person reads in the status view. */
 const DOING: Record<string, string> = {
   extract: 'Reading the seed', position: 'Searching the literature for prior art', 'review-idea': 'Reviewing the idea on seven factors', 'literature-review': 'Systematic review of the literature (Canary)', simulate: 'Designing and running the simulation',
-  reformulate: 'Writing three directions', 'select-direction': 'Choosing a direction', 'analysis-plan': 'Planning the analysis of your data', 'analysis-review': 'A statistician reviewing the analysis plan', analyze: 'Running the analyses of your data', plan: 'Planning the argument',
+  reformulate: 'Writing three directions', 'select-direction': 'Choosing a direction', 'analysis-plan': 'Planning the analysis of your data', 'analysis-review': 'A statistician reviewing the analysis plan', 'extract-data': 'Extracting from the database', analyze: 'Running the analyses of your data', plan: 'Planning the argument',
   outline: 'Outlining', 'find-evidence': 'Finding evidence', verify: 'Verifying citations', reassess: 'Reassessing the thesis', calibrate: 'Calibrating the verifier',
   draft: 'Drafting', figure: 'Drawing figures', fidelity: 'Checking sections against their claims', frame: 'Writing the title and abstract',
   referee: 'Referee review', 'close-round': 'Closing the round', respond: 'Answering the referees', 'verify-disposition': 'Referees judging the answers',
@@ -275,6 +284,14 @@ async function main(): Promise<void> {
         manifests.push({ ...manifest, files: (manifest.files ?? []).map((file) => resolve(dirname(resolve(value)), file)) })
       }
       const units = manifests.length ? await addDatasets(dir, manifests, loose.length) : { materials: [], datasets: [] }
+      // A database: a saved connection's name, user@server#database or clickhouse://…#database, or a manifest naming one.
+      for (const value of flags('database')) {
+        const saved = readConnections().find((c) => c.name === value)
+        const spec: DatabaseSpec = saved ? { connection: saved.name, database: saved.database }
+          : /#[\w-]+$/.test(value) ? { line: value.replace(/#[\w-]+$/, ''), database: value.match(/#([\w-]+)$/)![1] }
+            : readDatabaseManifest(value)
+        units.datasets.push(await addDatabase(dir, spec, `D${units.datasets.length + 1}`))
+      }
       const materials = [...loose, ...units.materials]
       for (const m of materials) console.log(`Material ${m.id}: ${m.kind} ${m.url ?? m.name}${m.dataset ? ` in ${m.dataset}` : ''}${m.kind === 'dataset' ? (m.private ? ' (private)' : ' (shared)') : m.text ? '' : ' (its text could not be read)'}`)
       for (const u of units.datasets) console.log(`Dataset ${u.id}: ${u.name}, produced by ${u.producedBy}${u.doi ? `, DOI ${u.doi}` : u.url ? `, ${u.url}` : ''}${u.describedIn ? `, first reported in ${u.describedIn}` : ''}`)
@@ -367,6 +384,14 @@ async function main(): Promise<void> {
       const paper = Paper.open(resolve(dir))
       const editor = editorDir(paper)
       console.log(`The manuscript and its notes are in ${editor}. Open them in the editor with:\n\n  GALLEY_DIR=${editor} npm run dev\n\nthen visit http://localhost:5174. While the paper is being written, your edits, notes and replies are taken in within seconds; otherwise on the next "galley run ${dir}".`)
+      return
+    }
+    case 'db': {
+      // With a line (user@server, or a clickhouse:// address): every ClickHouse found there, with its databases. Without: the saved connections, passwords left out.
+      // "-" reads the line from stdin, so a line that carries a password never shows in a process listing.
+      const [given] = positional()
+      const line = given === '-' ? readFileSync(0, 'utf8').trim() : given
+      console.log(JSON.stringify(line ? await discover(line) : readConnections().map(publicConnection)))
       return
     }
     case 'record': {

@@ -7,8 +7,12 @@
 // printed, with its interval and its n; an analysis that did not run is never
 // described. Without a Python and a sandbox, galley's built-in operations measure
 // instead.
+import { createHash } from 'node:crypto'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { connectionsPath, query, readConnections } from '../databases.js'
 import { canSandbox, dependencyBatches, ensureAnalysisEnv, formatResult, runAnalysis, runPreparation, versions, type AnalysisRun } from '../analysis.js'
-import { analyze, datasetRows, type AnalysisSpec, type Measurement } from '../materials.js'
+import { analyze, datasetRows, saveMaterials, type AnalysisSpec, type Material, type Measurement } from '../materials.js'
 import { RateLimited } from '../models.js'
 import { HOUSE } from '../prompts.js'
 import type { Behavior } from '../scheduler.js'
@@ -21,6 +25,10 @@ const OPS = ['count', 'mean', 'median', 'sd', 'min', 'max', 'quantile', 'share',
 const CODE_BATCH = 2
 
 const datasetsOf = (paper: Parameters<Behavior['ready']>[0]) => (paper.config.materials ?? []).filter((m) => m.kind === 'dataset')
+/** The databases a paper draws on: their extracts become its datasets. */
+const databasesOf = (paper: Parameters<Behavior['ready']>[0]) => (paper.config.datasets ?? []).filter((u) => u.connection)
+/** What a planned analysis may name as its data: a dataset, or a database it takes extracts from. */
+const sourceIds = (paper: Parameters<Behavior['ready']>[0]) => [...datasetsOf(paper).map((d) => d.id), ...databasesOf(paper).map((u) => u.id)]
 
 const PLAN_FIELDS = {
   field: str(), conventions: arr(str()), preparation: arr(str()),
@@ -44,7 +52,7 @@ export const planAnalysis: Behavior = {
   ready: (paper) => {
     const s = paper.state
     const datasets = datasetsOf(paper)
-    if (!live(paper) || !s.brief?.hasSubject || !datasets.length || s.plan || s.measurements || s.analysis) return []
+    if (!live(paper) || !s.brief?.hasSubject || (!datasets.length && !databasesOf(paper).length) || s.plan || s.measurements || s.analysis) return []
     // The analyses serve the chosen direction, so they wait for it.
     if (s.directions.length && !s.selectedDirection && !paper.config.off.includes('select-direction')) return []
     if (!paper.isSettled('review-idea:seed') && !paper.config.off.includes('review-idea')) return []
@@ -59,15 +67,15 @@ You are the author. Before the argument is planned, plan the analysis of the aut
 - field: the research field the analysis belongs to; conventions: that field's own requirements for preparing, analysing and reporting data like this (the standards, guidelines or established practices it follows), each as one sentence.
 - preparation: the steps that make the data analysable as the field requires (units, which observations are valid, how groups are formed), each with its reason.
 - analyses, at most 12, with ids P1, P2 …: what the claims need, including what could contradict them. Start with the descriptive statistics of each dataset and each group the claims compare: n, missing values, centre, spread and the quantiles the claims use. For each analysis give claims (the ids of the seed claims it serves), question, method (the estimator or test), uncertainty (how its confidence interval or test is computed, by a method valid for this data: for example a distribution-free interval for a quantile, or a block bootstrap when successive observations may be dependent), assumptions (what the method assumes), checks (how each assumption is checked on this data) and datasets (their ids).
-Plan only what the datasets can answer.
+Plan only what the datasets can answer.${databasesOf(paper).length ? ` A DATABASE among the materials gives its data as extracts: name it (its id) among an analysis's datasets, and plan what can be computed from tables aggregated in the database (counts, sums, quantiles, bars by time), since its largest tables hold far more rows than an analysis can take in. The extracts are written next, from this plan.` : ''}
 
-${briefBlock(paper)}
+${briefBlock(paper, { fullSchema: true })}
 
 Claims in the seed:
 ${s.claims.map((c) => `- ${c.id} [${c.kind}] ${c.text}`).join('\n')}`,
           schema: PLAN_SCHEMA,
         })
-        s.analysis = { field: String(reply.field ?? ''), conventions: (reply.conventions ?? []).map(String), preparation: (reply.preparation ?? []).map(String), plan: toPlan(reply, datasets.map((d) => d.id)), mode: 'code' }
+        s.analysis = { field: String(reply.field ?? ''), conventions: (reply.conventions ?? []).map(String), preparation: (reply.preparation ?? []).map(String), plan: toPlan(reply, sourceIds(paper)), mode: 'code' }
         paper.save()
       },
       skip: () => { paper.state.analysis = { field: '', conventions: [], preparation: [], plan: [], mode: 'operations' } },
@@ -103,10 +111,10 @@ ${a.preparation.map((p) => `- ${p}`).join('\n') || '- none named'}
 The plan:
 ${planText(a.plan)}
 
-${briefBlock(paper)}`,
+${briefBlock(paper, { fullSchema: true })}`,
           schema: obj({ ...PLAN_FIELDS, notes: arr(str()) }),
         })
-        const revised = toPlan(reply, datasetsOf(paper).map((d) => d.id))
+        const revised = toPlan(reply, sourceIds(paper))
         if (revised.length) a.plan = revised
         if (reply.conventions?.length) a.conventions = reply.conventions.map(String)
         if (reply.preparation?.length) a.preparation = reply.preparation.map(String)
@@ -121,13 +129,106 @@ ${briefBlock(paper)}`,
   },
 }
 
+/** Extracts per call to the database's author, and how many may be taken. */
+const MAX_EXTRACTS = 12
+
+/** SQL an extract may run: one statement that reads; the limits it runs under are galley's, never the query's own. */
+function extractProblem(sql: string): string | null {
+  const text = sql.trim().replace(/;\s*$/, '')
+  if (!/^(SELECT|WITH)\b/i.test(text)) return 'an extract is one SELECT (or WITH … SELECT) statement'
+  if (/;/.test(text)) return 'an extract is one statement'
+  if (/\bSETTINGS\b/i.test(text)) return 'an extract may not set its own settings; galley sets the limits'
+  if (/\bFORMAT\b\s+\w+\s*$/i.test(text)) return 'an extract does not name a format; galley reads it as CSV'
+  return null
+}
+
+/**
+ * The extracts the reviewed plan needs from a database: the author writes each as a read-only ClickHouse query that
+ * aggregates in the database, galley runs it under its limits, and each table it returns becomes a private dataset
+ * the shared preparation and the analyses start from. The queries go into the evidence package, so anyone with access
+ * to the database can extract them again.
+ */
+export const extractData: Behavior = {
+  id: 'extract-data', stage: 'truth', improver: true, title: 'Extract from the database',
+  ready: (paper) => {
+    const s = paper.state
+    const databases = databasesOf(paper)
+    if (!live(paper) || !databases.length || s.plan || s.measurements) return []
+    if (!s.analysis || (s.analysis.plan.length && !s.analysis.reviewed) || s.analysis.extracts) return []
+    return [{
+      key: 'extract-data:data', label: `extracts from ${databases.map((d) => d.name).join(', ')}`,
+      run: async () => {
+        const a = s.analysis!
+        const write = async (errors: Record<string, string> = {}, done: string[] = []) => (await paper.ask<any>({
+          behavior: 'extract-data', target: Object.keys(errors).join(',') || 'data', seat: 'author', family: seatFamily(paper, 'author'),
+          prompt: `${HOUSE}
+
+Write the extracts the planned analyses below need from the database, each as one read-only ClickHouse query: one SELECT (or WITH … SELECT) statement, no SETTINGS, no FORMAT. Aggregate in the database (counts, sums, quantiles, bars by time, samples drawn by a stated rule) and never pull the raw rows of a large table: an extract returns at most 1,000,000 rows and runs under a time limit. Give each an id (E1, E2 …), the database it reads (its id), purpose (what the analyses use it for, and which ones) and sql. Use only the tables and columns the schema gives. At most ${MAX_EXTRACTS}.
+${Object.keys(errors).length ? `\nThese extracts failed; give each again, fixed, with the same id:\n${Object.entries(errors).map(([id, e]) => `${id}: ${e}`).join('\n')}\n${done.length ? `These already ran and stay as they are: ${done.join(', ')}.\n` : ''}` : ''}
+The field and its conventions: ${a.field}. ${a.conventions.join(' ')}
+The planned analyses:
+${planText(a.plan)}
+
+${briefBlock(paper, { fullSchema: true })}`,
+          schema: obj({ extracts: arr(obj({ id: str(), database: str(), purpose: str(), sql: str() })) }),
+        })).extracts ?? []
+        const extracts: NonNullable<typeof a.extracts> = []
+        const runOne = async (e: any) => {
+          const unit = databasesOf(paper).find((u) => u.id === e.database) ?? databasesOf(paper)[0]
+          const id = /^E\d+$/.test(e.id) ? e.id : `E${extracts.length + 1}`
+          const record = { id, database: unit.id, purpose: String(e.purpose ?? ''), sql: String(e.sql ?? '').trim(), ok: false } as NonNullable<typeof a.extracts>[number]
+          const problem = extractProblem(record.sql)
+          if (problem) return { ...record, error: problem }
+          const connection = readConnections().find((c) => c.name === unit.connection)
+          if (!connection) return { ...record, error: `the connection "${unit.connection}" is not in ${connectionsPath()} on this machine` }
+          const started = Date.now()
+          try {
+            const csv = await query(connection, unit.database!, record.sql)
+            const rows = Math.max(0, csv.trim().split('\n').length - 1)
+            if (!rows) return { ...record, error: 'it returned no rows', ms: Date.now() - started }
+            const materialId = `M${(paper.config.materials ?? []).length + 1}`
+            const file = join('materials', `${materialId}-${unit.id}-${id}.csv`)
+            writeFileSync(paper.path(file), csv)
+            const material: Material = { id: materialId, kind: 'dataset', name: `${unit.name} › ${id}: ${record.purpose.slice(0, 80)}`, file, private: unit.private, dataset: unit.id }
+            paper.config.materials = [...(paper.config.materials ?? []), material]
+            unit.materials.push(materialId)
+            return { ...record, ok: true, rows, material: materialId, sha256: createHash('sha256').update(csv).digest('hex'), ms: Date.now() - started }
+          } catch (error) {
+            return { ...record, error: (error as Error).message.slice(0, 600), ms: Date.now() - started }
+          }
+        }
+        for (const e of (await write()).slice(0, MAX_EXTRACTS)) extracts.push(await runOne(e))
+        // What failed is written again once, with its error.
+        const failed = extracts.filter((e) => !e.ok)
+        if (failed.length) {
+          const again = await write(Object.fromEntries(failed.map((e) => [e.id, e.error ?? 'it did not run'])), extracts.filter((e) => e.ok).map((e) => e.id))
+          for (const e of again) {
+            const at = extracts.findIndex((x) => x.id === e.id && !x.ok)
+            if (at >= 0) extracts[at] = await runOne(e)
+          }
+        }
+        a.extracts = extracts
+        saveMaterials(paper)
+        const missing = extracts.filter((e) => !e.ok)
+        if (missing.length) paper.note('extract-data', `Extracts that could not be taken from the database, so no analysis rests on them: ${missing.map((e) => `${e.id} (${e.purpose}): ${e.error}`).join('; ')}`, true)
+        paper.journal({ event: 'extracted', extracts: extracts.length, rows: extracts.reduce((n, e) => n + (e.rows ?? 0), 0), failed: missing.map((e) => e.id) })
+        paper.save()
+      },
+      // Without extracts the analyses have nothing from the database; they run on the rest of the data, if any.
+      skip: () => { if (paper.state.analysis) paper.state.analysis.extracts = [] },
+    }]
+  },
+}
+
 export const analyzeData: Behavior = {
   id: 'analyze', stage: 'truth', improver: true, title: 'Measure the data',
   ready: (paper) => {
     const s = paper.state
     const datasets = datasetsOf(paper)
-    if (!live(paper) || !datasets.length || s.plan || s.measurements) return []
+    if (!live(paper) || (!datasets.length && !databasesOf(paper).length) || s.plan || s.measurements) return []
     if (!s.analysis || (s.analysis.plan.length && !s.analysis.reviewed)) return []
+    // A database's extracts come first: they are the data the analyses run on.
+    if (databasesOf(paper).length && !s.analysis.extracts) return []
     return [{
       key: 'analyze:data', label: `analyses of ${datasets.map((d) => d.name).join(', ')}`,
       run: async () => {

@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import type { Paper } from './paper.js'
+import { query, resolveConnection, schema, type DatabaseSpec } from './databases.js'
 import { citationKey } from './text.js'
 import type { Work } from './types.js'
 import { readWorkbook, sheetTable, toCsv } from './workbook.js'
@@ -49,6 +50,13 @@ export interface DatasetUnit {
   /** How its producers ask for it to be cited, as they wrote it. */
   citation?: string
   private: boolean
+  /**
+   * A database rather than files: the connection's name in the connections file (never its password), the database,
+   * and the snapshot of its schema the models plan from. Its materials are the extracts the analyses take from it.
+   */
+  connection?: string
+  database?: string
+  schemaFile?: string
 }
 
 /** A dataset as the start dialog or a manifest file gives it. */
@@ -86,6 +94,29 @@ export async function addDatasets(dir: string, manifests: DatasetManifest[], off
     })
   }
   return { materials, datasets }
+}
+
+/** A database added to a paper: its connection saved by name, its schema kept as a snapshot for the models to plan from. */
+export async function addDatabase(dir: string, spec: DatabaseSpec, id: string): Promise<DatasetUnit> {
+  const connection = await resolveConnection(spec)
+  const tables = await schema(connection)
+  const version = (await query(connection, connection.database, 'SELECT version()', 'TSV')).trim()
+  mkdirSync(join(dir, 'materials'), { recursive: true })
+  const schemaFile = join('materials', `${id}-schema.json`)
+  writeFileSync(join(dir, schemaFile), JSON.stringify({ version, database: connection.database, tables }, null, 2))
+  return {
+    id, name: spec.name?.trim() || connection.database, materials: [], producedBy: spec.producedBy === 'authors' ? 'authors' : 'others',
+    private: spec.private !== false, connection: connection.name, database: connection.database, schemaFile,
+  }
+}
+
+/** Write the paper's materials and datasets back to its paper.json, as they grow (a database's extracts). */
+export function saveMaterials(paper: Paper): void {
+  const path = paper.path('paper.json')
+  const config = JSON.parse(readFileSync(path, 'utf8'))
+  config.materials = paper.config.materials
+  config.datasets = paper.config.datasets
+  writeFileSync(path, JSON.stringify(config, null, 2) + '\n')
 }
 
 /**
@@ -360,6 +391,24 @@ export function workKey(paper: Paper, workId: string): string {
   return work.bibKey
 }
 
+/** A database's schema as the models read it: its tables, largest first, with rows, size and columns; never a row of the data. */
+function databaseText(paper: Paper, unit: DatasetUnit, limit = 24_000): string {
+  if (!unit.schemaFile) return '  (its schema could not be read)'
+  const snapshot = JSON.parse(readFileSync(paper.path(unit.schemaFile), 'utf8')) as { version?: string; tables: { table: string; rows: number; bytes: number; columns: string[]; comment?: string }[] }
+  const total = snapshot.tables.reduce((a, t) => ({ rows: a.rows + t.rows, bytes: a.bytes + t.bytes }), { rows: 0, bytes: 0 })
+  const lines: string[] = []
+  let used = 0
+  for (const t of snapshot.tables) {
+    const line = `  ${t.table} (${t.rows.toLocaleString('en-US')} rows, ${(t.bytes / 2 ** 30).toFixed(2)} GiB)${t.comment ? ` -- ${t.comment}` : ''}: ${t.columns.join(', ')}`
+    // A database can hold hundreds of tables: columns for as many as fit, then the rest by name. The steps that plan
+    // the analysis and write the extracts read it whole.
+    if (used + line.length > limit) { lines.push(`  …and ${snapshot.tables.length - lines.length} more tables: ${snapshot.tables.slice(lines.length).map((x) => x.table).join(', ')}`); break }
+    lines.push(line)
+    used += line.length
+  }
+  return `  ClickHouse${snapshot.version ? ` ${snapshot.version}` : ''}, database "${unit.database}": ${snapshot.tables.length} tables, ${total.rows.toLocaleString('en-US')} rows, ${(total.bytes / 2 ** 30).toFixed(1)} GiB. Read-only: the analysis takes from it only the extracts it needs, each a SQL query galley runs (aggregated in the database, at most 1,000,000 rows), and no row of it reaches a model unless an extract is shared.\n  Tables, largest first:\n${lines.join('\n')}`
+}
+
 /** How the paper may describe a dataset, from where it comes. */
 function provenance(paper: Paper, unit: DatasetUnit): string {
   const sources = datasetSources(paper, unit)
@@ -377,9 +426,10 @@ function provenance(paper: Paper, unit: DatasetUnit): string {
 }
 
 /** The materials as the seats read them: a private dataset only as its profile, never a row of it; a dataset unit with where it comes from. */
-export function materialsBlock(paper: Paper): string {
+export function materialsBlock(paper: Paper, options: { fullSchema?: boolean } = {}): string {
   const list = paper.config.materials ?? []
-  if (!list.length) return ''
+  // A database with no extracts yet still shows its schema, so the analysis can be planned on it.
+  if (!list.length && !(paper.config.datasets ?? []).some((u) => u.connection)) return ''
   const describe = (m: Material) => {
     if (m.kind === 'dataset') {
       const rows = datasetRows(paper, m)
@@ -393,7 +443,9 @@ export function materialsBlock(paper: Paper): string {
   }
   const units = paper.config.datasets ?? []
   const parts = [
-    ...units.map((u) => `[${u.id}] DATASET "${u.name}"${u.version ? `, version ${u.version}` : ''}, ${provenance(paper, u)} Its files:\n${list.filter((m) => m.dataset === u.id).map(describe).join('\n\n')}`),
+    ...units.map((u) => u.connection
+      ? `[${u.id}] DATABASE "${u.name}", ${provenance(paper, u)}\n${databaseText(paper, u, options.fullSchema ? Infinity : undefined)}${list.some((m) => m.dataset === u.id) ? `\n  Its extracts so far:\n${list.filter((m) => m.dataset === u.id).map(describe).join('\n\n')}` : ''}`
+      : `[${u.id}] DATASET "${u.name}"${u.version ? `, version ${u.version}` : ''}, ${provenance(paper, u)} Its files:\n${list.filter((m) => m.dataset === u.id).map(describe).join('\n\n')}`),
     ...list.filter((m) => !m.dataset).map(describe),
   ]
   return `THE MATERIALS the paper draws on besides the literature. Data the authors produced for this paper is their own work; a dataset produced by others, or published before, is described and cited as its provenance below says.\n${parts.join('\n\n')}`
@@ -403,6 +455,7 @@ export function materialsBlock(paper: Paper): string {
 export function availabilityStatement(paper: Paper): string {
   const units = paper.config.datasets ?? []
   return units.map((u) => {
+    if (u.connection) return `The data come from the ${u.private ? 'private ' : ''}database "${u.name}" (ClickHouse), ${u.producedBy === 'others' ? 'kept by others' : 'kept by the authors'}${u.private ? ', which is not publicly available' : ''}; the query that extracted each table the analyses used is in the evidence package, so anyone with access to the database can extract them again.`
     const sources = datasetSources(paper, u)
     const where = sources.data ? ` It is available at ${u.doi ? `https://doi.org/${u.doi}` : u.url} [@${workKey(paper, sources.data)}].` : u.private ? ' It is not publicly available.' : ''
     const first = sources.article ? ` It was first reported in [@${workKey(paper, sources.article)}].` : ''

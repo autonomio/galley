@@ -78,7 +78,8 @@ export function claimsBlock(paper: Paper, ids?: string[]): string {
   return list.map((c) => describeClaim(paper, c)).join('\n')
 }
 
-export function briefBlock(paper: Paper): string {
+/** What every seat reads about the paper; fullSchema gives a connected database's whole schema, for the steps that plan its analysis. */
+export function briefBlock(paper: Paper, options: { fullSchema?: boolean } = {}): string {
   const { brief, plan, selectedDirection, directions } = paper.state
   const lines = [
     brief ? `Concern: ${brief.concern}\nContribution (as the seed states it): ${brief.contribution}\nObject type: ${brief.objectType}\nHost field: ${brief.field}\nAudience: ${brief.audience}` : '',
@@ -88,7 +89,7 @@ export function briefBlock(paper: Paper): string {
   if (chosen) lines.push(`Selected direction: ${chosen.title}: ${chosen.question} (shift: ${chosen.shift})`)
   // A paper that is a systematic review carries the review's protocol into every prompt.
   const review = paper.config.literatureReview === 'load-bearing' ? literatureBlock(paper) : ''
-  const extra = [materialsBlock(paper), measurementsBlock(paper), review, simulationsBlock(paper), systemBlock(paper)].filter(Boolean)
+  const extra = [materialsBlock(paper, options), measurementsBlock(paper), review, simulationsBlock(paper), systemBlock(paper)].filter(Boolean)
   return [lines.filter(Boolean).join('\n'), ...extra].join('\n\n')
 }
 
