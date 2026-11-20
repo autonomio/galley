@@ -142,10 +142,13 @@ export interface Editor {
    *   for the host's own name and controls (`iconButton` makes them match);
    * - `header`: a strip under the toolbar that stays put;
    * - `top`: a block above the text that scrolls with it;
-   * - `side`: a pane beside the page, under the bar.
+   * - `side`: a pane beside the page, under the bar;
+   * - `picker`: the foot of the document picker's menu;
+   * - `document`, with a document's slug: a line under its name in the picker.
    * All but `top` hide in writer mode.
    */
-  slot(where: 'bar-start' | 'bar-end' | 'header' | 'top' | 'side'): HTMLElement
+  slot(where: 'bar-start' | 'bar-end' | 'header' | 'top' | 'side' | 'picker'): HTMLElement
+  slot(where: 'document', slug: string): HTMLElement
   notify(notice: Notice): void
   annotations: {
     list(): Annotation[]
@@ -927,7 +930,9 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       const slug = session.slug
       return { doc: slug ? session.version(slug) ?? null : null, annotations: slug ? session.annotationsVersion(slug) ?? null : null }
     },
-    slot(where) {
+    slot(where: string, slug?: string): HTMLElement {
+      // The picker's room lives in its menu, which a host without a picker never sees.
+      if (where === 'picker' || where === 'document') return picker ? picker.slot(where === 'document' ? slug ?? '' : null) : el('div')
       const existing = root.querySelector<HTMLElement>(`.galley-slot[data-slot="${where}"]`)
       if (existing) return existing
       const slot = el('div', { class: 'galley-slot', 'data-slot': where })

@@ -1,0 +1,33 @@
+/* Every paper in the document picker (picker-papers.ts): a line under each
+   paper's name, and, at the menu's foot, the papers whose document is not here.
+   Inside the editor, so it reads the editor's tokens and follows its theme. */
+.pp-head { display: flex; align-items: center; justify-content: space-between; gap: var(--galley-sp-2); min-width: 0; }
+.pp-state { display: inline-flex; flex: none; align-items: center; gap: 6px; color: var(--galley-text-soft); }
+.pp-state b { font-weight: var(--galley-fw-strong); }
+.pp-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--galley-text-muted); }
+[data-state="running"] > .pp-head .pp-dot { background: var(--galley-done); animation: lv-live 2.4s ease-in-out infinite; }
+[data-state="ready"] > .pp-head .pp-dot { background: var(--galley-done); }
+[data-state="waiting"] > .pp-head .pp-dot { background: var(--galley-attention); }
+.pp-words { display: block; overflow: hidden; padding-left: 12px; color: var(--galley-text-soft); text-overflow: ellipsis; white-space: nowrap; }
+.pp-words:empty { display: none; }
+.pp-ago { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Who is at work: seats doing the same thing on one line, their faces together. */
+.pp-now { display: grid; gap: 3px; margin-top: 4px; }
+.pp-work { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--galley-sp-2); }
+.pp-faces { display: inline-flex; padding-left: 5px; }
+.pp-faces .lv-face { width: 18px; height: 18px; margin-left: -5px; font-size: 8px; box-shadow: inset 0 0 0 1.5px var(--c), 0 0 0 2px var(--galley-surface); }
+.pp-doing { overflow: hidden; color: var(--galley-text-soft); text-overflow: ellipsis; white-space: nowrap; }
+.pp-doing b { color: var(--galley-text); font-weight: var(--galley-fw-strong); }
+.pp-work time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pp-quiet { color: var(--galley-text-muted); }
+
+/* A paper whose document is not in this editor: a row like the picker's own, opening where it can. */
+.pp-away { display: block; padding: var(--galley-sp-2) var(--galley-sp-3); border-radius: var(--galley-r-card); color: var(--galley-text); font-size: var(--galley-fs-ui); line-height: var(--galley-lh-ui); text-decoration: none; }
+.pp-away[href]:hover, .pp-away:focus-visible { background: var(--galley-row-hover); }
+.pp-away-title { display: block; overflow: hidden; font-weight: var(--galley-fw-strong); text-overflow: ellipsis; white-space: nowrap; }
+.pp-away > .galley-slot { display: block; margin-top: var(--galley-sp-1); color: var(--galley-text-muted); font-size: var(--galley-fs-micro); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pp-dot { animation: none !important; }
+}

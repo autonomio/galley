@@ -1,5 +1,6 @@
 // The document picker: the open document's title with ▾, and a menu of every
-// document grouped by recency, each with its age.
+// document grouped by recency, each with its age. A host may add a line of its
+// own under a document's name, and a foot of its own to the menu (slot()).
 import { groupBucket, relTime } from '../core/time.js'
 import { UNTITLED } from '../markdown/title.js'
 import type { DocSummary } from '../types.js'
@@ -18,6 +19,8 @@ export interface DocPicker {
   open(): void
   close(): void
   isOpen(): boolean
+  /** Room for the host: under one document's name, by its slug, or, with null, at the foot of the menu. */
+  slot(slug: string | null): HTMLElement
   destroy(): void
 }
 
@@ -38,7 +41,19 @@ export function createDocPicker(handlers: { select(slug: string): void, opening(
   const titleEl = trigger.querySelector<HTMLElement>('.galley-picker-title')!
   const menu = el('div', { class: 'galley-picker-menu', role: 'menu', 'aria-label': 'Documents' })
   menu.hidden = true
+  // The list is drawn again whenever the documents change; the host's room in it is kept and put back each time.
+  const list = el('div', { class: 'galley-picker-list' })
+  const foot = el('div', { class: 'galley-slot', 'data-slot': 'picker' })
+  menu.append(list, foot)
   element.append(trigger, menu)
+  const lines = new Map<string, HTMLElement>()
+
+  function place(): void {
+    for (const [slug, line] of lines) {
+      const item = list.querySelector<HTMLElement>(`.galley-picker-item[data-slug="${CSS.escape(slug)}"]`)
+      if (item && line.parentElement !== item) item.append(line)
+    }
+  }
 
   let state: PickerState = { docs: [], current: null, loaded: false, error: false }
   let markup = ''
@@ -67,7 +82,8 @@ export function createDocPicker(handlers: { select(slug: string): void, opening(
     if (next === markup) return
     const focused = (document.activeElement as HTMLElement | null)?.dataset?.slug
     markup = next
-    menu.innerHTML = next
+    list.innerHTML = next
+    place()
     if (focused) menu.querySelector<HTMLElement>(`[data-slug="${CSS.escape(focused)}"]`)?.focus()
   }
 
@@ -143,6 +159,16 @@ export function createDocPicker(handlers: { select(slug: string): void, opening(
     open,
     close,
     isOpen: () => !menu.hidden,
+    slot(slug) {
+      if (slug === null) return foot
+      let line = lines.get(slug)
+      if (!line) {
+        line = el('span', { class: 'galley-slot', 'data-slot': 'document' })
+        lines.set(slug, line)
+        place()
+      }
+      return line
+    },
     destroy: close,
   }
 }

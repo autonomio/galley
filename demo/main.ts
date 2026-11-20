@@ -7,11 +7,13 @@ import './demo.css'
 import './wizard.css'
 import './files.css'
 import './living.css'
+import './picker-papers.css'
 import welcome from './welcome.md?raw'
 import { createEditor, createHttpStore, createLocalStore, iconButton, icons, type EditorAction } from '../src/index.js'
 import { choicesAction } from './choices.js'
 import { filesAction } from './files.js'
 import { livingPaper } from './living.js'
+import { papersInPicker } from './picker-papers.js'
 import { writePaperAction } from './paper.js'
 import { proposalsAction } from './proposals.js'
 import { createRouter } from './route.js'
@@ -51,7 +53,8 @@ const editor = createEditor(document.getElementById('editor')!, {
   toolbar: ['writer', '|', 'new', 'import', 'copy', download, ...(local ? [] : ['|' as const, writePaperAction(router), choicesAction(router), proposalsAction(router), filesAction(router)]), '|', 'delete'],
   storagePrefix: local ? 'galley-local' : 'galley',
   // A paper's document is written by its team while you work in it: who is at work, its notes and its history.
-  plugins: local ? [] : [livingPaper(store, router)],
+  // Every paper, in the picker: under each paper's name, where it stands and who is at work on what.
+  plugins: local ? [] : [livingPaper(store, router), papersInPicker()],
 })
 router.view('writer', { set: (on, e) => e.setWriterMode(on) })
 editor.on('writer-mode', ({ on }) => router.shown('writer', on))

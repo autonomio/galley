@@ -114,11 +114,13 @@
   color: var(--galley-text-muted);
 }
 .galley-picker-bucket:first-child { margin-top: var(--galley-sp-1); }
+.galley-picker-list { display: flex; flex-direction: column; gap: 1px; }
 .galley-picker-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--galley-sp-2);
+  gap: 0 var(--galley-sp-2);
   width: 100%;
   padding: var(--galley-sp-2) var(--galley-sp-3);
   border: none;
@@ -136,6 +138,10 @@
 .galley-picker-item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--galley-fw-strong); }
 .galley-picker-item-time { flex: 0 0 auto; font-size: var(--galley-fs-micro); color: var(--galley-text-muted); font-variant-numeric: tabular-nums; }
 .galley-picker-empty { padding: var(--galley-sp-3) var(--galley-sp-2); color: var(--galley-text-muted); font-size: var(--galley-fs-ui); }
+/* The host's own line under a document's name (slot 'document'), and its own foot to the menu (slot 'picker'). */
+.galley-picker-item > .galley-slot[data-slot="document"] { flex: 1 0 100%; min-width: 0; margin-top: var(--galley-sp-1); color: var(--galley-text-muted); font-size: var(--galley-fs-micro); line-height: var(--galley-lh-ui); }
+.galley-picker-menu:has(.galley-slot[data-slot="document"]:not(:empty)) { width: min(calc(var(--galley-sp-unit) * 110), calc(100vw - var(--galley-sp-4))); max-width: none; }
+.galley-picker-menu > .galley-slot[data-slot="picker"] { margin-top: var(--galley-sp-2); padding-top: var(--galley-sp-1); border-top: var(--galley-line-hair) solid var(--galley-line); }
 
 /* ---------- The page ---------- */
 .galley-body { flex: 1 1 auto; min-height: 0; display: flex; }
