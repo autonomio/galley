@@ -292,6 +292,7 @@ function writeEditorDocument(paper: Paper, seen?: { doc: string | null, notes: s
       .map((f) => findingThread(paper, f, lines, s.outline?.sections.find((sec) => sec.id === f.sectionId)?.title ?? base.title, placed.get(`galley-${f.id}`)))
     notes = JSON.stringify({ annotations: [...human, ...ours] }, null, 2)
     if (notes !== notesOnDisk) writeReplacing(notesPath, notes)
+    s.editorResolved = ours.filter((a) => a.resolved).map((a) => a.id)
   }
   s.editorWritten = { doc: digest(text), notes: digest(notes) }
   paper.save()
@@ -455,8 +456,10 @@ export function importHumanNotes(paper: Paper, json?: string): number {
       })
       added++
     }
-    // A thread a person resolved is settled: the agents stop working on it.
-    if (a.resolved && a.id.startsWith('galley-')) {
+    // A thread a person resolved is settled: the agents stop working on it. galley marks a thread resolved itself
+    // once its finding is answered; that mark is not a person's decision, and a referee who rejects the answer
+    // reopens the finding for the agents.
+    if (a.resolved && a.id.startsWith('galley-') && s.editorResolved && !s.editorResolved.includes(a.id)) {
       const f = s.findings.find((x) => x.id === a.id.slice('galley-'.length))
       if (f && f.status === 'open') {
         f.status = 'noted'

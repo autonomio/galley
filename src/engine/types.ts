@@ -301,6 +301,8 @@ export interface PaperState {
   editorBase?: Record<string, string>
   /** Hashes of the document and notes galley last wrote, so a person's change is noticed without a diff. */
   editorWritten?: { doc: string; notes: string }
+  /** Threads galley itself last wrote as resolved, so its own mark is never taken for a person's decision. */
+  editorResolved?: string[]
   /** Replies a person wrote in the editor that are already findings. */
   repliesSeen?: string[]
   /** A title a person gave the paper in the editor; it stands over the system's. */
