@@ -41,4 +41,8 @@ export const icons = {
   folder: svg('<path d="M2.75 4.75a1.5 1.5 0 0 1 1.5-1.5h2.3l1.45 1.5h3.75a1.5 1.5 0 0 1 1.5 1.5v5.5a1.5 1.5 0 0 1-1.5 1.5h-7.5a1.5 1.5 0 0 1-1.5-1.5z"/>'),
   /** Kept in this browser. */
   browser: svg('<rect x="2.25" y="3" width="11.5" height="10" rx="1.5"/><path d="M2.25 6h11.5M4.5 4.5h.01M6.25 4.5h.01"/>'),
+  /** Everything a project has made, boxed: its files. */
+  archive: svg('<rect x="2" y="2.75" width="12" height="3" rx="1"/><path d="M3 5.75v6a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5v-6M6.5 8.5h3"/>'),
+  /** A link to pass on. */
+  link: svg('<path d="M6.5 5H4.75a3 3 0 0 0 0 6H6.5M9.5 5h1.75a3 3 0 0 1 0 6H9.5M5.75 8h4.5"/>'),
 } as const

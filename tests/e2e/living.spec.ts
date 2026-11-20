@@ -95,6 +95,18 @@ test('the team at work shows in the row, beside the passage each is writing, and
   await expect(pane).toBeHidden()
 })
 
+test('Activity is in the link: opening it shows in the address, and the address opens it', async ({ page }) => {
+  const slug = paperFixture()
+  await page.goto(`/?doc=${slug}&view=activity`)
+  const pane = page.locator('.galley-slot[data-slot="side"]')
+  await expect(pane.locator('.lv-now')).toContainText('drafting Methods')
+  await pane.getByRole('button', { name: 'Close' }).click()
+  await expect(pane).toBeHidden()
+  await expect(page).toHaveURL(new RegExp(`\\?doc=${slug}$`))
+  await page.locator('.lv-activity-btn').click()
+  await expect(page).toHaveURL(new RegExp(`\\?doc=${slug}&view=activity$`))
+})
+
 test('a finding is a thread: every answer shows, and a reply is saved beside the paper', async ({ page }) => {
   const slug = paperFixture()
   await openPaper(page, slug)

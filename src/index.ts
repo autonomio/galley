@@ -22,7 +22,7 @@ export {
   type SelectionAction,
 } from './editor/editor.js'
 export { icons } from './editor/icons.js'
-export { iconButton } from './editor/toolbar.js'
+export { confirmOn, iconButton } from './editor/toolbar.js'
 
 export { createSurface, type Surface, type SurfaceOptions, type SurfaceCommand, type TextPatch } from './surface/surface.js'
 

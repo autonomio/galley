@@ -93,7 +93,8 @@ const base64 = (file: File) => new Promise<string>((resolve, reject) => {
   reader.readAsDataURL(file)
 })
 
-export function openPaperWizard(options: { slug: string; title: string; text: string; onStart?: (paper: string) => void }): void {
+/** Opens the wizard; the dialog is returned so a host can tell when it closes. */
+export function openPaperWizard(options: { slug: string; title: string; text: string; onStart?: (paper: string) => void }): HTMLDialogElement {
   const { slug, title, text } = options
   const words = text.split(/\s+/).filter(Boolean).length
   const paragraphs = text.split(/\n\s*\n/).filter((p) => p.trim()).length
@@ -500,6 +501,8 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       body.append(h('p', { class: 'gw-error', role: 'alert', text: `The paper did not start: ${(error as Error).message}` }))
     }
   }
+
+  return dialog
 }
 
 interface StatusData {
@@ -540,8 +543,8 @@ function settingRows(d: StatusData): [string, string][] {
 
 const FAMILY_LABEL: Record<string, string> = { claude: 'Claude Opus 5.5', gpt: 'GPT-6.2 Sol', gemini: 'Gemini 4 Carbon' }
 
-/** Where a paper stands, kept current while the window is open. */
-export function openPaperStatus(slug: string, open?: (manuscript: string) => void): void {
+/** Where a paper stands, kept current while the window is open. The dialog is returned so a host can tell when it closes. */
+export function openPaperStatus(slug: string, open?: (manuscript: string) => void): HTMLDialogElement {
   const body = h('div', { class: 'gw-body' })
   const updated = h('span', { class: 'gw-hint' })
   const openButton = h('button', { type: 'button', class: 'gw-btn', text: 'Open the manuscript', hidden: true })
@@ -629,6 +632,7 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
   body.append(h('h2', { id: 'gw-title', class: 'gw-title', text: 'Paper status' }), h('p', { class: 'gw-note', text: 'Reading where the paper stands…' }))
   void load()
   timer = window.setInterval(load, 10_000)
+  return dialog
 }
 
 export type { EditorAction }

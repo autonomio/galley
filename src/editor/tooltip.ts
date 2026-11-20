@@ -29,8 +29,12 @@ function element(root: HTMLElement): HTMLElement {
 }
 
 function show(button: HTMLElement, tip: Tip): void {
-  const root = button.closest<HTMLElement>('.galley')
-  if (!root || !button.isConnected) return
+  const galley = button.closest<HTMLElement>('.galley')
+  if (!galley || !button.isConnected) return
+  // A modal dialog sits above the whole page, its backdrop over everything
+  // else, so a tip for a control in one has to be inside it to be seen.
+  const dialog = button.closest<HTMLElement>('dialog[open]')
+  const root = dialog && galley.contains(dialog) ? dialog : galley
   const box = element(root)
   box.replaceChildren(
     el('span', { class: 'galley-tooltip-label' }, tip.label),
