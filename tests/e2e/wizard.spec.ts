@@ -158,6 +158,43 @@ test('one line connects a database: its databases are listed, one becomes a priv
   ])
 })
 
+test('a world model as the sources: read once, only its sources by default, and no review or web search with it', async ({ page }) => {
+  const dir = process.env.GALLEY_E2E_DIR!
+  const slug = `seed-${Date.now()}`
+  writeFileSync(join(dir, `${slug}.md`), `# Bounded attention\n\n${'Why can attention be fast only when its entries are bounded? '.repeat(10)}\n`)
+  let uploaded = ''
+  let posted: { settings: Record<string, unknown>; worldModel?: Record<string, unknown> } | null = null
+  await page.route('**/api/galley-papers/_world-model?**', (route) => {
+    uploaded = route.request().url()
+    return route.fulfill({ json: { token: 'a1b2c3d4e5f6a1b2c3d4e5f6', name: 'attention-model', sha256: 'abc', claims: 359, evidence: 404, sources: 1402, relations: 163 } })
+  })
+  await page.route(`**/api/galley-papers/${slug}`, async (route) => {
+    if (route.request().method() !== 'POST') return route.fulfill({ status: 404, body: '' })
+    posted = route.request().postDataJSON()
+    return route.fulfill({ status: 202, json: {} })
+  })
+  await page.goto(`/?doc=${slug}`)
+  await page.waitForFunction((s) => window.galley?.slug === s, slug)
+  await page.locator('[data-action="write-paper"]').click()
+  const wizard = page.locator('dialog.gw')
+  await wizard.getByRole('button', { name: 'Next: Materials' }).click()
+  await wizard.getByLabel('Choose a world model').setInputFiles({ name: 'attention-model-main.zip', mimeType: 'application/zip', buffer: Buffer.from('PK') })
+  const card = wizard.getByRole('region', { name: 'World model' })
+  await expect(card).toContainText('World model: 359 claims, 404 evidence records, 1,402 sources with their passages.')
+  expect(uploaded).toContain('name=attention-model-main.zip')
+  await expect(card.getByRole('radio', { name: 'Only this world model' })).toHaveAttribute('aria-checked', 'true')
+
+  await wizard.getByRole('button', { name: 'Next: Settings' }).click()
+  await expect(wizard).toContainText('No systematic review: the paper\'s sources are only its world model\'s.')
+  await expect(wizard.getByRole('checkbox', { name: 'Primary sources from the web' })).toBeDisabled()
+  await wizard.getByRole('button', { name: 'Next: Start' }).click()
+  await expect(wizard).toContainText('the world model searched for each claim')
+  await wizard.getByRole('button', { name: 'Start the paper' }).click()
+  await expect(wizard.getByRole('heading', { name: 'Writing the paper' })).toBeVisible()
+  expect(posted!.worldModel).toEqual({ token: 'a1b2c3d4e5f6a1b2c3d4e5f6', only: true })
+  expect([posted!.settings.literatureReview, posted!.settings.webSources]).toEqual([false, false])
+})
+
 test('a seed that already has a paper shows where the paper stands, and opens the manuscript once it is typeset', async ({ page }) => {
   const dir = process.env.GALLEY_E2E_DIR!
   const slug = `seed-${Date.now()}`

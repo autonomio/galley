@@ -7,6 +7,7 @@ import type { Behavior } from '../scheduler.js'
 import { arr, bool, enm, int, nstr, obj, str } from '../schema.js'
 import { squash } from '../text.js'
 import type { Claim, ClaimKind, Direction, EvidenceNeed, Factor, IdeaReview } from '../types.js'
+import { onlyWorldModel, searchWorldModelQueries, worldModelOf } from '../worldmodel.js'
 import { activeClaims, briefBlock, claim, live, nextClaimId, now, seatFamily, setClaim } from './common.js'
 
 const KINDS = ['contribution', 'background', 'method', 'novelty', 'common_knowledge'] as const
@@ -93,16 +94,23 @@ ${brief}`,
         ...(q.bottleneck ?? []).slice(0, 2).map((search: string, i: number) => ({ id: `need${i + 1}`, search })),
         ...(q.consensus ?? []).slice(0, 2).map((search: string, i: number) => ({ id: `belief${i + 1}`, search })),
       ].filter((x, i, all) => x.search && all.findIndex((y) => y.search === x.search) === i)
-      const searching = paper.begin({ behavior: 'position', target: 'search', what: `Canary search, ${queries.length} queries` })
-      let results: Record<string, QueryResult>
-      try {
+      // A paper built on a world model positions itself against the world model's sources: only them by default, else
+      // them first and then the literature.
+      const model = worldModelOf(paper)
+      let results: Record<string, QueryResult> = {}
+      if (!onlyWorldModel(paper)) try {
+        const searching = paper.begin({ behavior: 'position', target: 'search', what: `Canary search, ${queries.length} queries` })
         results = await canarySearch(paper.path('canary', 'position'), `galley:${paper.state.slug}:position`, queries, 12, (ms, why) => { paper.journal({ event: 'source_wait', behavior: 'position', wait_ms: ms, why }); paper.say(`… position: ${why}; next try in ${Math.round(ms / 1000)}s`) }).finally(searching)
       } catch (error) {
         if (!(error instanceof SourceUnavailable)) throw error
-        // The outage was waited out as long as galley waits: the idea is reviewed without positioning rather than not at all.
-        paper.note('position', `Prior art, the bottleneck and the consensus were not checked: ${error.message}`, true)
-        paper.save()
-        return
+        // The outage was waited out as long as galley waits: the idea is reviewed without positioning rather than not at
+        // all, or against its world model alone.
+        paper.note('position', `Prior art, the bottleneck and the consensus were not checked${model ? ' in the literature, only in the world model' : ''}: ${error.message}`, true)
+        if (!model) { paper.save(); return }
+      }
+      if (model) {
+        const local = searchWorldModelQueries(model, queries, 12)
+        for (const q of queries) results[q.id] = { matched: null, status: null, results: [...local[q.id].results, ...(results[q.id]?.results ?? [])].slice(0, 12) }
       }
       for (const r of Object.values(results)) for (const hit of r.results) if (hit.abstract || hit.title) paper.state.works[hit.id] ??= workFromHit(hit)
       const years: Record<string, number> = {}

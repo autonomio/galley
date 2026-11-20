@@ -11,6 +11,7 @@ import { FAMILY_NAMES, lightName, lightSpecFor } from './config.js'
 import { cleanCsl, cslForDoi, cslFromWork } from './evidence.js'
 import type { Paper } from './paper.js'
 import { LIT_PLACEHOLDERS, modelName, reviewAppendix, reviewFlowTypst } from './literature.js'
+import { worldModelOf } from './worldmodel.js'
 import { availabilityStatement, datasetSources, describeData } from './materials.js'
 import { methodWords, runsOf, sizeOf } from './simulations.js'
 import { writeReproduction } from './simulation/index.js'
@@ -79,7 +80,12 @@ function disclosure(paper: Paper, record: Record_): string {
   const sims = runsOf(paper)
   const simulated = sims.length ? ` The Monte Carlo simulation${sims.length > 1 ? 's' : ''} (${sims.map((r) => `${r.id}, ${methodWords(r.result.method)} with ${sizeOf(r.result)}, seed ${r.result.provenance.seed}`).join('; ')}) ran on the authors' machine with galley's simulation engine, from a specification ${FAMILY_NAMES[seats.author]} wrote; every simulated number in the text is filled in from that run at the precision its Monte Carlo error supports, and the evidence package holds each specification with its results, so every number can be reproduced.` : ''
   const review = lit ? ` The systematic review ${paper.config.literatureReview === 'load-bearing' ? 'this paper reports' : 'reported in its own section'} was carried out with Canary: ${modelName(lit.models?.research)} planned the search of OpenAlex, screened the candidates, read the full texts and quoted the passages behind each finding, and ${modelName(lit.models?.audit)} audited every finding against those passages; the review's citations rest on them.` : ''
-  return `This manuscript was produced with ${software()} from a seed text written by the author. ${FAMILY_NAMES[seats.author]} extracted the seed's claims, planned the argument, drafted every section and answered the referees. ${FAMILY_NAMES[seats.checker]} wrote the literature searches, selected candidate passages and checked each section against its claims. ${seats.challenger === seats.verifier ? `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting and verified ${everyCitation} against the passage it rests on.` : `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting, and ${FAMILY_NAMES[seats.verifier]} verified ${everyCitation} against the passage it rests on.`} Referee reports came from ${referees}, never from the family that drafted the text, and each answer to a material finding was verified by the referee family that raised it.${settled} Literature search ran through Canary over OpenAlex; bibliographic records come from the DOI registries.${fromWeb}${review}${simulated} No model reviewed its own work. The production journal that accompanies this manuscript records every step, model call, verdict and decision with its time, and the evidence package holds each claim with the verbatim passage and verdict behind every citation.
+  // A paper built on a world model says so, and whether it searched anything else.
+  const wm = paper.config.worldModel
+  const sources = wm
+    ? ` Its sources come from the world model "${wm.name}", a Resolvent world model of ${wm.claims.toLocaleString('en-US')} claims resting on the verbatim passages of ${wm.sources.toLocaleString('en-US')} sources${wm.only ? '; no other literature was searched' : ', searched first, and then the literature through Canary over OpenAlex'}. For each claim galley searched the world model's sources, and ${FAMILY_NAMES[seats.checker]} chose the passages, copied verbatim from each source's excerpt. Bibliographic records come from the DOI registries.`
+    : ' Literature search ran through Canary over OpenAlex; bibliographic records come from the DOI registries.'
+  return `This manuscript was produced with ${software()} from a seed text written by the author. ${FAMILY_NAMES[seats.author]} extracted the seed's claims, planned the argument, drafted every section and answered the referees. ${FAMILY_NAMES[seats.checker]} ${wm?.only ? 'selected candidate passages' : 'wrote the literature searches, selected candidate passages'} and checked each section against its claims. ${seats.challenger === seats.verifier ? `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting and verified ${everyCitation} against the passage it rests on.` : `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting, and ${FAMILY_NAMES[seats.verifier]} verified ${everyCitation} against the passage it rests on.`} Referee reports came from ${referees}, never from the family that drafted the text, and each answer to a material finding was verified by the referee family that raised it.${settled}${sources}${fromWeb}${review}${simulated} No model reviewed its own work. The production journal that accompanies this manuscript records every step, model call, verdict and decision with its time, and the evidence package holds each claim with the verbatim passage and verdict behind every citation.
 
 | Production record | |
 |---|---|
@@ -611,6 +617,12 @@ ${list((paper.config.datasets ?? []).map((u) => `${u.id} "${u.name}"${u.version 
 
 ## Your materials
 ${list((paper.config.materials ?? []).map((m) => `${m.id} ${m.kind} ${m.url ?? m.name}${m.kind === 'dataset' ? (m.private ? ': private, the models saw only its profile and the measurements' : ': shared, the models saw its profile and first rows') : ''}`), 'None.')}
+${paper.config.worldModel ? `
+## The world model the sources come from: check it is the version you meant
+- "${paper.config.worldModel.name}": ${paper.config.worldModel.claims.toLocaleString('en-US')} claims, ${paper.config.worldModel.evidence.toLocaleString('en-US')} evidence records, ${paper.config.worldModel.sources.toLocaleString('en-US')} sources with an excerpt; SHA-256 ${paper.config.worldModel.sha256}
+- ${paper.config.worldModel.only ? 'The paper\'s only sources: no other literature was searched, and there was no systematic review or web search.' : 'Searched first; the literature and the web were searched as well.'}
+- Cited from it: ${new Set(s.citations.filter((c) => c.status === 'verified' && worldModelOf(paper)?.publications.has(c.workId)).map((c) => c.workId)).size} sources
+` : ''}
 ${Object.values(s.measurements ?? {}).length ? `\nMeasurements galley computed from your data (check each against your own analysis):\n${Object.values(s.measurements ?? {}).map((m) => `- ${m.id}: ${m.summary}`).join('\n')}\n` : ''}
 
 ## Production record

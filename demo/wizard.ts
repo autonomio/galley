@@ -107,6 +107,8 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   let foundLine = ''
   let allDatabases = false
   let saved: { name: string; via: string; host?: string; url?: string; container?: string; database: string }[] | null = null
+  // A world model the paper's sources come from: a Resolvent repository as a zip, read once on the machine running galley.
+  let worldModel: { file: string; state: 'reading' | 'read' | 'failed'; error?: string; token?: string; name?: string; claims?: number; evidence?: number; sources?: number; only: boolean } | null = null
   let step = 0
   let context: Context | null = null
   const settings = { author: '', affiliation: '', funding: '', competingInterests: '', acknowledgements: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, reviewRole: 'supporting', simulation: false, simulationRole: 'supporting', webSources: true, families: [...FAMILY_ORDER] }
@@ -186,7 +188,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
         h('span', { class: 'gw-row-main' }, h('span', { class: 'gw-mono gw-row-name', text: item.name }), h('span', { class: 'gw-row-detail', text: item.detail })),
         item.kind === 'dataset' ? segmented([['Private', true], ['Shared', false]], item.private, (v) => { item.private = v; render() }, `Who may read ${item.name}`) : h('span', { class: 'gw-row-kind', text: item.kind }),
         h('button', { type: 'button', class: 'gw-x', 'aria-label': `Remove ${item.name}`, text: '×', onclick: () => { items.splice(i, 1); render() } }))))
-      : datasets.length ? null : h('p', { class: 'gw-empty', text: 'No materials. The paper will rest on your seed and the literature.' })
+      : datasets.length || worldModel ? null : h('p', { class: 'gw-empty', text: 'No materials. The paper will rest on your seed and the literature.' })
     const privateSets = datasets.filter((d) => d.private).length
     const sharedSets = datasets.filter((d) => !d.private).length
     const read = items.length
@@ -196,6 +198,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       drop,
       h('div', { class: 'gw-linkrow' }, url, h('button', { type: 'button', class: 'gw-btn', text: 'Add link', onclick: addLink }), h('label', { class: 'gw-btn gw-folder' }, folder, 'Choose a folder')),
       databaseRow(),
+      worldModelRow(),
       ...datasets.map(datasetCard),
       list,
       privateSets ? h('p', { class: 'gw-note' }, h('strong', { text: 'Private datasets stay on this machine. ' }), 'The models see only a summary of each column and the results galley computes here, and every number the paper states about your data comes from those results.') : null,
@@ -299,6 +302,49 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       h('p', { class: 'gw-help', text: 'Read-only: galley takes from it only the extracts the analyses need, as queries aggregated in the database. A server is reached over SSH with the keys of the machine that runs galley, which keeps the connection under a name for everyone who uses it; a password never reaches a paper or a model.' }))
   }
 
+  /**
+   * A world model as the paper's sources: a Resolvent repository as a zip. It is read once on the machine running
+   * galley, and the card says what it holds. By default the paper's sources are only its sources.
+   */
+  function worldModelRow(): HTMLElement {
+    if (!worldModel) {
+      const picker = h('input', { type: 'file', class: 'gw-file', accept: '.zip,application/zip', 'aria-label': 'Choose a world model' })
+      picker.addEventListener('change', () => { const file = picker.files?.[0]; if (file) void readWorldModel(file) })
+      return h('div', { class: 'gw-field' },
+        h('div', { class: 'gw-label', text: 'A world model as the sources' }),
+        h('label', { class: 'gw-btn gw-addfiles' }, picker, 'Choose a world model (zip)'),
+        h('p', { class: 'gw-help', text: 'A Resolvent world model, its repository as a zip: claims, the evidence they rest on, and the sources behind it, each with its verbatim passage. The paper\'s sources then come from it.' }))
+    }
+    const wm = worldModel
+    return h('section', { class: 'gw-dataset', 'aria-label': 'World model' },
+      h('div', { class: 'gw-dataset-head' },
+        h('span', { class: 'gw-kind gw-kind--dataset', 'aria-hidden': 'true' }),
+        h('span', { class: 'gw-mono gw-row-name', text: wm.name ?? wm.file }),
+        h('button', { type: 'button', class: 'gw-x', 'aria-label': 'Remove the world model', text: '×', onclick: () => { worldModel = null; render() } })),
+      h('p', { class: wm.state === 'failed' ? 'gw-attention' : 'gw-help', text: wm.state === 'reading' ? `Reading ${wm.file} …`
+        : wm.state === 'failed' ? `Not read: ${wm.error}`
+          : `World model: ${n(wm.claims ?? 0)} claims, ${n(wm.evidence ?? 0)} evidence records, ${n(wm.sources ?? 0)} sources with their passages.` }),
+      h('div', { class: 'gw-dataset-row' }, h('span', { class: 'gw-label', text: 'Sources' }),
+        segmented([['Only this world model', true], ['Also the literature and the web', false]], wm.only, (v) => { wm.only = v; render() }, 'Where the sources come from')),
+      h('p', { class: 'gw-help', text: wm.only
+        ? 'Every source the paper cites comes from this world model: no literature search, no systematic review, no web sources. What it does not support, the paper states as its own argument or as open.'
+        : 'The world model is searched first, then the literature through Canary and, where neither has a source, the web.' }))
+  }
+
+  async function readWorldModel(file: File): Promise<void> {
+    worldModel = { file: file.name, state: 'reading', only: true }
+    render()
+    try {
+      const response = await fetch(`/api/galley-papers/_world-model?name=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { 'Content-Type': 'application/zip' }, body: file })
+      if (!response.ok) throw new Error(await response.text())
+      const read = await response.json() as { token: string; name: string; claims: number; evidence: number; sources: number }
+      if (worldModel?.file === file.name) worldModel = { ...worldModel, ...read, state: 'read' }
+    } catch (error) {
+      if (worldModel?.file === file.name) worldModel = { ...worldModel, state: 'failed', error: (error as Error).message }
+    }
+    render()
+  }
+
   /** A dataset by its link: the card shows what the record says at once; the files are downloaded when the paper starts. */
   async function addRecord(link: string): Promise<void> {
     const d: DatasetItem = { name: link, files: [], producedBy: 'others', doi: '', version: '', describedIn: '', licence: '', private: false, record: link, recordState: 'reading' }
@@ -343,6 +389,8 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
 
   // ---------------------------------------------------------------- 3. settings
   function settingsStep(): (Node | null)[] {
+    // A paper that rests only on its world model searches nothing else.
+    const onlyModel = !!worldModel?.only
     const field = (label: string, control: Node, help?: string) => h('div', { class: 'gw-field' }, h('div', { class: 'gw-label', text: label }), control, help ? h('p', { class: 'gw-help', text: help }) : null)
     const input = (key: 'author' | 'affiliation' | 'venue', placeholder: string, list?: string) => {
       const el = h('input', { class: 'gw-input', value: settings[key], placeholder, 'aria-label': placeholder, ...(list ? { list } : {}) })
@@ -370,7 +418,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       field('Declarations', h('div', { class: 'gw-stack' }, area('funding', 'Funding'), area('competingInterests', 'Competing interests'), area('acknowledgements', 'Acknowledgements')), 'Printed as you write them; never sent to a model. Left empty, they stay out of the paper, and the sign-off sheet asks for them.'),
       field('Venue', h('span', {}, input('venue', 'Venue', 'gw-venues'), h('datalist', { id: 'gw-venues' }, ...['preprint (arXiv)', 'preprint (bioRxiv)', 'preprint (medRxiv)', 'preprint (SSRN)', 'preprint (EdArXiv)', 'journal article'].map((v) => h('option', { value: v })))), 'Shapes the outline and how the referees read the paper.'),
       field('Length', segmented([3000, 5000, 7000, 9000].map((w) => [`${n(w)} words`, w] as [string, number]), settings.words, (v) => { settings.words = v; render() }, 'Length')),
-      field('Also include', h('div', { class: 'gw-choices' }, toggle('literatureReview', 'Systematic literature review', `Canary searches OpenAlex, screens the candidates, reads at least ${context?.review?.papers ?? 50} full papers and has every finding audited by a second model.`, 'A review section after the introduction, beside the paper\'s own contribution; it runs alongside the other steps.', 'The paper is the systematic review: its thesis and contribution are what the review establishes, and the plan waits for the review to finish.'), toggle('simulation', 'Monte Carlo simulation', 'The author designs the simulation the argument needs (plain, correlated or sequential Monte Carlo) and galley runs it on this machine; every simulated number in the paper is filled in from the run.', 'Its results support the paper\'s own contribution where they help.', 'The paper\'s thesis rests on what the simulation shows: its contribution claims are claims about the results, and the paper is built around the model.'))),
+      field('Also include', h('div', { class: 'gw-choices' }, onlyModel ? h('p', { class: 'gw-help', text: 'No systematic review: the paper\'s sources are only its world model\'s.' }) : toggle('literatureReview', 'Systematic literature review', `Canary searches OpenAlex, screens the candidates, reads at least ${context?.review?.papers ?? 50} full papers and has every finding audited by a second model.`, 'A review section after the introduction, beside the paper\'s own contribution; it runs alongside the other steps.', 'The paper is the systematic review: its thesis and contribution are what the review establishes, and the plan waits for the review to finish.'), toggle('simulation', 'Monte Carlo simulation', 'The author designs the simulation the argument needs (plain, correlated or sequential Monte Carlo) and galley runs it on this machine; every simulated number in the paper is filled in from the run.', 'Its results support the paper\'s own contribution where they help.', 'The paper\'s thesis rests on what the simulation shows: its contribution claims are claims about the results, and the paper is built around the model.'))),
       field('Review', segmented([['1 round', 1], ['2 rounds', 2]], settings.rounds, (v) => { settings.rounds = v; render() }, 'Referee rounds'), `Four referee seats a round: ${context?.referees.join(', ') ?? 'methods, field, citations, editor'}, from the families that did not write the text. About 50 min a round.`),
       field('Your part', choice('dial', [
         ['autonomous', 'Autonomous', 'Nothing waits for you. You review the finished paper.'],
@@ -385,11 +433,13 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       field('Models', h('div', { class: 'gw-stack' }, ...families.map(familyBox)), 'Turn a family off and its seats pass to the others: with Claude off, GPT writes. At least two stay on, so one writes and another checks. You can change this later in the project\'s settings, and a running paper follows from its next step.'),
       field('Seats', h('table', { class: 'gw-seats' }, h('tbody', {}, seatRow('author', seats.author), seatRow('checker', seats.checker), seatRow('challenger', seats.challenger), seatRow('verifier', seats.verifier))), settings.families.length >= 3 ? 'No family judges its own work; a third family settles what an author and a referee cannot agree on.' : 'No family judges its own work. With two families there is no third to settle a dispute, so what an author and a referee cannot agree on is stated as a limitation of the work.'),
       field('Web sources', (() => {
-        const box = h('input', { type: 'checkbox', 'aria-label': 'Primary sources from the web', ...(settings.webSources ? { checked: true } : {}) })
+        const box = h('input', { type: 'checkbox', 'aria-label': 'Primary sources from the web', ...(settings.webSources && !onlyModel ? { checked: true } : {}), ...(onlyModel ? { disabled: true } : {}) })
         box.addEventListener('change', () => { settings.webSources = box.checked; render() })
         return h('label', { class: 'gw-check' }, box, h('span', { text: 'Primary sources from the web' }))
-      })(), 'When the scholarly index has no source for a claim, GPT searches the web for the issuer\'s own document: rules, standards, specifications, datasheets, official reports. galley keeps a copy, and each passage is verified by another family like any citation.'),
-      field('Literature', h('p', { class: 'gw-facts' }, 'Canary over OpenAlex · ', context ? (context.openalexKey ? h('span', { text: 'key found: two searches per claim' }) : h('span', { class: 'gw-attention', text: 'no key: one search per claim, about 100 searches a day for everyone on this network' })) : 'checking…')),
+      })(), onlyModel ? 'Off: the paper\'s sources are only its world model\'s.' : 'When the scholarly index has no source for a claim, GPT searches the web for the issuer\'s own document: rules, standards, specifications, datasheets, official reports. galley keeps a copy, and each passage is verified by another family like any citation.'),
+      field('Literature', onlyModel
+        ? h('p', { class: 'gw-facts', text: `The world model "${worldModel?.name ?? worldModel?.file}": its ${n(worldModel?.sources ?? 0)} sources are searched for every claim; no other literature.` })
+        : h('p', { class: 'gw-facts' }, worldModel ? 'The world model first, then Canary over OpenAlex · ' : 'Canary over OpenAlex · ', context ? (context.openalexKey ? h('span', { text: 'key found: two searches per claim' }) : h('span', { class: 'gw-attention', text: 'no key: one search per claim, about 100 searches a day for everyone on this network' })) : 'checking…')),
     ]
   }
 
@@ -423,17 +473,18 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
     const s = dealSeats(context, settings.families)
     const m = (seat: SeatName) => s[seat]?.model ?? seat
     const searches = context?.openalexKey ? 'two' : 'one'
+    const onlyModel = !!worldModel?.only
     // A step that runs alongside the others shows its own time but adds little to the whole.
     const plan: [string, string, string, number, boolean?][] = [
       ['Read your seed', 'claims, concern, contribution and host field', m('author'), 1],
       ...(items.length || datasets.length ? [['Read your materials', datasets.length ? 'profile datasets here; read documents and links' : 'read documents and links', 'this machine', 1] as [string, string, string, number]] : []),
-      ['Place the idea', '7 literature searches through Canary: closest work, bottleneck, consensus', m('checker'), 3],
+      ['Place the idea', onlyModel ? '7 searches of the world model: closest work, bottleneck, consensus' : `7 literature searches${worldModel ? ' of the world model, then' : ''} through Canary: closest work, bottleneck, consensus`, m('checker'), 3],
       ['Challenge the idea', 'seven impact factors; three directions; one chosen', `${m('challenger')} · ${m('checker')}`, 10],
-      ...(settings.literatureReview ? [['Systematic review', `Canary: search plan, screening, at least ${context?.review?.papers ?? 50} full papers read, every finding audited; ${settings.reviewRole === 'load-bearing' ? 'the paper\'s main contribution, so the plan waits for it' : 'alongside the steps below'}`, `${context?.review?.research ?? 'gpt-6.1-sol'} · ${context?.review?.audit ?? 'gpt-6-astra'}`, 40, settings.reviewRole !== 'load-bearing'] as [string, string, string, number, boolean]] : []),
+      ...(settings.literatureReview && !onlyModel ? [['Systematic review', `Canary: search plan, screening, at least ${context?.review?.papers ?? 50} full papers read, every finding audited; ${settings.reviewRole === 'load-bearing' ? 'the paper\'s main contribution, so the plan waits for it' : 'alongside the steps below'}`, `${context?.review?.research ?? 'gpt-6.1-sol'} · ${context?.review?.audit ?? 'gpt-6-astra'}`, 40, settings.reviewRole !== 'load-bearing'] as [string, string, string, number, boolean]] : []),
       ...(datasets.length ? [['Measure your data', 'the analyses the claims need, computed on this machine', `${m('author')} · this machine`, 3] as [string, string, string, number]] : []),
       ...(settings.simulation ? [['Simulate', `the author writes the Monte Carlo model and the basis of every input; galley runs it on this machine${settings.simulationRole === 'load-bearing' ? '; the paper\'s main contribution rests on it' : ''}`, `${m('author')} · this machine`, 5] as [string, string, string, number]] : []),
       ['Plan and outline', 'thesis, claims, sections, figures', m('author'), 8],
-      ['Find and verify evidence', `${searches} search${searches === 'one' ? '' : 'es'} per claim; verbatim passages; another family's verdict; planted-defect calibration`, `${m('checker')} · ${m('verifier')}`, 20],
+      ['Find and verify evidence', `${onlyModel ? 'the world model searched for each claim' : `${worldModel ? 'the world model, then ' : ''}${searches} search${searches === 'one' ? '' : 'es'} per claim`}; verbatim passages; another family's verdict; planted-defect calibration`, `${m('checker')} · ${m('verifier')}`, 20],
       ['Draft', 'every section, checked against its claims', `${m('author')} · ${m('checker')}`, 25],
       ['Review', `${settings.rounds} round${settings.rounds === 1 ? '' : 's'} of four referees; each answer judged by the referee who raised it`, `${m('checker')} · ${m('verifier')}`, 50 * settings.rounds],
       ['Finish', 'ledger reconciled with the text; title and abstract; typeset', `${m('checker')} · ${m('author')}`, 10],
@@ -443,9 +494,10 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       [items.length ? 'Your seed, documents and links' : 'Your seed', 'go to the providers of the three model families (Anthropic, OpenAI, Google).'],
       ...(datasets.some((d) => d.private) ? [['Private datasets', 'never leave this machine; the models see column summaries and computed results.']] : []),
       ...(datasets.some((d) => !d.private) ? [['Shared datasets', 'their summaries and first 15 rows go to the model providers.']] : []),
-      ['Search terms', 'go to OpenAlex through Canary.'],
-      ...(settings.webSources ? [['Web searches', 'for primary sources: the claims\' own terms go to OpenAI\'s web search, and the documents are fetched from their publishers.']] : []),
-      ...(settings.literatureReview ? [['Review question', 'goes to Canary\'s research and audit models (OpenAI) and to OpenAlex.']] : []),
+      ...(worldModel ? [['World model', 'stays on this machine; its claims and passages closest to the paper go to the model providers.']] : []),
+      ...(onlyModel ? [] : [['Search terms', 'go to OpenAlex through Canary.']]),
+      ...(settings.webSources && !onlyModel ? [['Web searches', 'for primary sources: the claims\' own terms go to OpenAI\'s web search, and the documents are fetched from their publishers.']] : []),
+      ...(settings.literatureReview && !onlyModel ? [['Review question', 'goes to Canary\'s research and audit models (OpenAI) and to OpenAlex.']] : []),
       ['Your name', 'is never sent; it is set in the byline at typesetting.'],
     ]
     return [
@@ -463,6 +515,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
     next.disabled = true
     next.textContent = 'Starting…'
     try {
+      if (worldModel && worldModel.state !== 'read') throw new Error(worldModel.state === 'reading' ? 'The world model is still being read; start again in a moment.' : 'The world model could not be read; remove it or choose it again.')
       const materials = await Promise.all(items.map(async (item) => item.kind === 'link'
         ? { name: item.name, url: item.url }
         : { name: item.name, private: item.private, data: await base64(item.file!) }))
@@ -479,7 +532,12 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       const response = await fetch(`/api/galley-papers/${encodeURIComponent(slug)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, settings, materials, datasets: sets }),
+        body: JSON.stringify({
+          text, materials, datasets: sets,
+          // With only its world model, the paper has no systematic review and no web sources.
+          settings: worldModel?.only ? { ...settings, literatureReview: false, webSources: false } : settings,
+          ...(worldModel?.token ? { worldModel: { token: worldModel.token, only: worldModel.only } } : {}),
+        }),
       })
       if (!response.ok) throw new Error(await response.text())
       const at = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })

@@ -3,6 +3,7 @@
 import type { DatasetUnit, Material } from './materials.js'
 import type { ModelSpec } from './models.js'
 import type { Family, Seat } from './types.js'
+import type { WorldModelConfig } from './worldmodel.js'
 
 export const FAMILY_MODELS: Record<Family, { model: string; effort: string }> = {
   claude: { model: 'claude-opus-5-5', effort: 'xhigh' },
@@ -86,6 +87,11 @@ export interface PaperConfig {
    * datasheets or reports) when the scholarly index has no source for it. On unless set to false.
    */
   webSources?: boolean
+  /**
+   * A Resolvent world model the paper's sources come from: only its sources (the default), or its sources first and then
+   * the literature and the web. See worldmodel.ts.
+   */
+  worldModel?: WorldModelConfig
   /** Include a systematic review of the literature, run by Canary: as its own section, or (load-bearing) as the paper's main contribution. */
   literatureReview?: boolean | 'load-bearing'
   /** Include a Monte Carlo simulation the author designs and galley runs on this machine: in support, or (load-bearing) as what the main contribution rests on. */

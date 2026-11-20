@@ -8,6 +8,7 @@ import { simulationsBlock } from '../simulations.js'
 import { literatureBlock } from '../literature.js'
 import { authorYear, citationKey } from '../text.js'
 import type { Citation, Claim, ClaimStatus, Family, Seat, Work } from '../types.js'
+import { worldModelBlock } from '../worldmodel.js'
 
 export const now = () => new Date().toISOString()
 
@@ -89,7 +90,9 @@ export function briefBlock(paper: Paper, options: { fullSchema?: boolean } = {})
   if (chosen) lines.push(`Selected direction: ${chosen.title}: ${chosen.question} (shift: ${chosen.shift})`)
   // A paper that is a systematic review carries the review's protocol into every prompt.
   const review = paper.config.literatureReview === 'load-bearing' ? literatureBlock(paper) : ''
-  const extra = [materialsBlock(paper, options), measurementsBlock(paper), review, simulationsBlock(paper), systemBlock(paper)].filter(Boolean)
+  // A paper built on a world model reads the world model's claims closest to what it is about.
+  const model = worldModelBlock(paper, [paper.state.seed.text, plan?.thesis ?? '', brief?.contribution ?? '', brief?.concern ?? ''].join(' '))
+  const extra = [model, materialsBlock(paper, options), measurementsBlock(paper), review, simulationsBlock(paper), systemBlock(paper)].filter(Boolean)
   return [lines.filter(Boolean).join('\n'), ...extra].join('\n\n')
 }
 

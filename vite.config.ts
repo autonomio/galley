@@ -2,7 +2,8 @@
 // documents as markdown files in GALLEY_DIR (default ./.galley-data). An
 // empty folder starts with the welcome document.
 import { execFile, execFileSync, spawn } from 'node:child_process'
-import { createReadStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { createReadStream, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import type { ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -123,6 +124,28 @@ function papersPlugin(): Plugin {
           })
           return
         }
+        if (slugPart === '_world-model') {
+          // A world model (a Resolvent repository as a zip) is uploaded as it is and read once by the engine. Its records
+          // are kept until a paper starts with it, under a token; the zip itself is removed once read.
+          if (req.method !== 'POST') { res.statusCode = 405; res.end(''); return }
+          if (!existsSync(cli)) { res.statusCode = 503; res.end('build galley first: npm run build'); return }
+          const uploads = join(papers, '.uploads')
+          mkdirSync(uploads, { recursive: true })
+          const token = randomBytes(12).toString('hex')
+          const zip = join(uploads, `${token}.zip`)
+          const name = String(new URL(req.url || '/', 'http://localhost').searchParams.get('name') ?? '').replace(/\.zip$/i, '').replace(/[^\w.-]+/g, '_').slice(0, 120)
+          const out = createWriteStream(zip)
+          req.pipe(out)
+          out.on('finish', () => {
+            execFile(process.execPath, [cli, 'world-model', zip, '--out', join(uploads, `${token}.json`), ...(name ? ['--name', name] : [])], { timeout: 900_000, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
+              rmSync(zip, { force: true })
+              if (error) { res.statusCode = 422; res.end(String(stderr || error.message).split('\n').filter(Boolean).at(-1) ?? 'the world model could not be read'); return }
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ token, ...JSON.parse(stdout) }))
+            })
+          })
+          return
+        }
         if (slugPart === '_record') {
           // What a dataset's published record says (a Zenodo record or its DOI), for the wizard to show before the paper starts.
           const link = new URL(req.url || '/', 'http://localhost').searchParams.get('link') ?? ''
@@ -209,7 +232,7 @@ function papersPlugin(): Plugin {
         let body = ''
         req.on('data', (chunk) => { body += chunk })
         req.on('end', () => {
-          const { text, settings = {}, materials = [], datasets = [], citations } = JSON.parse(body || '{}')
+          const { text, settings = {}, materials = [], datasets = [], citations, worldModel } = JSON.parse(body || '{}')
           const stamp = Date.now()
           const seed = join(tmpdir(), `galley-seed-${slug}-${stamp}.md`)
           writeFileSync(seed, String(text || ''))
@@ -236,6 +259,12 @@ function papersPlugin(): Plugin {
           // The model families the paper may use, when the person turned one off.
           const families = Array.isArray(s.families) ? (s.families as unknown[]).map(String).filter((f) => ['claude', 'gpt', 'gemini'].includes(f)) : []
           if (families.length >= 2 && families.length < 3) args.push('--models', families.join(','))
+          // The world model the sources come from, as read when it was uploaded: only its sources unless the person allowed others.
+          const wm = worldModel as { token?: string; only?: boolean } | undefined
+          if (wm?.token && /^[0-9a-f]{24}$/.test(wm.token) && existsSync(join(papers, '.uploads', `${wm.token}.json`))) {
+            args.push('--world-model', join(papers, '.uploads', `${wm.token}.json`))
+            if (wm.only === false) args.push('--other-sources', 'yes')
+          }
           // Uploaded files are written under their own names for the engine to copy into the paper; links pass as they are.
           const inbox = join(tmpdir(), `galley-materials-${slug}-${stamp}`)
           for (const m of materials as { name?: string; url?: string; data?: string; private?: boolean }[]) {

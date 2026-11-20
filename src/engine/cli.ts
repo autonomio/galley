@@ -29,6 +29,7 @@ import { DOES } from './self.js'
 import { addDatabase, addDatasets, addMaterials, type DatasetManifest } from './materials.js'
 import { discover, parseConnectionLine, publicConnection, readConnections, type DatabaseSpec } from './databases.js'
 import { datasetFromRecord, isDatasetRecord, readRecord } from './records.js'
+import { keepWorldModel, loadWorldModelFile, worldModelName, worldModelSummary } from './worldmodel.js'
 import { reviewDone } from './behaviors/close.js'
 import { REVIEW_SETTINGS } from './literature.js'
 import type { Family } from './types.js'
@@ -292,6 +293,13 @@ async function main(): Promise<void> {
             : readDatabaseManifest(value)
         units.datasets.push(await addDatabase(dir, spec, `D${units.datasets.length + 1}`))
       }
+      // A world model the sources come from: a Resolvent repository as a zip or a folder, or the file galley read it into.
+      // Only its sources, unless --other-sources yes.
+      const worldModelPath = flag('world-model')
+      const onlySources = !/^(yes|on|true)$/i.test(flag('other-sources') ?? '')
+      const worldModel = worldModelPath ? keepWorldModel(dir, await loadWorldModelFile(resolve(worldModelPath)), onlySources) : undefined
+      if (worldModel) console.log(`World model: "${worldModel.name}", ${worldModel.claims} claims, ${worldModel.sources} sources; ${worldModel.only ? 'its sources only' : 'its sources first, then the literature and the web'}`)
+      if (worldModel?.only && option(flag('literature-review')) !== undefined) console.log('No systematic review: the paper rests only on its world model (give --other-sources yes to add one).')
       const materials = [...loose, ...units.materials]
       for (const m of materials) console.log(`Material ${m.id}: ${m.kind} ${m.url ?? m.name}${m.dataset ? ` in ${m.dataset}` : ''}${m.kind === 'dataset' ? (m.private ? ' (private)' : ' (shared)') : m.text ? '' : ' (its text could not be read)'}`)
       for (const u of units.datasets) console.log(`Dataset ${u.id}: ${u.name}, produced by ${u.producedBy}${u.doi ? `, DOI ${u.doi}` : u.url ? `, ${u.url}` : ''}${u.describedIn ? `, first reported in ${u.describedIn}` : ''}`)
@@ -315,6 +323,7 @@ async function main(): Promise<void> {
         ...(option(flag('simulation')) !== undefined ? { simulation: option(flag('simulation')) } : {}),
         ...(/^(no|off|false)$/i.test(flag('web-sources') ?? '') ? { webSources: false } : {}),
         ...(flag('models') ? { families: modelsFlag(flag('models')!) } : {}),
+        ...(worldModel ? { worldModel } : {}),
       })
       console.log(`Paper created in ${dir}`)
       if (command === 'write') await run(dir)
@@ -392,6 +401,16 @@ async function main(): Promise<void> {
       const [given] = positional()
       const line = given === '-' ? readFileSync(0, 'utf8').trim() : given
       console.log(JSON.stringify(line ? await discover(line) : readConnections().map(publicConnection)))
+      return
+    }
+    case 'world-model': {
+      // What a world model holds (a Resolvent repository as a zip or a folder), for a host to show before the paper starts.
+      // With --out, its records are kept in that file, which --world-model then takes as it is.
+      const [path] = positional()
+      if (!path) throw new Error('usage: galley world-model <zip or folder> [--out <file.json>]')
+      const model = await loadWorldModelFile(resolve(path), flag('name') ? worldModelName(flag('name')!) : undefined)
+      if (flag('out')) writeFileSync(resolve(flag('out')!), JSON.stringify(model))
+      console.log(JSON.stringify(worldModelSummary(model)))
       return
     }
     case 'record': {

@@ -150,7 +150,10 @@ export class Paper {
     const overrides = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}
     const base = defaultConfig()
     // The seats follow the families the paper may use.
-    return applyFamilies({ ...base, ...overrides, seats: { ...base.seats, ...(overrides.seats || {}) } })
+    const config = applyFamilies({ ...base, ...overrides, seats: { ...base.seats, ...(overrides.seats || {}) } })
+    // A paper that rests only on its world model searches nothing else: no systematic review, no sources from the web.
+    if (config.worldModel && config.worldModel.only !== false) { config.literatureReview = false; config.webSources = false }
+    return config
   }
 
   /**
