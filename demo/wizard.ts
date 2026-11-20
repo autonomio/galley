@@ -71,7 +71,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   const items: Item[] = []
   let step = 0
   let context: Context | null = null
-  const settings = { author: '', affiliation: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, reviewRole: 'supporting', simulation: false, simulationRole: 'supporting' }
+  const settings = { author: '', affiliation: '', funding: '', competingInterests: '', acknowledgements: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, reviewRole: 'supporting', simulation: false, simulationRole: 'supporting' }
 
   const dialog = h('dialog', { class: 'gw', 'aria-labelledby': 'gw-title' })
   const trail = h('ol', { class: 'gw-trail' })
@@ -177,11 +177,18 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       el.addEventListener('input', () => { settings[key] = el.value })
       return el
     }
+    const area = (key: 'funding' | 'competingInterests' | 'acknowledgements', placeholder: string) => {
+      const el = h('textarea', { class: 'gw-input gw-area', rows: 2, placeholder, 'aria-label': placeholder })
+      el.value = settings[key]
+      el.addEventListener('input', () => { settings[key] = el.value })
+      return el
+    }
     const seats = context?.seats
     const seatRow = (seat: string, s?: Seat) => h('tr', {}, h('th', { text: seat }), h('td', { text: s?.name ?? '—' }), h('td', { class: 'gw-mono', text: s?.model ?? '' }))
     return [
       h('h2', { id: 'gw-title', class: 'gw-title', text: 'How the paper is made' }),
       field('Author', h('div', { class: 'gw-pair' }, input('author', 'Name'), input('affiliation', 'Affiliation')), 'Set in the byline when the paper is typeset; never sent to a model.'),
+      field('Declarations', h('div', { class: 'gw-stack' }, area('funding', 'Funding'), area('competingInterests', 'Competing interests'), area('acknowledgements', 'Acknowledgements')), 'Printed as you write them; never sent to a model. Left empty, they stay out of the paper, and the sign-off sheet asks for them.'),
       field('Venue', h('span', {}, input('venue', 'Venue', 'gw-venues'), h('datalist', { id: 'gw-venues' }, ...['preprint (arXiv)', 'preprint (bioRxiv)', 'preprint (medRxiv)', 'preprint (SSRN)', 'preprint (EdArXiv)', 'journal article'].map((v) => h('option', { value: v })))), 'Shapes the outline and how the referees read the paper.'),
       field('Length', segmented([3000, 5000, 7000, 9000].map((w) => [`${n(w)} words`, w] as [string, number]), settings.words, (v) => { settings.words = v; render() }, 'Length')),
       field('Also include', h('div', { class: 'gw-choices' }, toggle('literatureReview', 'Systematic literature review', `Canary searches OpenAlex, screens the candidates, reads at least ${context?.review?.papers ?? 50} full papers and has every finding audited by a second model.`, 'A review section after the introduction, beside the paper\'s own contribution; it runs alongside the other steps.', 'The paper is the systematic review: its thesis and contribution are what the review establishes, and the plan waits for the review to finish.'), toggle('simulation', 'Monte Carlo simulation', 'The author designs the simulation the argument needs (plain, correlated or sequential Monte Carlo) and galley runs it on this machine; every simulated number in the paper is filled in from the run.', 'Its results support the paper\'s own contribution where they help.', 'The paper\'s thesis rests on what the simulation shows: its contribution claims are claims about the results, and the paper is built around the model.'))),

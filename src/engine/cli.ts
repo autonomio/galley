@@ -71,7 +71,8 @@ const DOING: Record<string, string> = {
   outline: 'Outlining', 'find-evidence': 'Finding evidence', verify: 'Verifying citations', reassess: 'Reassessing the thesis', calibrate: 'Calibrating the verifier',
   draft: 'Drafting', figure: 'Drawing figures', fidelity: 'Checking sections against their claims', frame: 'Writing the title and abstract',
   referee: 'Referee review', 'close-round': 'Closing the round', respond: 'Answering the referees', 'verify-disposition': 'Referees judging the answers',
-  adjudicate: 'Settling disputes', reconcile: 'Reconciling the ledger with the text', reprofile: 'Profiling the finished paper', typeset: 'Typesetting',
+  adjudicate: 'Settling disputes', 'handle-finding': 'Stating an unsettled finding as a limitation', reconcile: 'Reconciling the ledger with the text', reprofile: 'Profiling the finished paper', typeset: 'Typesetting',
+  proof: 'Reading the typeset paper',
 }
 
 /** Where a paper stands, as structured data for a host to show. */
@@ -251,6 +252,11 @@ async function main(): Promise<void> {
         ...(flag('rounds') ? { rounds: Math.max(1, Number(flag('rounds'))) } : {}),
         ...(author ? { authors: [{ name: author, ...(flag('affiliation') ? { affiliation: flag('affiliation') } : {}) }] } : {}),
         ...(flag('venue') ? { venue: flag('venue')! } : {}),
+        ...(flag('funding') || flag('competing-interests') || flag('acknowledgements') ? { declarations: {
+          ...(flag('funding') ? { funding: flag('funding')! } : {}),
+          ...(flag('competing-interests') ? { competing_interests: flag('competing-interests')! } : {}),
+          ...(flag('acknowledgements') ? { acknowledgements: flag('acknowledgements')! } : {}),
+        } } : {}),
         ...(flag('words') ? { words: Number(flag('words')) } : {}),
         ...(flag('editor') ? { editorDir: resolve(flag('editor')!) } : {}),
         ...(flag('editor-doc') ? { editorDoc: flag('editor-doc')! } : {}),

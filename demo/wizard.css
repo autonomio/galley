@@ -69,6 +69,8 @@ html[data-theme="light"] .gw {
 .gw-field:last-child { border-bottom: 0; }
 .gw-label { margin-bottom: 8px; color: var(--gw-muted); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
 .gw-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.gw-stack { display: grid; gap: 8px; }
+.gw-area { resize: vertical; min-height: 2.6em; font: inherit; }
 .gw-input { width: 100%; height: 32px; padding: 0 10px; border: 1px solid var(--gw-edge); border-radius: 2px; background: var(--gw-canvas); color: var(--gw-text); font: inherit; transition: border-color 120ms; }
 .gw-input:focus { outline: 2px solid var(--gw-accent); outline-offset: 1px; border-color: var(--gw-accent); }
 .gw-input::placeholder { color: var(--gw-muted); }

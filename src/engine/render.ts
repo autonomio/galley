@@ -74,9 +74,28 @@ ${sims.length ? `| Simulations | ${sims.map((r) => `${r.id}: ${methodWords(r.res
 `
 }
 
-function declaration(value: string | undefined): string {
-  return value && value.trim() ? value.trim() : 'To be declared by the author.'
+/**
+ * Display equations are numbered in order, and a label the author gave one ({#eq:name}) becomes its number wherever
+ * the text refers to it (@eq:name), so no label reaches the page as raw text.
+ */
+export function numberEquations(texts: string[]): string[] {
+  const numbers = new Map<string, number>()
+  let n = 0
+  const numbered = texts.map((text) => text.replace(/\$\$([\s\S]*?)\$\$([ \t]*\{#eq:([\w:-]+)\})?/g, (_match, body: string, _label: string, name?: string) => {
+    n++
+    if (name) numbers.set(name, n)
+    return `$$${body}$$`
+  }))
+  return numbered.map((text) => text
+    .replace(/\[@eq:([\w:-]+)\]|@eq:([\w:-]+)/g, (match, a?: string, b?: string) => {
+      const at = numbers.get((a ?? b)!)
+      return at ? `(${at})` : match
+    })
+    .replace(/[ \t]*\{#eq:[\w:-]+\}/g, ''))
 }
+
+/** Typst settings both PDFs share: display equations carry their number. */
+const TYPST_HEADER = '#set math.equation(numbering: "(1)")'
 
 export async function buildManuscript(paper: Paper): Promise<{ markdown: string; refs: Record<string, unknown>[]; record: Record_ }> {
   const s = paper.state
@@ -86,12 +105,13 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   const known = new Set(refs.map((r) => String(r.id)))
   const plain = (text: string) => escapeUnknownCitations(text, known)
   const title = paper.config.title || s.frame?.title || s.plan?.workingTitle || 'Untitled'
-  const authors = paper.config.authors.length ? paper.config.authors : [{ name: 'Author names to be confirmed' }]
+  // A paper never prints a blank for its author to fill: with none set it has no author line, and the sign-off asks for them.
+  const authors = paper.config.authors
   const date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
   const head = [
     '---',
     `title: ${yamlString(plain(title))}`,
-    'author:',
+    ...(authors.length ? ['author:'] : []),
     ...authors.map((a) => `  - name: ${yamlString(a.name)}${a.affiliation ? `\n    affiliation: ${yamlString(a.affiliation)}` : ''}${a.email ? `\n    email: ${yamlString(a.email)}` : ''}`),
     `date: ${yamlString(date)}`,
     `abstract: ${yamlString(plain(fillPlaceholders(s.frame?.abstract ?? '', record).text))}`,
@@ -102,9 +122,10 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   ].join('\n')
   const body: string[] = []
   const unknown: string[] = []
-  for (const section of s.outline?.sections ?? []) {
-    const text = s.passages[section.id]?.text ?? ''
-    const filled = fillPlaceholders(text, record)
+  const sections = s.outline?.sections ?? []
+  const numbered = numberEquations(sections.map((section) => s.passages[section.id]?.text ?? ''))
+  for (const [i, section] of sections.entries()) {
+    const filled = fillPlaceholders(numbered[i], record)
     unknown.push(...filled.unknown)
     body.push(`# ${section.title}\n\n${filled.text}`)
     for (const fig of s.figures.filter((f) => f.sectionId === section.id && f.status === 'rendered' && f.file)) {
@@ -119,11 +140,15 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   const evidencePackage = 'Every claim in this manuscript, the evidence it rests on and the verbatim passages of its sources are available as an evidence package accompanying it (claims, evidence and sources in the Resolvent format).'
   const reproduction = runsOf(paper).length ? ` The simulations can be rerun, and every simulated number checked against this manuscript, with the reproduction package that accompanies it (simulation/: node simulate.mjs --verify, or index.html in a browser).` : ''
   body.push(`# Data and code availability {.unnumbered}\n\n${decl.availability || `${s.brief?.aboutSystem ? `${sourceStatement()} ` : ''}${evidencePackage}${reproduction}`}`)
-  body.push(`# Competing interests {.unnumbered}\n\n${declaration(decl.competing_interests)}`)
-  body.push(`# Funding {.unnumbered}\n\n${declaration(decl.funding)}`)
+  // A declaration only the author can make is printed once they have made it; until then the sign-off asks for it.
+  if (decl.competing_interests?.trim()) body.push(`# Competing interests {.unnumbered}\n\n${decl.competing_interests.trim()}`)
+  if (decl.funding?.trim()) body.push(`# Funding {.unnumbered}\n\n${decl.funding.trim()}`)
+  if (decl.acknowledgements?.trim()) body.push(`# Acknowledgements {.unnumbered}\n\n${decl.acknowledgements.trim()}`)
   body.push('# References {.unnumbered}\n\n::: {#refs}\n:::')
   if (unknown.length) paper.note('typeset', `Unknown placeholders left as "[not recorded]": ${[...new Set(unknown)].join(', ')}`)
-  return { markdown: `${head}\n\n${escapeUnknownCitations(body.join('\n\n'), known)}\n`, refs, record }
+  // A possessive after an abbreviation ("et al.'s") would be typeset as an opening quote; it is written as the apostrophe it is.
+  const printed = body.join('\n\n').replace(/\.'s\b/g, '.’s')
+  return { markdown: `${head}\n\n${escapeUnknownCitations(printed, known)}\n`, refs, record }
 }
 
 // ---------------------------------------------------------------- editor document and notes
@@ -484,7 +509,7 @@ function findingsSummary(record: Record_): string {
     ['run.findings_decided', 'decided by a third model family'], ['run.findings_set_aside', 'set aside by a third model family, with the text answering each'],
     ['run.findings_fallback', 'stated as limitations when adjudication could not settle them'], ['run.findings_yours', 'set aside by the author'], ['run.findings_open', 'still open'],
   ] as const).filter(([key]) => Number(record[key]) > 0).map(([key, what]) => `${record[key]} ${what}`)
-  return `${record['run.findings']} over ${record['run.rounds']} round(s); ${record['run.findings_material']} material or critical${parts.length ? `: ${parts.join(', ')}` : ''}`
+  return `${record['run.findings']} over ${record['run.rounds']} round${Number(record['run.rounds']) === 1 ? '' : 's'}; ${record['run.findings_material']} material or critical${parts.length ? `: ${parts.join(', ')}` : ''}`
 }
 
 // ---------------------------------------------------------------- sign-off
@@ -527,6 +552,10 @@ ${list(s.findings.filter((f) => f.adjudication?.setAside).map((f) => `${f.id}: $
 ## Findings stated as limitations because adjudication could not settle them (${s.findings.filter((f) => f.adjudication?.fallback).length})
 ${list(s.findings.filter((f) => f.adjudication?.fallback).map((f) => `${f.id}: ${f.question} The paper now says: "${f.adjudication!.edits[0]?.new ?? ''}"`), 'None.')}
 
+## Typeset review
+${s.proof ? `Read ${s.proof.rounds === 1 ? 'once' : `${s.proof.rounds} times`} as a reader sees it; ${s.proof.fixed} defect${s.proof.fixed === 1 ? '' : 's'} sent back and fixed. ${s.proof.left.length ? `Still to fix before submission (${s.proof.left.length}):` : 'The last reading found nothing left to fix.'}` : 'Not run.'}
+${s.proof?.left.length ? list(s.proof.left.map((d) => `page ${d.page ?? '?'}, ${d.where}: "${d.quote}". ${d.problem} Fix: ${d.fix}`), 'None.') : ''}
+
 ## Threads assigned to people
 ${list(s.findings.filter((f) => f.assignee === 'humans' && f.status === 'open').map((f) => `${f.id}: ${f.question}`), 'None.')}
 
@@ -547,6 +576,13 @@ ${Object.values(s.measurements ?? {}).length ? `\nMeasurements galley computed f
 ## Production record
 ${Object.entries(record).map(([k, v]) => `- ${PLACEHOLDERS[k] ?? LIT_PLACEHOLDERS[k] ?? k}: ${v}`).join('\n')}
 `
+}
+
+/** The sign-off sheet, written again when something after typesetting changes what it says (the typeset review). */
+export function writeSignoff(paper: Paper): void {
+  const out = paper.path('out')
+  if (!existsSync(out)) return
+  writeFileSync(join(out, 'signoff.md'), signoff(paper, productionRecord(paper)))
 }
 
 // ---------------------------------------------------------------- evidence package
@@ -613,6 +649,8 @@ export function contentHash(paper: Paper): string {
   const s = paper.state
   return createHash('sha256').update(JSON.stringify({
     passages: Object.values(s.passages).map((p) => p.text), frame: s.frame, outcome: s.outcome,
+    // The claim ledger is printed as an appendix, so a restated claim is a new revision too.
+    claims: s.claims.map((c) => [c.id, c.status, c.text]),
     findings: s.findings.map((f) => [f.id, f.status, f.dispositions.length]), citations: s.citations.map((c) => [c.id, c.status]),
     figures: s.figures.map((f) => [f.id, f.status]), title: paper.config.title, authors: paper.config.authors, decl: paper.config.declarations,
   })).digest('hex').slice(0, 16)
@@ -628,12 +666,12 @@ export async function typeset(paper: Paper): Promise<string[]> {
   writeFileSync(join(build, 'refs.json'), JSON.stringify(refs, null, 2))
   const common = ['manuscript.md', '--citeproc', '--bibliography', 'refs.json', '--resource-path', build]
   const made: string[] = []
-  await exec('pandoc', [...common, '-o', join(out, 'paper.pdf'), '--pdf-engine=typst', '-V', 'papersize=a4', '-V', 'fontsize=10.5pt', '-V', 'section-numbering=1.1'], build)
+  await exec('pandoc', [...common, '-o', join(out, 'paper.pdf'), '--pdf-engine=typst', '-V', 'papersize=a4', '-V', 'fontsize=10.5pt', '-V', 'section-numbering=1.1', '-V', `header-includes=${TYPST_HEADER}`], build)
   made.push('paper.pdf')
   // The version many journals ask for at submission: line-numbered, with room between lines.
   try {
     await exec('pandoc', [...common, '-o', join(out, 'paper-review.pdf'), '--pdf-engine=typst', '-V', 'papersize=a4', '-V', 'fontsize=11pt', '-V', 'section-numbering=1.1',
-      '-V', 'header-includes=#set par.line(numbering: "1", numbering-scope: "page")\n#set par(leading: 1.1em)'], build)
+      '-V', `header-includes=${TYPST_HEADER}\n#set par.line(numbering: "1", numbering-scope: "page")\n#set par(leading: 1.1em)`], build)
     made.push('paper-review.pdf')
   } catch (error) {
     paper.note('typeset', `paper-review.pdf was not produced: ${(error as Error).message.slice(0, 200)}`)

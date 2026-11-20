@@ -12,6 +12,7 @@ import { briefBlock, claimsBlock, keyFor, live, manuscriptBlock, now, seatFamily
 import { verifyCitationsSettled } from './truth.js'
 import { literatureBlock, REVIEW_SECTION, REVIEW_SECTION_RULES } from '../literature.js'
 import { simulationSeries } from '../simulations.js'
+import { fillPlaceholders, productionRecord } from '../record.js'
 
 function knownKeys(paper: Paper): Set<string> {
   return new Set(paper.state.citations.filter((c) => c.status === 'verified').map((c) => keyFor(paper, paper.state.works[c.workId])))
@@ -169,12 +170,14 @@ Section it illustrates: ${paper.state.outline!.sections.find((sec) => sec.id ===
 Relevant claims:
 ${claimsBlock(paper, paper.state.outline!.sections.find((sec) => sec.id === fig.sectionId)?.claimIds ?? [])}
 ${simulationSeries(paper) ? `\n${simulationSeries(paper)}\nChart a simulation only from these values, and label the axes with the quantities and units the paper uses.` : ''}
-${lastError ? `\nThe previous attempt failed to compile with: ${lastError}\nFix that.` : ''}
+${lastError ? `\nThe previous attempt failed to compile with: ${lastError}\nFix that.` : ''}${fig.revise ? `\nIn the typeset paper, a reader found this in the figure: ${fig.revise}\nDraw it again without that defect.` : ''}
+A number may be written as its {{placeholder}}; it is filled in with its recorded value before the figure is drawn.
 
 Return typst (the complete document source).`,
           schema: obj({ typst: str() }),
         })
-        const source = String(reply.typst ?? '')
+        // A figure is a picture: its numbers are written in before it is drawn, never left as placeholders.
+        const source = fillPlaceholders(String(reply.typst ?? ''), productionRecord(paper)).text
         writeFileSync(`${dir}/${fig.id}.typ`, source)
         try {
           await typst(['compile', `${fig.id}.typ`, `${fig.id}.png`, '--ppi', '250'], dir)
@@ -187,6 +190,7 @@ Return typst (the complete document source).`,
         fig.status = 'rendered'
         fig.file = `figures/${fig.id}.png`
         fig.source = source
+        delete fig.revise
         paper.save()
       },
       skip: () => { fig.status = 'skipped' },

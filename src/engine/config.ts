@@ -76,7 +76,7 @@ export interface PaperConfig {
   /** The editor document the paper is written into, by its exact name: the document the project started from. Defaults to the folder's name. */
   editorDoc?: string
   /** Statements only the authors can make; each one left empty is a sign-off item. */
-  declarations?: { availability?: string; competing_interests?: string; funding?: string }
+  declarations?: { availability?: string; competing_interests?: string; funding?: string; acknowledgements?: string }
   /** The authors' own datasets, documents and links, copied into the paper's materials folder when it starts. */
   materials?: Material[]
   /** Include a systematic review of the literature, run by Canary: as its own section, or (load-bearing) as the paper's main contribution. */

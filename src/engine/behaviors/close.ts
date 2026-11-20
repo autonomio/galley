@@ -231,6 +231,8 @@ export const ready: Behavior = {
     if (!(s.profileAfter || paper.isSettled('reprofile:final') || paper.config.off.includes('reprofile'))) return []
     if (!paper.isSettled('frame:final')) return []
     if (!paper.isSettled(`typeset:${contentHash(paper)}`)) return []
+    // The typeset paper has been read as a reader sees it, on this very revision.
+    if (!paper.config.off.includes('proof') && !paper.isSettled(`proof:${contentHash(paper)}`)) return []
     return [{
       key: 'ready:paper', label: 'every gate on one revision',
       run: async () => {

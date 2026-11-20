@@ -166,6 +166,10 @@ function papersPlugin(): Plugin {
           const add = (name: string, value: unknown, ok: (v: string) => boolean) => { const v = String(value ?? '').trim(); if (v && ok(v)) args.push(`--${name}`, v) }
           add('author', s.author, (v) => v.length <= 200)
           add('affiliation', s.affiliation, (v) => v.length <= 300)
+          // Declarations only the author can make: printed as written, never sent to a model.
+          add('funding', s.funding, (v) => v.length <= 2000)
+          add('competing-interests', s.competingInterests, (v) => v.length <= 2000)
+          add('acknowledgements', s.acknowledgements, (v) => v.length <= 2000)
           add('venue', s.venue, (v) => v.length <= 200)
           add('words', s.words, (v) => /^\d{3,5}$/.test(v))
           add('rounds', s.rounds, (v) => /^[12]$/.test(v))

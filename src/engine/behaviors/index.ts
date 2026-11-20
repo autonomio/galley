@@ -9,6 +9,7 @@ import { draft, fidelity, figure, frame as firstFrame } from './write.js'
 import { analyzeData } from './data.js'
 import { literatureReview } from './literature.js'
 import { simulateModel } from './simulate.js'
+import { proof } from './proof.js'
 
 // One behavior writes the frame: once when the draft is checked, and again from the reviewed text.
 const frame: Behavior = { ...firstFrame, ready: (paper) => [...firstFrame.ready(paper), ...finalFrame(paper)] }
@@ -30,6 +31,6 @@ export const LADDER: Behavior[] = [
   draft, figure, fidelity, frame,
   // Referees: other families review; the author answers; a third family settles; what it cannot settle becomes a limitation.
   referee, closeRound, respond, verifyDisposition, adjudicate, handleFinding,
-  // Close: the ledger is made to say what the reviewed text says, then the paper is profiled and typeset.
-  reconcile, reprofile, typeset, ready,
+  // Close: the ledger is made to say what the reviewed text says, then the paper is profiled, typeset and read as printed.
+  reconcile, reprofile, typeset, proof, ready,
 ]

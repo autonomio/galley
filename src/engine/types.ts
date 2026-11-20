@@ -160,6 +160,8 @@ export interface Figure {
   status: 'planned' | 'rendered' | 'skipped'
   file?: string
   source?: string
+  /** A defect a reader found in the typeset figure, for the next drawing to fix. */
+  revise?: string
 }
 
 export interface Frame {
@@ -269,6 +271,18 @@ export interface LiteratureReview {
   claimIds?: string[]
 }
 
+/** A printing defect found in the typeset paper: by the reader (a model reading the pages) or by the mechanical check. */
+export interface ProofDefect {
+  page: number | null
+  where: 'section text' | 'figure' | 'table' | 'equation' | 'references' | 'front matter' | 'appendix' | 'other'
+  quote: string
+  problem: string
+  fix: string
+  by: 'reader' | 'check'
+  /** The figure it was found in, when the check read that figure's own source. */
+  figureId?: string
+}
+
 export interface PaperState {
   version: 1
   slug: string
@@ -310,6 +324,8 @@ export interface PaperState {
   editorWritten?: { doc: string; notes: string }
   /** Threads galley itself last wrote as resolved, so its own mark is never taken for a person's decision. */
   editorResolved?: string[]
+  /** The typeset review: how many readings, what the last one found, how many defects were fixed and what is left for a person. */
+  proof?: { rounds: number; hash: string; defects: ProofDefect[]; fixed: number; left: ProofDefect[] }
   /** Replies a person wrote in the editor that are already findings. */
   repliesSeen?: string[]
   /** A title a person gave the paper in the editor; it stands over the system's. */

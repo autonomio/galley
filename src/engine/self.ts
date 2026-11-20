@@ -38,7 +38,8 @@ export const DOES: Record<string, string> = {
   reconcile: "once review is done, a family other than the author's reads the final text against every claim in the ledger: each is confirmed, narrowed to the text's wording, or dropped as no longer stated, so the ledger, the evidence package and the sign-off sheet say what the manuscript says",
   reprofile: 'scores the finished paper against the seven impact factors',
   typeset: 'whenever the text changes, renders the PDF, a line-numbered review PDF, LaTeX, Word, the editor document, the evidence package and the sign-off sheet',
-  ready: 'marks the paper ready for submission once every gate holds on one revision',
+  proof: "once the paper is typeset, a family other than the author's reads every printed page, as an image where it can see one and as text in any case, with checks for what must never be printed (placeholders, raw labels, unresolved references, blanks); defects in the prose go back to the author and defects in a figure go back to the figure, then the paper is typeset and read again",
+  ready: 'marks the paper ready for submission once every gate holds on one revision, the typeset reading included',
 }
 
 const RULES = [
