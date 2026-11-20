@@ -1,6 +1,6 @@
 // A project's files: the icon on the left opens what its paper has made, each
 // file has a link of its own, and the list is a link as well.
-import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 
@@ -31,6 +31,7 @@ function typesetPaper(): string {
   writeFileSync(join(dir, 'out', 'refs.bib'), '@article{a, title={A}}\n')
   writeFileSync(join(dir, 'out', 'signoff.md'), '# Sign-off\n')
   writeFileSync(join(dir, 'out', 'figures', 'fig1.png'), 'png')
+  writeFileSync(join(dir, 'out', 'papers-cited.csv'), 'a,b\n')
   writeFileSync(join(dir, 'out', '.draft'), 'not for anyone')
   // Links in out/ to what is not out/'s to share.
   symlinkSync(join(dir, 'materials.csv'), join(dir, 'out', 'materials.csv'))
@@ -51,8 +52,18 @@ test('the files icon on the left opens what the paper has made, each file a link
   await expect(dialog).toBeVisible()
   await expect(page).toHaveURL(new RegExp(`\\?doc=${slug}&view=files$`))
   // The PDF first; a folder is one row; what is hidden is left out.
-  await expect(dialog.locator('.df-row .df-name')).toHaveText(['Paper', 'References', 'Figures', 'Sign-off sheet'])
+  await expect(dialog.locator('.df-row .df-name')).toHaveText(['Paper', 'References', 'Figures', 'Sign-off sheet', 'papers-cited.csv'])
   await expect(dialog.getByRole('link', { name: 'Paper', exact: true })).toHaveAttribute('href', `/papers/${slug}/paper.pdf`)
+  // Sizes as they are, counted as they are.
+  await expect(dialog.locator('.df-row[data-path="signoff.md"] .df-detail')).toHaveText('What only the authors can decide · 11 B')
+  await expect(dialog.locator('.df-row[data-path="figures"] .df-detail')).toHaveText('1 file · 3 B')
+  await expect(dialog.locator('.gw-foot')).toContainText('5 files ·')
+  // A download is named for its document; a file that only starts with "paper" keeps its name.
+  for (const [path, saved] of [['paper.pdf', `${slug}.pdf`], ['papers-cited.csv', `${slug}-papers-cited.csv`]]) {
+    const download = page.waitForEvent('download')
+    await dialog.locator(`.df-row[data-path="${path}"] .df-actions button`).first().click()
+    expect((await download).suggestedFilename()).toBe(saved)
+  }
   // The controls in the dialog are the editor's own, tips and all.
   await dialog.getByRole('button', { name: 'Download everything' }).hover()
   await expect(dialog.locator('.galley-tooltip.is-shown')).toContainText('Every file the paper has made')
@@ -84,6 +95,40 @@ test('the files icon on the left opens what the paper has made, each file a link
   await dialog.getByRole('button', { name: 'Close' }).click()
   await expect(dialog).toBeHidden()
   await expect(page).toHaveURL(new RegExp(`\\?doc=${slug}$`))
+})
+
+test('a zip that could not be made whole fails as a download, never arrives as half an archive', async ({ request }) => {
+  const slug = typesetPaper()
+  const unreadable = join(papers(), slug, 'out', 'refs.bib')
+  chmodSync(unreadable, 0o000)
+  try {
+    await expect(request.get(`/papers/${slug}.zip`)).rejects.toThrow()
+  } finally {
+    chmodSync(unreadable, 0o644)
+  }
+  expect((await request.get(`/papers/${slug}.zip`)).status()).toBe(200)
+})
+
+test('opened in writer mode, the list keeps its controls', async ({ page }) => {
+  const slug = typesetPaper()
+  await page.goto(`/?doc=${slug}&view=writer+files`)
+  const dialog = page.locator('dialog.gw--files')
+  await expect(dialog.getByRole('button', { name: 'Download everything' })).toBeVisible()
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page).toHaveURL(new RegExp(`\\?doc=${slug}&view=writer$`))
+})
+
+test('the paper\'s window opens once, from its link or a double click', async ({ page }) => {
+  const slug = typesetPaper()
+  await page.goto(`/?doc=${slug}&view=paper`)
+  await expect(page.locator('dialog.gw--status')).toHaveCount(1)
+  await page.keyboard.press('Escape')
+  await expect(page).toHaveURL(new RegExp(`\\?doc=${slug}$`))
+  await page.locator('[data-action="write-paper"]').dblclick()
+  await expect(page.locator('dialog.gw--status')).toBeVisible()
+  await page.waitForTimeout(500)
+  await expect(page.locator('dialog.gw--status')).toHaveCount(1)
 })
 
 test('a file\'s link can be copied, to pass on', async ({ page, context }) => {

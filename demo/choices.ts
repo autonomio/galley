@@ -30,12 +30,14 @@ export function choicesAction(link?: Router): EditorAction {
     document.body.append(panel)
     const render = async () => {
       if (!panel) return
-      const response = await fetch(url(slug))
-      const choices: Choice[] = response.ok ? (await response.json()).choices : []
+      // A failed read still draws the panel, Close and all, or it would stay open with no way to shut it.
+      const response = await fetch(url(slug)).catch(() => null)
+      const choices: Choice[] = response?.ok ? await response.json().then((b) => b.choices ?? [], () => []) : []
+      if (!panel) return
       panel.replaceChildren()
       const head = document.createElement('div')
       head.className = 'demo-proposals-head'
-      head.textContent = response.ok ? (choices.length ? `${choices.length} claim${choices.length === 1 ? '' : 's'} waiting for your choice` : 'No citation choices waiting') : 'No paper from this document yet'
+      head.textContent = !response ? 'The choices could not be read' : response.ok ? (choices.length ? `${choices.length} claim${choices.length === 1 ? '' : 's'} waiting for your choice` : 'No citation choices waiting') : 'No paper from this document yet'
       const x = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Close', className: 'demo-link' })
       x.addEventListener('click', close)
       head.append(x)

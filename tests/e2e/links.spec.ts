@@ -1,7 +1,7 @@
 // Everything on screen is a link: the address bar names the open document and
 // what is open with it, Back and Forward walk the documents, and opening the
 // link opens the same screen.
-import { writeFileSync } from 'node:fs'
+import { unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 
@@ -51,9 +51,36 @@ test('writer mode is in the link, and the link opens it', async ({ page }) => {
 })
 
 test('a link to a document that is not here says so, and names the one it opened', async ({ page }) => {
-  await page.goto(`/?doc=gone-${Date.now()}`)
+  // Its files were the missing document's: the one that opened instead does not show its own as if they were.
+  await page.goto(`/?doc=gone-${Date.now()}&view=files`)
   await page.waitForFunction(() => !!window.galley?.slug)
   await expect(page.locator('body')).toContainText('There is no document')
   const slug = await page.evaluate(() => window.galley.slug)
   await expect(page).toHaveURL(new RegExp(`\\?doc=${slug}$`))
+  await expect(page.locator('dialog.gw--files')).toHaveCount(0)
 })
+
+test('Back to a document deleted since stays on the one on screen, and the link says so', async ({ page }) => {
+  const [a, b] = two()
+  await page.goto(`/?doc=${a}`)
+  await page.waitForFunction((s) => window.galley?.slug === s, a)
+  await page.evaluate((s) => window.galley.open(s), b)
+  await expect(page).toHaveURL(new RegExp(`\\?doc=${b}$`))
+  unlinkSync(join(docs(), `${a}.md`))
+  await page.goBack()
+  await expect(page.locator('body')).toContainText(`There is no document “${a}”`)
+  await expect(page).toHaveURL(new RegExp(`\\?doc=${b}$`))
+})
+
+for (const [view, endpoint, says] of [['choices', '**/api/galley-papers/*/choices', 'The choices could not be read'], ['proposals', '**/api/galley-proposals/*', 'The proposed changes could not be read']]) {
+  test(`a link to ${view} that cannot be read still opens a panel that closes`, async ({ page }) => {
+    const [a] = two()
+    await page.route(endpoint, (route) => route.abort())
+    await page.goto(`/?doc=${a}&view=${view}`)
+    const panel = page.locator('.demo-proposals')
+    await expect(panel).toContainText(says)
+    await panel.getByRole('button', { name: 'Close' }).click()
+    await expect(panel).toHaveCount(0)
+    await expect(page).toHaveURL(new RegExp(`\\?doc=${a}$`))
+  })
+}

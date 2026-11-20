@@ -33,11 +33,12 @@ const KNOWN: [name: string, group: Group, label: string, detail: string][] = [
 const REFRESH_MS = 10_000
 
 const fileUrl = (doc: string, path: string) => `/papers/${encodeURIComponent(doc)}/${path.split('/').map(encodeURIComponent).join('/')}`
-const bytes = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} kB`)
+const bytes = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : n >= 1e3 ? `${Math.round(n / 1e3)} kB` : `${n} B`)
+const count = (n: number) => `${n} file${n === 1 ? '' : 's'}`
 const extension = (name: string) => (/\.([a-z0-9]+)$/i.exec(name)?.[1] ?? '').toUpperCase()
 const clock = (date: Date) => date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 // A download is named for its document: paper.pdf of trees is trees.pdf, refs.bib is trees-refs.bib.
-const saveAs = (doc: string, name: string) => (name.startsWith('paper') ? name.replace(/^paper/, doc) : `${doc}-${name}`)
+const saveAs = (doc: string, name: string) => (/^paper[.-]/.test(name) ? name.replace(/^paper/, doc) : `${doc}-${name}`)
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, string | undefined> = {}, ...children: (Node | string | null | undefined | false)[]): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag)
@@ -111,7 +112,7 @@ export function filesAction(link?: Router): EditorAction {
     function row(item: Item): HTMLElement {
       const href = fileUrl(doc!, item.folder ? `${item.name}.zip` : item.name)
       const size = item.files.reduce((n, f) => n + f.size, 0)
-      const facts = [item.detail, item.folder ? `${item.files.length} file${item.files.length === 1 ? '' : 's'}` : '', bytes(size)].filter(Boolean).join(' · ')
+      const facts = [item.detail, item.folder ? count(item.files.length) : '', bytes(size)].filter(Boolean).join(' · ')
       const kind = h('span', { class: item.folder ? 'df-kind df-kind--folder' : 'df-kind', title: item.folder ? 'Folder' : undefined })
       if (item.folder) kind.innerHTML = icons.folder
       else kind.textContent = extension(item.name) || 'FILE'
@@ -160,7 +161,7 @@ export function filesAction(link?: Router): EditorAction {
       const items = itemsOf(listing.files)
       const total = listing.files.reduce((n, f) => n + f.size, 0)
       all.disabled = !items.length
-      hint.textContent = items.length ? `${listing.files.length} files · ${bytes(total)} · as of ${clock(new Date())}` : `As of ${clock(new Date())}`
+      hint.textContent = items.length ? `${count(listing.files.length)} · ${bytes(total)} · as of ${clock(new Date())}` : `As of ${clock(new Date())}`
       // Redrawn only when the files changed, and where the person had scrolled stays put.
       const now = JSON.stringify(listing)
       if (now === shown) return
