@@ -25,6 +25,7 @@ import { createDocPicker, type DocPicker } from './doc-picker.js'
 import { icons } from './icons.js'
 import { drawHighlight, pageRects, renderAnnotationMarks } from './marks.js'
 import { createNotePanel, type ThreadView } from './notes.js'
+import { createMotion } from './motion.js'
 import { createSelectionCluster, type ClusterAction, type SelectedPassage } from './selection.js'
 import { DocumentSession, type Notice, type SaveState } from './session.js'
 import { createNoticeStack, createStatusLine } from './status.js'
@@ -67,8 +68,8 @@ export interface EditorEvents {
 
 export interface EditorOptions {
   store: DocumentStore
-  /** Header actions, in order. Default: writer, new, import, copy, delete. */
-  toolbar?: (BuiltinAction | EditorAction)[]
+  /** Header actions, in order; `'|'` draws a divider between groups. Default: writer, new, import, copy, delete. */
+  toolbar?: (BuiltinAction | EditorAction | '|')[]
   /** Selection actions, in order. Default: comment. */
   selectionActions?: (BuiltinSelectionAction | SelectionAction)[]
   /** Show the document picker. Default true. */
@@ -136,11 +137,15 @@ export interface Editor {
   /** The versions the open document and its notes were last read or saved at. */
   versions(): { doc: Version | null, annotations: Version | null }
   /**
-   * Room for the host inside the editor: `header` is a strip under the
-   * toolbar that stays put; `top` sits above the text and scrolls with it.
-   * Created on first use.
+   * Room for the host inside the editor, created on first use:
+   * - `bar-start` and `bar-end`: the start and the end of the toolbar's row,
+   *   for the host's own name and controls (`iconButton` makes them match);
+   * - `header`: a strip under the toolbar that stays put;
+   * - `top`: a block above the text that scrolls with it;
+   * - `side`: a pane beside the page, under the bar.
+   * All but `top` hide in writer mode.
    */
-  slot(where: 'header' | 'top'): HTMLElement
+  slot(where: 'bar-start' | 'bar-end' | 'header' | 'top' | 'side'): HTMLElement
   notify(notice: Notice): void
   annotations: {
     list(): Annotation[]
@@ -195,6 +200,8 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
   root.innerHTML = ''
   const bar = el('header', { class: 'galley-bar' })
   const barRight = el('div', { class: 'galley-bar-right' })
+  // The page, and whatever a host puts beside it (slot 'side'), under the bar.
+  const body = el('div', { class: 'galley-body' })
   const main = el('main', { class: 'galley-main' })
   const page = el('div', { class: 'galley-page' })
   const docEl = el('div', { class: 'galley-doc' })
@@ -202,11 +209,14 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
   const marksLayer = el('div', { class: 'galley-layer galley-marks' })
   const highlightLayer = el('div', { class: 'galley-layer galley-highlights', 'aria-hidden': 'true' })
   const fileInput = el('input', { type: 'file', accept: '.md,.markdown,.txt,text/markdown,text/plain', hidden: '' })
-  page.append(docEl, highlightLayer, marksLayer)
+  // Lines that are gone fade out here while their room closes (motion.ts).
+  const ghostLayer = el('div', { class: 'galley-layer galley-ghosts', 'aria-hidden': 'true' })
+  page.append(docEl, ghostLayer, highlightLayer, marksLayer)
   const status = createStatusLine()
   main.append(page, status.element)
   const notices = options.notify ? null : createNoticeStack()
-  root.append(bar, main, fileInput)
+  body.append(main)
+  root.append(bar, body, fileInput)
   if (notices) root.append(notices.element)
 
   const events = new Emitter<EditorEvents>()
@@ -269,6 +279,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     },
     onNotice: (message) => notify({ source: 'save', level: 'attention', message }),
   })
+  const motion = createMotion({ root, scroller: main, page, doc: docEl, ghosts: ghostLayer, follow: () => [marksLayer, highlightLayer] })
 
   let wordsFrame = 0
   function updateWords(): void {
@@ -304,27 +315,18 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     if (id && thread) notes!.update(id, thread)
   }
 
-  // Text that arrives from elsewhere goes in without moving the writer: the
-  // caret stays on its line, found again by its text when lines above it
-  // moved, and the arrival is one step the writer can undo.
+  // Text that arrives from elsewhere goes in as the smallest change to the
+  // page, without moving the writer: unchanged lines keep their elements (and
+  // the caret), the line at the top of the screen stays where it is, what is
+  // on screen eases into place, and the arrival is one step the writer can undo.
   function applyExternal(text: string): void {
-    const caret = surface.isFocused() ? surface.caret() : null
-    const caretLine = caret ? (surface.lines()[caret.line]?.textContent ?? '') : ''
+    motion.finish()
+    const anchor = motion.anchor()
     surface.history.record()
-    surface.setText(text)
-    if (caret) {
-      const lines = text.split('\n')
-      let target = caret.line
-      if (lines[target] !== caretLine) {
-        for (let d = 1; d < 60; d++) {
-          if (lines[caret.line + d] === caretLine) { target = caret.line + d; break }
-          if (caret.line - d >= 0 && lines[caret.line - d] === caretLine) { target = caret.line - d; break }
-        }
-      }
-      surface.setCaret(Math.min(target, lines.length - 1), caret.offset)
-    }
+    const patch = surface.patchText(text, motion.enabled())
+    if (!patch.changed) return
     updateWords()
-    renderOverlay()
+    motion.play(patch, anchor, renderOverlay)
   }
 
   function renderOverlay(): void {
@@ -518,7 +520,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     delete: { id: 'delete', label: 'Delete the document', description: 'Delete this document. You are asked before anything is removed.', icon: icons.trash, danger: true, run: () => remove() },
   }
   const actions = (options.toolbar ?? ['writer', 'new', 'import', 'copy', 'delete'])
-    .map((item) => (typeof item === 'string' ? builtins[item] : item))
+    .map((item) => (item === '|' ? 'separator' as const : typeof item === 'string' ? builtins[item] : item))
   // Made once the editor object exists, since actions receive it.
   let toolbar: Toolbar | null = null
   bar.append(barRight)
@@ -594,6 +596,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       const historyOutcome = persistHistory()
       session.open(data)
       surface.setEditable(!session.frozen)
+      motion.finish()
       surface.setText(data.content)
       // History is per document: undo must never walk back into the
       // previous document's text and save it over this one.
@@ -664,6 +667,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       void session.fetchDocs({ fresh: true })
       await loadDoc(slug)
       if (session.slug !== slug) return
+      motion.finish()
       surface.setText(content)
       surface.history.reset()
       session.markSaved()
@@ -725,6 +729,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     notes?.close()
     session.forget(d.slug)
     surface.setEditable(false)
+    motion.finish()
     surface.setText('')
     surface.history.reset()
     renderOverlay()
@@ -794,6 +799,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     const result = applyEdit(surface.getText(), edit)
     if (!result) return 'conflict'
     surface.history.record() // an accepted edit is one undoable step
+    motion.finish()
     surface.setText(result.text)
     const target = surface.lines()[locateLine(surface.snapshot().lineStarts, result.start)]
     target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -898,6 +904,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     adopt(slug, content, version) {
       if (session.slug !== slug) return
       session.adopt(slug, version)
+      motion.finish()
       surface.setText(content)
       surface.history.reset()
       session.markSaved()
@@ -924,8 +931,13 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       const existing = root.querySelector<HTMLElement>(`.galley-slot[data-slot="${where}"]`)
       if (existing) return existing
       const slot = el('div', { class: 'galley-slot', 'data-slot': where })
-      if (where === 'header') root.insertBefore(slot, main)
-      else page.insertBefore(slot, docEl)
+      if (where === 'bar-start') bar.insertBefore(slot, bar.firstChild)
+      else if (where === 'bar-end') bar.append(slot)
+      else if (where === 'header') root.insertBefore(slot, body)
+      else if (where === 'side') body.append(slot)
+      // Above the page rather than inside it, so what is drawn over the text
+      // (marks, faces) moves with the text when this block changes height.
+      else main.insertBefore(slot, page)
       return slot
     },
     notify,
@@ -969,6 +981,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       if (destroyed) return
       suspend()
       destroyed = true
+      motion.finish()
       notes?.close()
       for (const cleanup of cleanups.splice(0)) cleanup()
       picker?.destroy()

@@ -1,12 +1,13 @@
 // The demo host: what adopting Galley looks like in an app. It picks a store,
-// adds one action of its own, and hides its own header in writer mode.
+// adds actions of its own, and puts its name and its own controls in the
+// editor's row, so the whole top of the page is one row.
 import '../src/styles/tokens.css'
 import '../src/styles/galley.css'
 import './demo.css'
 import './wizard.css'
 import './living.css'
 import welcome from './welcome.md?raw'
-import { createEditor, createHttpStore, createLocalStore, icons, type EditorAction } from '../src/index.js'
+import { createEditor, createHttpStore, createLocalStore, iconButton, icons, type EditorAction } from '../src/index.js'
 import { choicesAction } from './choices.js'
 import { livingPaper } from './living.js'
 import { writePaperAction } from './paper.js'
@@ -39,27 +40,45 @@ const editor = createEditor(document.getElementById('editor')!, {
   store,
   theme,
   placeholder: 'Start writing…',
-  toolbar: ['writer', 'new', 'import', 'copy', download, ...(local ? [] : [writePaperAction(), choicesAction(), proposalsAction()]), 'delete'],
+  // Grouped: the view; the document; the paper written from it; and, on its own, delete.
+  toolbar: ['writer', '|', 'new', 'import', 'copy', download, ...(local ? [] : ['|' as const, writePaperAction(), choicesAction(), proposalsAction()]), '|', 'delete'],
   storagePrefix: local ? 'galley-local' : 'galley',
   // A paper's document is written by its team while you work in it: who is at work, its notes and its history.
-  plugins: local ? [] : [livingPaper(store, document.getElementById('history')!)],
+  plugins: local ? [] : [livingPaper(store)],
 })
-
-editor.on('writer-mode', ({ on }) => document.body.classList.toggle('is-writing', on))
 
 document.documentElement.dataset.theme = theme
-document.getElementById('demo-where')!.textContent = local ? 'documents in this browser' : 'documents in .galley-data/'
-const storeLink = document.getElementById('demo-store') as HTMLAnchorElement
-storeLink.textContent = local ? 'Use files' : 'Use browser storage'
-storeLink.href = `?${new URLSearchParams({ ...(local ? {} : { store: 'local' }), ...(theme === 'light' ? { theme } : {}) })}`
-const themeButton = document.getElementById('demo-theme')!
-themeButton.textContent = theme === 'light' ? 'Dark' : 'Light'
-themeButton.addEventListener('click', () => {
-  const next = new URLSearchParams(location.search)
-  if (theme === 'light') next.delete('theme')
-  else next.set('theme', 'light')
-  location.search = next.toString()
+
+// The host's own controls, in the editor's row: its name first; where the
+// documents are kept and the theme last, after a divider.
+const name = document.createElement('span')
+name.className = 'demo-name'
+name.textContent = 'Galley'
+editor.slot('bar-start').append(name)
+const divider = document.createElement('span')
+divider.className = 'galley-bar-sep'
+divider.setAttribute('role', 'separator')
+const storeSwitch = iconButton({
+  label: local ? 'Use files' : 'Use browser storage',
+  description: local
+    ? 'Documents are kept in this browser now. Switch to the files in .galley-data/.'
+    : 'Documents are files in .galley-data/ now. Switch to documents kept in this browser.',
+  icon: local ? icons.folder : icons.browser,
+  className: 'demo-store',
+  onClick: () => { location.search = new URLSearchParams({ ...(local ? {} : { store: 'local' }), ...(theme === 'light' ? { theme } : {}) }).toString() },
 })
+const themeSwitch = iconButton({
+  label: theme === 'light' ? 'Dark theme' : 'Light theme',
+  description: `Show the page in ${theme === 'light' ? 'dark' : 'light'} colours.`,
+  icon: theme === 'light' ? icons.moon : icons.sun,
+  onClick: () => {
+    const next = new URLSearchParams(location.search)
+    if (theme === 'light') next.delete('theme')
+    else next.set('theme', 'light')
+    location.search = next.toString()
+  },
+})
+editor.slot('bar-end').append(divider, storeSwitch, themeSwitch)
 
 // ?doc=<name> opens that document once the editor has loaded, so a paper can be linked to directly.
 const linked = params.get('doc')

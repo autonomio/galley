@@ -27,15 +27,19 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: var(--galley-sp-3);
+  gap: var(--galley-sp-2);
   min-height: var(--galley-size-bar);
-  padding: var(--galley-sp-2) var(--galley-sp-4);
+  padding: var(--galley-sp-1) var(--galley-sp-3) var(--galley-sp-1) var(--galley-sp-4);
   border-bottom: var(--galley-line-hair) solid var(--galley-line);
   background: var(--galley-canvas);
   transition: border-color var(--galley-dur-feedback) ease-out;
 }
-.galley-bar-left { display: inline-flex; align-items: center; gap: var(--galley-sp-1); flex-wrap: wrap; }
+.galley-bar-left { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
 .galley-bar-right { display: inline-flex; align-items: center; gap: var(--galley-sp-3); margin-left: auto; min-width: 0; }
+/* A divider between groups of controls. */
+.galley-bar-sep { flex: none; width: var(--galley-line-hair); height: var(--galley-sp-4); margin: 0 var(--galley-sp-1); background: var(--galley-line); }
+/* The host's own start and end of the row (slots bar-start, bar-end). */
+.galley-slot:is([data-slot="bar-start"], [data-slot="bar-end"]) { display: inline-flex; align-items: center; gap: 2px; flex: none; min-width: 0; }
 .galley-bar-btn {
   width: var(--galley-size-button);
   height: var(--galley-size-button);
@@ -67,6 +71,7 @@
   display: inline-flex;
   align-items: center;
   gap: calc(var(--galley-sp-unit) * 1.5);
+  min-width: 0;
   max-width: calc(var(--galley-sp-unit) * 90);
   height: calc(var(--galley-sp-unit) * 7);
   padding: 0 var(--galley-sp-2);
@@ -133,8 +138,10 @@
 .galley-picker-empty { padding: var(--galley-sp-3) var(--galley-sp-2); color: var(--galley-text-muted); font-size: var(--galley-fs-ui); }
 
 /* ---------- The page ---------- */
+.galley-body { flex: 1 1 auto; min-height: 0; display: flex; }
 .galley-main {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -421,9 +428,19 @@
 .galley-note-actions { display: flex; justify-content: flex-end; padding: 0 var(--galley-sp-3) var(--galley-sp-3); margin-top: calc(var(--galley-sp-2) * -1); }
 .galley-note.is-resolved .galley-thread { opacity: 0.75; }
 
-/* Room a host can fill: a strip under the toolbar, and a block above the text. */
+/* Room a host can fill: a strip under the toolbar, a block above the text, a pane beside the page. */
 .galley-slot[data-slot="header"] { flex: none; }
-.galley-slot[data-slot="header"]:empty, .galley-slot[data-slot="top"]:empty { display: none; }
+.galley-slot[data-slot="top"] { flex: none; width: 100%; max-width: var(--galley-w-page); margin: 0 auto; }
+.galley-slot[data-slot="side"] {
+  flex: none;
+  width: var(--galley-w-side);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: var(--galley-line-hair) solid var(--galley-line);
+  background: var(--galley-canvas);
+}
+.galley-slot:empty { display: none; }
 
 /* ---------- Notices ---------- */
 .galley-notices {
@@ -482,6 +499,8 @@
 /* ---------- Writer mode: only the page, and the way out ---------- */
 .galley--writer .galley-bar { border-bottom-color: transparent; }
 .galley--writer .galley-bar-right,
+.galley--writer .galley-bar-sep,
+.galley--writer .galley-slot:not([data-slot="top"]),
 .galley--writer .galley-bar-btn:not(.is-kept) { display: none; }
 
 /* ---------- Motion ---------- */
@@ -492,8 +511,62 @@
 }
 @keyframes galley-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
+/* Text arriving from elsewhere (motion.ts). New lines open their room one
+   after another as their ink comes up; a changed line eases to its new height
+   while its text settles; lines that are gone fade where they stood while the
+   line below closes their room; marks over the text travel with it. Only
+   heights, margins, opacity and translate move, and only on screen. */
+.galley-line.is-arriving {
+  overflow: hidden;
+  animation: galley-arrive var(--galley-dur-flow) var(--galley-ease-flow) both, galley-ink var(--galley-dur-ink) var(--galley-ease-flow) both;
+  animation-delay: calc(var(--galley-flow-i, 0) * var(--galley-dur-stagger));
+}
+.galley-line.is-revised { overflow: hidden; animation: galley-resize var(--galley-dur-flow) var(--galley-ease-flow), galley-settle var(--galley-dur-ink) var(--galley-ease-flow); }
+.galley-line.is-settling { animation: galley-settle var(--galley-dur-ink) var(--galley-ease-flow); }
+.galley-line.is-closing { animation: galley-close var(--galley-dur-flow) var(--galley-ease-flow); }
+.galley-layer > .is-following { animation: galley-follow calc(var(--galley-dur-flow) + var(--galley-flow-i, 0) * var(--galley-dur-stagger)) var(--galley-ease-flow); }
+.galley-ghost {
+  position: absolute;
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  color: var(--galley-text);
+  font-size: var(--galley-fs-read);
+  line-height: var(--galley-lh-read);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  animation: galley-leave var(--galley-dur-flow) var(--galley-ease-flow) both;
+}
+@keyframes galley-arrive { from { height: 0; margin-top: 0; margin-bottom: 0; } to { height: var(--galley-flow-h); } }
+@keyframes galley-ink { from { opacity: 0; translate: 0 calc(var(--galley-sp-unit) * 1.5); } }
+@keyframes galley-resize { from { height: var(--galley-flow-from); } to { height: var(--galley-flow-h); } }
+@keyframes galley-settle { from { opacity: 0.35; } }
+@keyframes galley-close { from { margin-top: var(--galley-flow-gap); } }
+@keyframes galley-follow { from { translate: 0 var(--galley-flow-dy); } }
+@keyframes galley-leave { from { height: var(--galley-flow-from); opacity: 1; } to { height: 0; opacity: 0; } }
+
+/* Narrow: the pane beside the page becomes a sheet over its lower part. */
+@media (max-width: 900px) {
+  .galley-slot[data-slot="side"] {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: var(--galley-z-menu);
+    width: auto;
+    height: min(60vh, 520px);
+    border-left: 0;
+    border-top: var(--galley-line-hair) solid var(--galley-line);
+    box-shadow: var(--galley-shadow-panel);
+  }
+}
+
 @media (max-width: 600px) {
-  .galley-bar { padding: var(--galley-sp-1) var(--galley-sp-2); gap: var(--galley-sp-2); }
+  .galley-bar { padding: var(--galley-sp-1) var(--galley-sp-2); gap: var(--galley-sp-1); }
+  /* One row still: the actions scroll sideways in their own room, the title gives way first. */
+  .galley-bar-left { flex: 1 1 auto; min-width: calc(var(--galley-size-button) * 3); overflow-x: auto; scrollbar-width: none; }
+  .galley-bar-left::-webkit-scrollbar { display: none; }
+  .galley-bar-right { flex: 0 1 auto; }
   .galley-main { padding: 0 var(--galley-sp-3); }
-  .galley-picker-trigger { max-width: 45vw; }
+  .galley-picker-trigger { max-width: 32vw; }
 }
