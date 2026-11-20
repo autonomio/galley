@@ -8,7 +8,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { claim, keyFor, ledgerAppendix } from './behaviors/common.js'
 import { FAMILY_NAMES, lightName, lightSpecFor } from './config.js'
-import { cleanCsl, cslForDoi, cslFromWork } from './evidence.js'
+import { cleanCsl, completeByTitle, cslForDoi, cslFromWork } from './evidence.js'
 import type { Paper } from './paper.js'
 import { LIT_PLACEHOLDERS, modelName, reviewAppendix, reviewFlowTypst } from './literature.js'
 import { worldModelOf } from './worldmodel.js'
@@ -36,6 +36,11 @@ async function references(paper: Paper): Promise<Record<string, unknown>[]> {
     const key = keyFor(paper, work)
     if (seen.has(key)) continue
     seen.add(key)
+    // A reference that would print as only a title, a year and a link is looked up once by its title.
+    if (!work.csl && !work.doi && (!work.authors.length || !work.venue) && !work.titleChecked) {
+      work.titleChecked = true
+      await completeByTitle(work)
+    }
     if (!work.csl && work.doi) {
       const csl = await cslForDoi(work.doi)
       if (csl) work.csl = csl

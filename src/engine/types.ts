@@ -107,6 +107,8 @@ export interface Work {
   url: string | null
   bibKey?: string
   csl?: Record<string, unknown>
+  /** Looked up once by its title, to complete a reference that had only its title, year and link. */
+  titleChecked?: boolean
 }
 
 export interface Candidate {

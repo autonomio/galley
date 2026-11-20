@@ -12,7 +12,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { homedir, tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { ensureAnalysisEnv } from './analysis.js'
-import { cslForDoi, openalexKey, type QueryResult, type SearchHit } from './evidence.js'
+import { completeByTitle, cslForDoi, openalexKey, type QueryResult, type SearchHit } from './evidence.js'
 import type { Paper } from './paper.js'
 import type { Work } from './types.js'
 
@@ -326,6 +326,8 @@ export async function describeWork(m: SearchableModel, work: Work): Promise<void
       }
     } catch { /* the reference keeps what the world model says */ }
   }
+  // With neither a DOI nor an OpenAlex id, the work is looked up once by its exact title, so its reference is complete.
+  if (!work.doi && !p?.openalex) await completeByTitle(work)
   if (!work.doi) return
   const csl = await cslForDoi(work.doi)
   if (!csl) return
