@@ -125,12 +125,14 @@ export async function readWorldModel(path: string, name = worldModelName(path)):
       const unpacked = join(work, 'unpacked')
       mkdirSync(unpacked)
       // Only the records are taken out of the zip.
-      await exec('unzip', ['-q', '-o', path, '*/claims/*', '*/evidence/*', '*/sources/*', '*/graph/*', 'claims/*', 'evidence/*', 'sources/*', 'graph/*', '-d', unpacked]).catch(async (error) => {
-        if (!readdirSync(unpacked).length) throw error
+      // unzip exits non-zero when one of the patterns matches nothing; only an archive it could not read is an error,
+      // said without the server's paths.
+      await exec('unzip', ['-q', '-o', path, '*/claims/*', '*/evidence/*', '*/sources/*', '*/graph/*', 'claims/*', 'evidence/*', 'sources/*', 'graph/*', '-d', unpacked]).catch(() => {
+        if (!readdirSync(unpacked).length) throw new Error(`${name} is not a zip archive galley can unpack, or it holds no claims/ and sources/ folders`)
       })
       root = worldModelRoot(unpacked)
     } else root = worldModelRoot(path)
-    if (!root) throw new Error(`${basename(path)} is not a Resolvent world model: it has no claims/ and sources/ folders`)
+    if (!root) throw new Error(`${name} is not a Resolvent world model: it has no claims/ and sources/ folders`)
     const out = join(work, 'model.json')
     await exec(await yamlPython(), ['-I', '-c', READ, root, out])
     const raw = JSON.parse(readFileSync(out, 'utf8')) as Record<string, Record<string, unknown>[]>
