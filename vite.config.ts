@@ -8,7 +8,7 @@ import type { ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
-import { liveView } from './src/engine/live.js'
+import { livePapers, liveView } from './src/engine/live.js'
 import { galleyVitePlugin } from './src/server/vite.js'
 
 const dir = resolve(process.env.GALLEY_DIR || '.galley-data')
@@ -29,6 +29,8 @@ function paperForDocument(doc: string): string | null {
 
 // A paper being written, as the editor shows it beside the text: who is
 // working on what right now, its working notes and what has happened.
+// /api/galley-live alone is every paper at once, each with whether its
+// document is here and whether it has a PDF yet, the ways into it.
 // Read from the paper's files; it never touches the run.
 function livePlugin(): Plugin {
   return {
@@ -36,6 +38,13 @@ function livePlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use('/api/galley-live', (req, res) => {
         const doc = decodeURIComponent((req.url || '').replace(/^\//, '').split('?')[0])
+        if (!doc) {
+          const list = livePapers(papers).map(({ dir: paperDir, view }) => ({ ...view, document: existsSync(join(dir, `${view.doc}.md`)), pdf: existsSync(join(paperDir, 'out', 'paper.pdf')) }))
+          res.setHeader('Content-Type', 'application/json')
+          res.setHeader('Cache-Control', 'no-store')
+          res.end(JSON.stringify({ papers: list }))
+          return
+        }
         if (!/^[a-z0-9][a-z0-9-]*$/i.test(doc)) { res.statusCode = 400; res.end(); return }
         const paperDir = paperForDocument(doc)
         const view = paperDir ? liveView(paperDir) : null
