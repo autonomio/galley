@@ -64,7 +64,15 @@ document.documentElement.dataset.theme = theme
 const name = document.createElement('span')
 name.className = 'demo-name'
 name.textContent = 'Galley'
-editor.slot('bar-start').append(name)
+// Every paper at once, on a page of its own: /papers/ (overview.ts).
+const papersPage = iconButton({
+  label: 'All papers',
+  description: 'Every paper on one page: whether it is being written, where it stands, who is at work on what, and how far it has come.',
+  icon: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.75" y="2.75" width="4" height="4" rx="1"/><rect x="9.25" y="2.75" width="4" height="4" rx="1"/><rect x="2.75" y="9.25" width="4" height="4" rx="1"/><rect x="9.25" y="9.25" width="4" height="4" rx="1"/></svg>',
+  className: 'demo-papers',
+  onClick: () => location.assign(`/papers/${theme === 'light' ? '?theme=light' : ''}`),
+})
+editor.slot('bar-start').append(name, ...(local ? [] : [papersPage]))
 const divider = document.createElement('span')
 divider.className = 'galley-bar-sep'
 divider.setAttribute('role', 'separator')

@@ -440,6 +440,9 @@ function paperFilesPlugin(): Plugin {
         res.end(JSON.stringify({ paper: !!projectOf(doc), files: out ? listFiles(out) : [] }))
       })
       server.middlewares.use('/papers', (req, res, next) => {
+        // /papers/ is every paper at once (demo/papers/index.html); without its slash its own links would miss.
+        const [path, query] = (req.originalUrl ?? '').split('?')
+        if (path === '/papers') { res.statusCode = 302; res.setHeader('Location', `/papers/${query ? `?${query}` : ''}`); res.end(); return }
         let parts: string[]
         try { parts = new URL(req.url || '/', 'http://localhost').pathname.split('/').filter(Boolean).map(decodeURIComponent) } catch { res.statusCode = 400; res.end(); return }
         const whole = parts.length === 1 && parts[0].endsWith('.zip')
@@ -491,6 +494,7 @@ export default defineConfig(({ command }) => {
     build: {
       outDir: '../dist-demo',
       emptyOutDir: true,
+      rollupOptions: { input: { main: resolve('demo/index.html'), papers: resolve('demo/papers/index.html') } },
     },
   }
 })

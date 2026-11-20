@@ -32,7 +32,7 @@ npm run dev
 
 Open http://localhost:5174. Documents are kept as markdown files in `.galley-data/`; set `GALLEY_DIR` to use another folder. Add `?store=local` to the URL to keep documents in the browser instead, with no server involved.
 
-The address bar always says what is on screen, so any of it can be passed on as a link: `?doc=<name>` is the document, and `view=` what is open with it (`activity`, `writer`, `paper`, `files`, `choices`, `proposals`, joined by `+`). Back and Forward walk the documents you opened. A paper's files have links of their own: `/papers/<doc>/paper.pdf` is its PDF, `/papers/<doc>/evidence.zip` one of its folders, `/papers/<doc>.zip` all of them, and `/papers/<doc>/` opens the list. Only what the paper made (its `out/` folder) is ever served.
+The address bar always says what is on screen, so any of it can be passed on as a link: `?doc=<name>` is the document, and `view=` what is open with it (`activity`, `writer`, `paper`, `files`, `choices`, `proposals`, joined by `+`). Back and Forward walk the documents you opened. A paper's files have links of their own: `/papers/<doc>/paper.pdf` is its PDF, `/papers/<doc>/evidence.zip` one of its folders, `/papers/<doc>.zip` all of them, and `/papers/<doc>/` opens the list. `/papers/` is every paper on one page: whether each is being written, its stage, how long since it changed, who is at work on what, and how far its sections and review have come. Only what the paper made (its `out/` folder) is ever served.
 
 ## Adopt it in an app
 

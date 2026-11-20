@@ -1,0 +1,89 @@
+/* Every paper on a page of its own (overview.ts). The page is a .galley root
+   of its own, so it reads the editor's tokens and follows its theme; the row
+   at the top is the editor's own. */
+.ov { flex: 1 1 auto; min-height: 0; }
+.ov-bar { gap: var(--galley-sp-2); }
+.ov-home { color: inherit; text-decoration: none; }
+.ov-crumb { display: inline-flex; align-items: center; gap: var(--galley-sp-3); color: var(--galley-text-muted); font-size: var(--galley-fs-ui); }
+.ov-crumb::before { content: ""; width: var(--galley-line-hair); height: var(--galley-sp-4); background: var(--galley-line); }
+.ov-bar-end { display: inline-flex; align-items: center; margin-left: auto; }
+
+.ov-main { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.ov-inner { width: 100%; max-width: 1240px; margin: 0 auto; padding: var(--galley-sp-10) var(--galley-sp-6); }
+.ov-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--galley-sp-2) var(--galley-sp-4); margin: 0 0 var(--galley-sp-6); }
+.ov-head h1 { margin: 0; color: var(--galley-text-strong); font-family: var(--galley-font-display); font-size: var(--galley-fs-h1); font-weight: var(--galley-fw-display); line-height: var(--galley-lh-tight); }
+.ov-summary { margin: 0; color: var(--galley-text-muted); font-size: var(--galley-fs-ui); }
+.ov-empty { color: var(--galley-text-muted); font-size: var(--galley-fs-ui); }
+
+.ov-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 470px), 1fr)); gap: var(--galley-sp-4); margin: 0; padding: 0; list-style: none; }
+
+/* A paper: the whole card opens it (its title's link covers it); its other links sit above that. */
+.ov-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--galley-sp-3);
+  padding: var(--galley-sp-4) var(--galley-sp-4) var(--galley-sp-3);
+  border: var(--galley-line-hair) solid var(--galley-line);
+  border-radius: var(--galley-r-panel);
+  background: var(--galley-surface);
+  transition: border-color var(--galley-dur-feedback) ease-out;
+}
+.ov-card:has(.ov-hit[href]):hover { border-color: var(--galley-edge); }
+.ov-card:has(.ov-hit:focus-visible) { outline: var(--galley-line-focus) solid var(--galley-accent); outline-offset: 2px; }
+
+.ov-top { display: flex; align-items: center; justify-content: space-between; gap: var(--galley-sp-3); font-size: var(--galley-fs-row); }
+.ov-state { display: inline-flex; align-items: center; gap: var(--galley-sp-2); color: var(--galley-text-soft); font-weight: var(--galley-fw-strong); }
+.ov-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--galley-text-muted); }
+.ov-card[data-state="running"] .ov-dot { background: var(--galley-done); animation: lv-live 2.4s ease-in-out infinite; }
+.ov-card[data-state="ready"] .ov-dot { background: var(--galley-done); }
+.ov-card[data-state="waiting"] .ov-dot { background: var(--galley-attention); }
+.ov-ago { color: var(--galley-text-muted); font-size: var(--galley-fs-micro); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.ov-title { margin: 0; min-height: calc(2 * 1.35em); font-size: calc(var(--galley-fs-read) * 1.06); font-weight: var(--galley-fw-strong); line-height: 1.35; }
+.ov-hit { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--galley-text-strong); text-decoration: none; outline: none; }
+.ov-hit[href]::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.ov-hit[href]:hover { text-decoration: underline; text-decoration-color: var(--galley-edge); text-underline-offset: 3px; }
+
+/* The stages, as one track: done, where it is now, still to come. */
+.ov-stages { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; margin: 0; padding: 0; list-style: none; }
+.ov-stages li { overflow: hidden; padding-top: 6px; border-top: 3px solid var(--galley-line); color: var(--galley-text-muted); font-size: var(--galley-fs-micro); text-overflow: ellipsis; white-space: nowrap; }
+.ov-stages li[data-step="done"] { border-top-color: color-mix(in srgb, var(--galley-text-muted) 75%, transparent); }
+.ov-stages li[data-step="now"] { border-top-color: var(--galley-done); color: var(--galley-text-strong); font-weight: var(--galley-fw-strong); }
+.ov-card[data-state="waiting"] .ov-stages li[data-step="now"] { border-top-color: var(--galley-attention); }
+.ov-card[data-state="stopped"] .ov-stages li[data-step="now"] { border-top-color: var(--galley-edge); }
+.ov-card[data-state="ready"] .ov-stages li { border-top-color: var(--galley-done); }
+
+/* Who is at work on what, one line a seat. */
+.ov-now { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.ov-now:empty { display: none; }
+.ov-now-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; column-gap: 10px; align-items: center; min-height: 26px; }
+.ov-now-row p { margin: 0; overflow: hidden; color: var(--galley-text-soft); font-size: var(--galley-fs-row); text-overflow: ellipsis; white-space: nowrap; }
+.ov-now-row b { color: var(--galley-text); font-weight: var(--galley-fw-strong); }
+.ov-now-row time { color: var(--galley-text-muted); font-size: var(--galley-fs-micro); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ov-quiet { display: flex; align-items: center; min-height: 26px; margin: 0; color: var(--galley-text-muted); font-size: var(--galley-fs-row); }
+.ov-quiet:empty { display: none; }
+
+/* How far it has come. */
+.ov-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--galley-sp-3); margin: auto 0 0; padding-top: var(--galley-sp-3); border-top: var(--galley-line-hair) solid var(--galley-line); }
+.ov-stats div { min-width: 0; }
+.ov-stats dt { overflow: hidden; color: var(--galley-text-muted); font-size: var(--galley-fs-tiny); letter-spacing: var(--galley-ls-micro); text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.ov-stats dd { margin: 2px 0 0; color: var(--galley-text-muted); font-size: var(--galley-fs-row); font-variant-numeric: tabular-nums; }
+.ov-stats dd b { color: var(--galley-text-strong); font-size: calc(var(--galley-fs-read) * 1.45); font-weight: var(--galley-fw-strong); line-height: 1.2; }
+.ov-stats .is-none b { color: var(--galley-text-muted); font-weight: var(--galley-fw-regular); }
+
+.ov-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--galley-sp-3); min-height: 24px; color: var(--galley-text-muted); font-size: var(--galley-fs-micro); }
+.ov-links { display: inline-flex; gap: var(--galley-sp-4); }
+.ov-links a { position: relative; z-index: 1; color: var(--galley-text-soft); font-size: var(--galley-fs-row); text-decoration: none; }
+.ov-links a:first-child { color: var(--galley-text); font-weight: var(--galley-fw-strong); }
+.ov-links a:hover { color: var(--galley-text-strong); text-decoration: underline; text-underline-offset: 3px; }
+.ov-links a:focus-visible { outline: var(--galley-line-focus) solid var(--galley-accent); outline-offset: 2px; border-radius: 2px; }
+
+@media (max-width: 600px) {
+  .ov-inner { padding: var(--galley-sp-6) var(--galley-sp-4); }
+  /* The editor's row drops its name on a phone; here it is the way back. */
+  .ov .ov-home { display: inline; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ov-dot { animation: none !important; }
+}
