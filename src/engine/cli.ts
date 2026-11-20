@@ -72,7 +72,7 @@ const DOING: Record<string, string> = {
   draft: 'Drafting', figure: 'Drawing figures', fidelity: 'Checking sections against their claims', frame: 'Writing the title and abstract',
   referee: 'Referee review', 'close-round': 'Closing the round', respond: 'Answering the referees', 'verify-disposition': 'Referees judging the answers',
   adjudicate: 'Settling disputes', 'handle-finding': 'Stating an unsettled finding as a limitation', reconcile: 'Reconciling the ledger with the text', reprofile: 'Profiling the finished paper', typeset: 'Typesetting',
-  proof: 'Reading the typeset paper',
+  proof: 'Reading the typeset paper', 'web-sources': 'Finding primary sources on the web',
 }
 
 /** Where a paper stands, as structured data for a host to show. */
@@ -273,6 +273,7 @@ async function main(): Promise<void> {
         ...(flag('dial') ? { dial: flag('dial') as 'autonomous' | 'assisted' | 'propose' } : {}),
         ...(option(flag('literature-review')) !== undefined ? { literatureReview: option(flag('literature-review')) } : {}),
         ...(option(flag('simulation')) !== undefined ? { simulation: option(flag('simulation')) } : {}),
+        ...(/^(no|off|false)$/i.test(flag('web-sources') ?? '') ? { webSources: false } : {}),
       })
       console.log(`Paper created in ${dir}`)
       if (command === 'write') await run(dir)

@@ -74,7 +74,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   const datasets: DatasetItem[] = []
   let step = 0
   let context: Context | null = null
-  const settings = { author: '', affiliation: '', funding: '', competingInterests: '', acknowledgements: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, reviewRole: 'supporting', simulation: false, simulationRole: 'supporting' }
+  const settings = { author: '', affiliation: '', funding: '', competingInterests: '', acknowledgements: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, reviewRole: 'supporting', simulation: false, simulationRole: 'supporting', webSources: true }
 
   const dialog = h('dialog', { class: 'gw', 'aria-labelledby': 'gw-title' })
   const trail = h('ol', { class: 'gw-trail' })
@@ -256,6 +256,11 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
         ['choose', 'You pick every one', 'Every claim that needs a source waits for your choice.'],
       ])),
       field('Seats', h('table', { class: 'gw-seats' }, h('tbody', {}, seatRow('author', seats?.author), seatRow('checker', seats?.checker), seatRow('challenger', seats?.challenger), seatRow('verifier', seats?.verifier))), 'No family judges its own work; a third family settles what an author and a referee cannot agree on.'),
+      field('Web sources', (() => {
+        const box = h('input', { type: 'checkbox', 'aria-label': 'Primary sources from the web', ...(settings.webSources ? { checked: true } : {}) })
+        box.addEventListener('change', () => { settings.webSources = box.checked; render() })
+        return h('label', { class: 'gw-check' }, box, h('span', { text: 'Primary sources from the web' }))
+      })(), 'When the scholarly index has no source for a claim, GPT searches the web for the issuer\'s own document: rules, standards, specifications, datasheets, official reports. galley keeps a copy, and each passage is verified by another family like any citation.'),
       field('Literature', h('p', { class: 'gw-facts' }, 'Canary over OpenAlex · ', context ? (context.openalexKey ? h('span', { text: 'key found: two searches per claim' }) : h('span', { class: 'gw-attention', text: 'no key: one search per claim, about 100 searches a day for everyone on this network' })) : 'checking…')),
     ]
   }
@@ -311,6 +316,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       ...(datasets.some((d) => d.private) ? [['Private datasets', 'never leave this machine; the models see column summaries and computed results.']] : []),
       ...(datasets.some((d) => !d.private) ? [['Shared datasets', 'their summaries and first 15 rows go to the model providers.']] : []),
       ['Search terms', 'go to OpenAlex through Canary.'],
+      ...(settings.webSources ? [['Web searches', 'for primary sources: the claims\' own terms go to OpenAI\'s web search, and the documents are fetched from their publishers.']] : []),
       ...(settings.literatureReview ? [['Review question', 'goes to Canary\'s research and audit models (OpenAI) and to OpenAlex.']] : []),
       ['Your name', 'is never sent; it is set in the byline at typesetting.'],
     ]

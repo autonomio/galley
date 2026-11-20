@@ -10,6 +10,7 @@ import { analyzeData } from './data.js'
 import { literatureReview } from './literature.js'
 import { simulateModel } from './simulate.js'
 import { proof } from './proof.js'
+import { findWebSources } from './web.js'
 
 // One behavior writes the frame: once when the draft is checked, and again from the reviewed text.
 const frame: Behavior = { ...firstFrame, ready: (paper) => [...firstFrame.ready(paper), ...finalFrame(paper)] }
@@ -27,7 +28,7 @@ export const LADDER: Behavior[] = [
   simulateModel,
   plan, outline,
   // Truth: every external claim gets a verified passage, or is hedged.
-  findEvidence, verify, reassess, calibrate,
+  findEvidence, verify, findWebSources, reassess, calibrate,
   draft, figure, fidelity, frame,
   // Referees: other families review; the author answers; a third family settles; what it cannot settle becomes a limitation.
   referee, closeRound, respond, verifyDisposition, adjudicate, handleFinding,

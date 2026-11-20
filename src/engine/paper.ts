@@ -50,6 +50,8 @@ export interface AskOptions {
   light?: boolean
   /** Image files to look at, such as typeset pages: GPT reads them; the prompt carries their text for the other families. */
   images?: string[]
+  /** Let the model search the web; only GPT's calls can. */
+  web?: boolean
 }
 
 /** A model call or search in flight, for heartbeats and `galley status`. */
@@ -182,7 +184,7 @@ export class Paper {
       let result: CallResult
       const done = this.begin({ behavior: options.behavior, target: options.target, what: `${spec.model} (${options.seat})` })
       try {
-        result = await callModel({ spec, prompt: options.prompt, schema: options.schema, images: options.images, cacheDir: this.path('calls', 'cache') })
+        result = await callModel({ spec, prompt: options.prompt, schema: options.schema, images: options.images, web: options.web, cacheDir: this.path('calls', 'cache') })
       } catch (error) {
         done()
         release(options.family)

@@ -31,7 +31,7 @@ node dist/engine/cli.js run papers/my-seed
 | `ladder` | every behavior, in order |
 | `doctor` | check that each model, tool and source answers |
 
-`write` and `new` take `--author`, `--affiliation`, `--funding`, `--competing-interests`, `--acknowledgements` (declarations printed as written; left out, they stay out of the paper and the sign-off sheet asks for them), `--venue`, `--words`, `--rounds 1|2`, `--citations auto|choose|mixed`, `--dial autonomous|assisted|propose`, `--literature-review yes|load-bearing` (a systematic review of the literature, below), `--simulation yes|load-bearing` (a Monte Carlo simulation, below), `--editor <dir>` (where the manuscript's editor document goes), and `--material <file or link>` and `--shared-material <dataset>` for your own materials (below), each as often as needed. Everything else is in the paper's `paper.json` (below).
+`write` and `new` take `--author`, `--affiliation`, `--funding`, `--competing-interests`, `--acknowledgements` (declarations printed as written; left out, they stay out of the paper and the sign-off sheet asks for them), `--venue`, `--words`, `--rounds 1|2`, `--citations auto|choose|mixed`, `--dial autonomous|assisted|propose`, `--literature-review yes|load-bearing` (a systematic review of the literature, below), `--simulation yes|load-bearing` (a Monte Carlo simulation, below), `--web-sources no` (turns off primary sources from the web, below), `--dataset <dataset.json>` (a dataset as a unit, below), `--editor <dir>` (where the manuscript's editor document goes), and `--material <file or link>` and `--shared-material <dataset>` for your own materials (below), each as often as needed. Everything else is in the paper's `paper.json` (below).
 
 ## What comes out
 
@@ -92,23 +92,24 @@ Behaviors are atomic: each reads the paper's state, does one thing, and writes i
 | 10 | outline | skeleton | planned | sections, figures, style, glossary |
 | 11 | find-evidence | truth | external claims are open | searches, then verbatim passages from abstracts |
 | 12 | verify | truth | citations are selected | supported, narrower (the claim is narrowed) or rejected |
-| 13 | reassess | truth | a load-bearing claim lost its evidence | the thesis stands, narrows, or fails |
-| 14 | calibrate | truth | citations are verified | plants defects and measures what the verifier catches |
-| 15 | draft | skeleton | a section's evidence is settled | the section, citing only verified keys |
-| 16 | figure | substance | a figure is planned | Typst source, compiled |
-| 17 | fidelity | truth | a section is drafted | fixes sentences that say more than their evidence |
-| 18 | frame | manuscript | every section is checked, and again once the ledger is reconciled | title, abstract, keywords; rewritten from the reviewed text |
-| 19 | referee | referees | framed, nothing open | four seats review the whole manuscript |
-| 20 | close-round | referees | every seat reported | ends the round |
-| 21 | respond | referees | a finding is open | fixed, rebutted, or stated as a limitation; after a rejected answer, at full effort |
-| 22 | verify-disposition | referees | an answer is unverified | the referee who raised it judges the answer; a verdict that cannot tell is asked again |
-| 23 | adjudicate | referees | a finding is still disputed at the cap | the third family decides, and the decision lands in the text |
-| 24 | handle-finding | referees | adjudication could not settle a finding | the paper states it as a limitation of the work |
-| 25 | reconcile | close | the review is done | a family other than the author's reads the final text against every claim: confirmed, narrowed to the text's wording, or dropped as no longer stated |
-| 26 | reprofile | close | the review is done | the finished paper against the seven factors |
-| 27 | typeset | skeleton | the text changed | PDF, LaTeX, Word, editor document, evidence package, sign-off |
-| 28 | proof | close | the reviewed paper is typeset | a family other than the author's reads every printed page; defects go back to the author, the figure or the ledger, and the paper is typeset and read again |
-| 29 | ready | close | every gate holds on one revision, the typeset reading included | ready for submission |
+| 13 | web-sources | truth | the scholarly index had no source for a claim | the primary document from its issuer, found on the web and kept; its passage goes to verification |
+| 14 | reassess | truth | a load-bearing claim lost its evidence | the thesis stands, narrows, or fails |
+| 15 | calibrate | truth | citations are verified | plants defects and measures what the verifier catches |
+| 16 | draft | skeleton | a section's evidence is settled | the section, citing only verified keys |
+| 17 | figure | substance | a figure is planned | Typst source, compiled |
+| 18 | fidelity | truth | a section is drafted | fixes sentences that say more than their evidence |
+| 19 | frame | manuscript | every section is checked, and again once the ledger is reconciled | title, abstract, keywords; rewritten from the reviewed text |
+| 20 | referee | referees | framed, nothing open | four seats review the whole manuscript |
+| 21 | close-round | referees | every seat reported | ends the round |
+| 22 | respond | referees | a finding is open | fixed, rebutted, or stated as a limitation; after a rejected answer, at full effort |
+| 23 | verify-disposition | referees | an answer is unverified | the referee who raised it judges the answer; a verdict that cannot tell is asked again |
+| 24 | adjudicate | referees | a finding is still disputed at the cap | the third family decides, and the decision lands in the text |
+| 25 | handle-finding | referees | adjudication could not settle a finding | the paper states it as a limitation of the work |
+| 26 | reconcile | close | the review is done | a family other than the author's reads the final text against every claim: confirmed, narrowed to the text's wording, or dropped as no longer stated |
+| 27 | reprofile | close | the review is done | the finished paper against the seven factors |
+| 28 | typeset | skeleton | the text changed | PDF, LaTeX, Word, editor document, evidence package, sign-off |
+| 29 | proof | close | the reviewed paper is typeset | a family other than the author's reads every printed page; defects go back to the author, the figure or the ledger, and the paper is typeset and read again |
+| 30 | ready | close | every gate holds on one revision, the typeset reading included | ready for submission |
 
 The skeleton (extract, plan, outline, draft, frame, typeset, ready) is what makes a paper exist. Everything else is an improver: it can make the paper better but can never stop it. An improver that fails twice is settled as skipped, its effect is written down (a claim without evidence is hedged; a figure is left out), and the paper moves on. A model provider at a usage limit is waited out for up to about six hours (a subscription's window), never counted as a failure; when the provider says when its quota resets, the call is tried again just after that; only a longer limit pauses the run, and running it again resumes it. A search index that is unavailable (OpenAlex pauses keyless search under heavy load) is waited out for up to three hours, retrying less often as the wait grows; after that the search is given up and the claims it was for are hedged.
 
@@ -134,6 +135,10 @@ A paper can rest on your own material besides the literature. Datasets, document
 - **A shared dataset** shows the models its first 15 rows as well.
 - **Documents and links** are read by the models that write and review the paper.
 - **A dataset is a unit, of one file or many.** Data files added together in the start dialog, or a folder, become one dataset, with any README among them as its documentation; more files can be added to it. Each dataset says where it comes from: who produced it (you or your group, or others), where it is published (a DOI or a link), its version, the publication that first reported it, and its licence. That provenance decides how the paper describes the data. Data you produced for this paper is your own work. Data others produced, or data published before, is described as such and cited where the paper describes it: the dataset itself and the publication that first reported it are both in the references, and the data availability statement says where it is. From the command line, `--dataset <dataset.json>` takes a manifest: `{"name", "files": [paths relative to the manifest], "producedBy": "authors" | "others", "doi", "version", "describedIn", "licence", "private"}`.
+
+## Primary sources from the web
+
+Many claims rest on documents no scholarly index holds: a grid operator's product rules, a standard, a regulation, a datasheet, official statistics, a government report. When the scholarly search finds no source for a claim, GPT, with live web search, looks for the primary document from whoever issues it, preferring the issuer's own site and the current version and never news, blogs, encyclopedias or forums. galley fetches each document itself and keeps a copy with its fingerprint in the paper's `sources/` folder. The checker copies the exact passage that states the claim from that copy, and the passage goes to verification by another family like any other citation; the reference carries the publisher, the address and the date galley retrieved it. No passage, no citation: a document that cannot be read (paywalled, behind a login) is named in the sign-off sheet for you to supply. It is on by default; untick **Web sources** in the start dialog, or pass `--web-sources no`, to keep to the scholarly index. The searches send only the claims' own terms, never your private data.
 
 ## What the paper rests on
 

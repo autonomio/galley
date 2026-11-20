@@ -32,6 +32,7 @@ export const DOES: Record<string, string> = {
   referee: 'referee seats for methods, the host field, citations and the desk editor review the whole manuscript and raise findings with a severity and the decision they ask for',
   'close-round': 'ends a referee round once every seat has reported',
   respond: 'the author answers each finding: fixed with exact edits, rebutted, stated as a limitation, or needs evidence (a new claim that goes through search and verification before the author answers again); a first answer runs on lighter settings, and once a referee rejects one the author answers at full effort',
+  'web-sources': "for a claim the scholarly index has no source for, GPT searches the web for the primary document (the issuer's own rules, standards, specifications, datasheets or reports); galley fetches and keeps a copy of each, the checker copies the exact passage, and the passage goes to verification by another family like any citation",
   'verify-disposition': 'the referee who raised a finding judges the answer to it; a verdict that cannot tell is asked again at full effort, and one that still cannot tell sends the answer back',
   adjudicate: 'a third family settles, at full effort, a finding still disputed after the attempt cap; every decision lands in the text, and a finding it sets aside still gets the sentence that answers it',
   'handle-finding': 'states as a limitation of the work any finding adjudication could not settle in the text, so no finding is left unanswered',

@@ -178,6 +178,8 @@ function papersPlugin(): Plugin {
           // An option the paper includes, in support or as what its main contribution rests on.
           if (s.literatureReview === true) args.push('--literature-review', s.reviewRole === 'load-bearing' ? 'load-bearing' : 'yes')
           if (s.simulation === true) args.push('--simulation', s.simulationRole === 'load-bearing' ? 'load-bearing' : 'yes')
+          // Primary sources from the web are on unless the person turned them off.
+          if (s.webSources === false) args.push('--web-sources', 'no')
           // Uploaded files are written under their own names for the engine to copy into the paper; links pass as they are.
           const inbox = join(tmpdir(), `galley-materials-${slug}-${stamp}`)
           for (const m of materials as { name?: string; url?: string; data?: string; private?: boolean }[]) {

@@ -81,6 +81,11 @@ export interface PaperConfig {
   materials?: Material[]
   /** Datasets as units: each one's files (as materials) under one name, with where the data comes from. */
   datasets?: DatasetUnit[]
+  /**
+   * Look on the web for the primary document a claim rests on (the issuer's own rules, standards, specifications,
+   * datasheets or reports) when the scholarly index has no source for it. On unless set to false.
+   */
+  webSources?: boolean
   /** Include a systematic review of the literature, run by Canary: as its own section, or (load-bearing) as the paper's main contribution. */
   literatureReview?: boolean | 'load-bearing'
   /** Include a Monte Carlo simulation the author designs and galley runs on this machine: in support, or (load-bearing) as what the main contribution rests on. */

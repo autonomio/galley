@@ -22,6 +22,10 @@ export const isNarrowing = (original: string, narrowed: string) => overlap(narro
 /** Still waiting on evidence of some kind: a search, a verdict, or a person's choice. */
 const needsEvidence = (c: Claim) => c.need === 'external' && c.status === 'open'
 
+/** A claim the scholarly index had nothing for, still waiting for its look at primary sources on the web (when the paper uses them). */
+export const awaitsWebSearch = (paper: Paper, c: Claim) =>
+  paper.config.webSources !== false && c.need === 'external' && c.status === 'unsupported' && !paper.state.attempts[`web:${c.id}`]
+
 function needsSearch(paper: Paper, c: Claim): boolean {
   return needsEvidence(c) && !paper.state.candidates.some((k) => k.claimId === c.id) && !paper.state.choices?.[c.id]
 }
@@ -257,6 +261,8 @@ export const reassess: Behavior = {
     const s = paper.state
     if (!live(paper) || !s.plan) return []
     if (s.citations.some((c) => c.status === 'selected') || activeClaims(paper).some(needsEvidence)) return []
+    // A claim that may still find its primary source on the web has not failed yet.
+    if (activeClaims(paper).some((c) => awaitsWebSearch(paper, c))) return []
     const failed = activeClaims(paper).filter((c) => c.loadBearing && c.status === 'unsupported')
     if (!failed.length) return []
     const ids = failed.map((c) => c.id).join(',')
@@ -295,11 +301,11 @@ ${activeClaims(paper).filter((c) => c.status === 'supported' || c.status === 'na
   },
 }
 
-export { verifyCitationsSettled }
+export { verifyCitationsSettled, selectNext, PER_CLAIM }
 
 /** Whether a section's claims have finished their evidence work (or given up on it). */
 function verifyCitationsSettled(paper: Paper, claimIds: string[]): boolean {
   const ids = new Set(claimIds)
   if (paper.state.citations.some((c) => ids.has(c.claimId) && c.status === 'selected')) return false
-  return !activeClaims(paper).some((c) => ids.has(c.id) && needsEvidence(c))
+  return !activeClaims(paper).some((c) => ids.has(c.id) && (needsEvidence(c) || awaitsWebSearch(paper, c)))
 }
