@@ -264,9 +264,15 @@ export interface LiteratureReview {
   searchedOn?: string
   models?: { research: string; audit: string }
   protocol?: { concepts: string[]; eligibility: { core: string; supporting: string; exclusion: string }; queries: string[] }
-  counts?: { discovered: number; screened: number; retrieved: number; reviewed: number; core: number; supporting: number; cited: number; queries: number; findings: number; audited: number; minutes: number }
+  counts?: { discovered: number; screened: number; retrieved: number; reviewed: number; core: number; supporting: number; cited: number; queries: number; findings: number; audited: number; minutes: number; excludedScreening?: number; excludedFullText?: number }
   gaps?: string[]
   contradictions?: string[]
+  /** Every publication the review read in full and included, cited or not, with its role and why it was included. */
+  included?: { workId: string; role: 'core' | 'supporting'; reason: string }[]
+  /** Why the search stopped where it did, as Canary recorded it. */
+  stopping?: string
+  /** What the review cannot claim: its source, the access it had, who screened and when it stopped. */
+  limits?: string[]
   /** The ledger claims the review contributed. */
   claimIds?: string[]
 }

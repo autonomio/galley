@@ -199,6 +199,21 @@ export function importReview(paper: Paper, data: any, bundlePath: string): void 
       s.citations.push(citation)
     }
   }
+  // Every publication the review read in full and included, cited or not: the appendix lists them all, each one in the references.
+  lit.included = []
+  for (const ref of answer.references ?? []) {
+    const p = ref?.paper
+    if (!p || !ref.id) continue
+    const existing = Object.values(s.works).find((w) => w.id === ref.id || (doiOf(p.doi) && w.doi === doiOf(p.doi)))
+    const work: Work = existing ?? {
+      id: String(ref.id), doi: doiOf(p.doi), title: tidy(String(p.title ?? '')), authors: (p.authors ?? []).map(String), year: Number(p.year) || null,
+      venue: p.venue ?? null, abstract: String(p.abstract ?? ''), citedBy: null, url: p.url ?? null,
+    }
+    s.works[work.id] = work
+    const role = String(ref.role ?? ref.review?.eligibility ?? '') === 'core' ? 'core' : 'supporting'
+    lit.included.push({ workId: work.id, role, reason: tidy(String(ref.review?.reason ?? '')) })
+  }
+  lit.stopping = tidy(String(coverage.stopping_reason ?? ''))
   const eligibility = net.eligibility ?? {}
   lit.status = 'done'
   lit.finishedAt = new Date().toISOString()
@@ -217,6 +232,13 @@ export function importReview(paper: Paper, data: any, bundlePath: string): void 
     core: n(coverage.core_papers ?? run.papers_core), supporting: n(coverage.supporting_papers ?? run.papers_supporting),
     cited: cited.size, queries: lit.protocol.queries.length, findings: claimIds.length, audited, minutes: Math.round(n(run.seconds) / 60),
   }
+  lit.counts.excludedScreening = Math.max(0, lit.counts.screened - lit.counts.retrieved)
+  lit.counts.excludedFullText = Math.max(0, lit.counts.retrieved - lit.counts.reviewed)
+  lit.limits = [
+    'It searched one database, OpenAlex, and read only publications with an open-access full text, so closed-access work without an open copy is not included.',
+    `A research model (${modelName(lit.models.research)}) chose which records to screen, screened them and read the full texts, and an independent model (${modelName(lit.models.audit)}) audited every finding against the passages; no person screened or read them.`,
+    'The search stopped on a coverage rule, not on exhaustion, so it does not claim complete recall.',
+  ]
   lit.gaps = (answer.gaps ?? []).map((g: any) => tidy(String(g.description ?? ''))).filter(Boolean).slice(0, 8)
   lit.contradictions = (answer.contradictions ?? []).map((k: any) => tidy(String(k.description ?? ''))).filter(Boolean).slice(0, 6)
   lit.claimIds = claimIds
@@ -236,6 +258,8 @@ export const LIT_PLACEHOLDERS: Record<string, string> = {
   'lit.findings': 'findings reported',
   'lit.audited': 'findings the independent audit checked',
   'lit.cited': 'included publications cited',
+  'lit.excludedScreening': 'candidates excluded on title and abstract',
+  'lit.excludedFullText': 'full texts read and then excluded',
 }
 
 /** What the review section may state about how the review was done, besides its findings. */
@@ -250,7 +274,10 @@ Search queries: ${lit.protocol.queries.map((q) => `"${q}"`).join('; ')}
 Eligible as core studies: ${lit.protocol.eligibility.core}
 Eligible as supporting studies: ${lit.protocol.eligibility.supporting}
 Excluded: ${lit.protocol.eligibility.exclusion}
-How it was done: a research model (${modelName(lit.models?.research)}) planned the search, screened candidates by title and abstract, retrieved and read the full texts, and extracted each finding with the verbatim passages it rests on; an independent model (${modelName(lit.models?.audit)}) audited every finding against those passages.
+How it was done: a research model (${modelName(lit.models?.research)}) planned the search, read the queries' results, chose which records to screen by how much of the question each would cover, screened them by title and abstract, retrieved and read the full texts, and extracted each finding with the verbatim passages it rests on; an independent model (${modelName(lit.models?.audit)}) audited every finding against those passages.
+Why the search stopped: ${lit.stopping || 'a coverage rule, not exhaustion'}
+Its limits: ${(lit.limits ?? []).join(' ')}
+Appendix: the paper's appendix gives the full protocol, how the records were narrowed (with a figure), every query and every included publication, each in the references.
 Where the studies disagree: ${lit.contradictions?.join(' | ') || 'none recorded'}
 What they leave open: ${lit.gaps?.join(' | ') || 'none recorded'}
 The review's numbers, written only as these placeholders:
@@ -259,8 +286,60 @@ ${Object.entries(LIT_PLACEHOLDERS).map(([key, meaning]) => `{{${key}}}: ${meanin
 
 /** How the review section is written, on top of the rules every section follows. */
 export const REVIEW_SECTION_RULES = `This section reports the systematic review above. Write it in this order:
-1. How the review was done, in one paragraph: the question, the source and the queries, the eligibility criteria, the screening and full-text reading, and the independent audit, with every count as its placeholder.
+1. How the review was done, in one paragraph: the question, the source and the queries, how records were chosen for screening, the eligibility criteria, the screening and full-text reading, the independent audit and why the search stopped, with every count as its placeholder; then its limits in a sentence or two; then that the appendix gives the full protocol, every query and every included publication. Call it a systematic review throughout, and never by another name.
 2. What the reviewed studies establish, organised by theme rather than study by study: each finding above with its citations, worded to its uncertainty (low: state it plainly; moderate: what the evidence indicates; high: what limited evidence suggests).
 3. Where the studies disagree and what they leave open, from the review above.
 4. One short paragraph relating this paper's contribution to what the review found, claiming no more than the paper's own claims.
 The review's method, disagreements and open questions above may be stated as facts of the review; every other factual sentence states one of the findings.`
+
+const thousands = (n: number) => n.toLocaleString('en-US')
+const cell = (text: string) => text.replace(/\|/g, '/').replace(/\s+/g, ' ').trim()
+
+/** The figure of how the review narrowed its records, drawn by the system from Canary's counts, never by a model. */
+export function reviewFlowTypst(lit: LiteratureReview): string | null {
+  const c = lit.counts
+  if (!c) return null
+  const notScreened = Math.max(0, c.discovered - c.screened)
+  return `#set page(width: 15cm, height: auto, margin: 6pt)
+#set text(font: "New Computer Modern", size: 9pt)
+#let stage(body) = rect(width: 100%, inset: 7pt, stroke: 0.7pt + rgb("#2b5797"), radius: 2pt)[#align(center, body)]
+#let out(body) = rect(width: 100%, inset: 7pt, stroke: 0.6pt + luma(140), fill: luma(246), radius: 2pt)[#align(center, body)]
+#let down = align(center, text(size: 11pt)[↓])
+#grid(columns: (8cm, 0.8cm, 1fr), row-gutter: 4pt, align: horizon,
+  stage[Records found by ${c.queries} queries in OpenAlex \\ *n = ${thousands(c.discovered)}*], align(center)[→], out[Not chosen for screening \\ *n = ${thousands(notScreened)}*],
+  down, [], [],
+  stage[Chosen and screened by title and abstract \\ *n = ${thousands(c.screened)}*], align(center)[→], out[Excluded on title and abstract \\ *n = ${thousands(c.excludedScreening ?? Math.max(0, c.screened - c.retrieved))}*],
+  down, [], [],
+  stage[Open-access full texts retrieved and read \\ *n = ${thousands(c.retrieved)}*], align(center)[→], out[Excluded after reading \\ *n = ${thousands(c.excludedFullText ?? Math.max(0, c.retrieved - c.reviewed))}*],
+  down, [], [],
+  stage[Included \\ *n = ${thousands(c.reviewed)}* (${c.core} core, ${c.supporting} supporting)], [], [],
+)
+`
+}
+
+/**
+ * The review as a reader can check and repeat it: its protocol, how its records
+ * were narrowed, every query it ran and every publication it included, each one
+ * cited so that it appears in the references.
+ */
+export function reviewAppendix(paper: Paper, cite: (workId: string) => string, flowFigure: string | null): string {
+  const lit = paper.state.literature
+  if (lit?.status !== 'done' || !lit.protocol || !lit.counts) return ''
+  const c = lit.counts
+  const included = lit.included ?? []
+  const order = (role: string) => role === 'core' ? 0 : 1
+  const rows = [...included].sort((a, b) => order(a.role) - order(b.role)).map((i) => `| ${cite(i.workId)} | ${i.role} | ${cell(i.reason) || '—'} |`)
+  return [
+    `The systematic review reported in this paper was carried out with Canary, searched on ${lit.searchedOn}. This appendix gives its protocol, how its records were narrowed, every query it ran and every publication it included, so that it can be checked and repeated.`,
+    `**Question.** ${lit.question}`,
+    `**Source.** OpenAlex: titles, abstracts and indexed full text, limited to publications with an open-access full text.`,
+    `**Eligibility.** Core studies: ${lit.protocol.eligibility.core || 'as the question defines them'} Supporting studies: ${lit.protocol.eligibility.supporting || 'studies that inform the question'} Excluded: ${lit.protocol.eligibility.exclusion || 'studies outside the question'}`,
+    `**Screening, reading and audit.** A research model (${modelName(lit.models?.research)}) read the queries' results and chose which records to screen by how much of the question each would cover, screened them by title and abstract, retrieved and read the open-access full texts, and extracted each finding with the verbatim passages it rests on. An independent model (${modelName(lit.models?.audit)}) audited every finding against those passages.`,
+    lit.stopping ? `**Why the search stopped.** ${lit.stopping}` : '',
+    lit.limits?.length ? `**Limits.** ${lit.limits.join(' ')}` : '',
+    flowFigure ? `![How the review narrowed its records: ${thousands(c.discovered)} found, ${thousands(c.screened)} screened, ${thousands(c.retrieved)} read in full, ${thousands(c.reviewed)} included.](${flowFigure}){#fig-review-flow width=85%}` : '',
+    `| Stage | Records |\n|:---|---:|\n| Found by the searches | ${thousands(c.discovered)} |\n| Chosen and screened by title and abstract | ${thousands(c.screened)} |\n| Excluded on title and abstract | ${thousands(c.excludedScreening ?? Math.max(0, c.screened - c.retrieved))} |\n| Open-access full texts retrieved and read | ${thousands(c.retrieved)} |\n| Excluded after reading the full text | ${thousands(c.excludedFullText ?? Math.max(0, c.retrieved - c.reviewed))} |\n| Included | ${thousands(c.reviewed)} (${c.core} core, ${c.supporting} supporting) |`,
+    `**The ${lit.protocol.queries.length} queries.**\n\n${lit.protocol.queries.map((q, i) => `${i + 1}. ${q}`).join('\n')}`,
+    rows.length ? `**The ${rows.length} included publications.** Core studies answer the question directly; supporting studies inform it.\n\n| Publication | Role | Why it was included |\n|:---|:---|:---|\n${rows.join('\n')}` : '',
+  ].filter(Boolean).join('\n\n')
+}

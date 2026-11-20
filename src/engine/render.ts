@@ -10,7 +10,7 @@ import { claim, keyFor, ledgerAppendix } from './behaviors/common.js'
 import { FAMILY_NAMES, lightName, lightSpecFor } from './config.js'
 import { cleanCsl, cslForDoi, cslFromWork } from './evidence.js'
 import type { Paper } from './paper.js'
-import { LIT_PLACEHOLDERS, modelName } from './literature.js'
+import { LIT_PLACEHOLDERS, modelName, reviewAppendix, reviewFlowTypst } from './literature.js'
 import { methodWords, runsOf, sizeOf } from './simulations.js'
 import { writeReproduction } from './simulation/index.js'
 import { PLACEHOLDERS } from './prompts.js'
@@ -40,6 +40,19 @@ async function references(paper: Paper): Promise<Record<string, unknown>[]> {
     }
     const base = cleanCsl(work.csl ?? cslFromWork(work))
     out.push({ ...base, id: key })
+  }
+  // Every publication a systematic review included is listed in its appendix, so each one is in the references too.
+  for (const { workId } of paper.state.literature?.status === 'done' ? paper.state.literature.included ?? [] : []) {
+    const work = paper.state.works[workId]
+    if (!work) continue
+    const key = keyFor(paper, work)
+    if (seen.has(key)) continue
+    seen.add(key)
+    if (!work.csl && work.doi) {
+      const csl = await cslForDoi(work.doi)
+      if (csl) work.csl = csl
+    }
+    out.push({ ...cleanCsl(work.csl ?? cslFromWork(work)), id: key })
   }
   paper.save()
   return out
@@ -94,6 +107,9 @@ export function numberEquations(texts: string[]): string[] {
     .replace(/[ \t]*\{#eq:[\w:-]+\}/g, ''))
 }
 
+/** The systematic review's flow figure, drawn from Canary's counts when the paper is typeset. */
+const REVIEW_FLOW = 'figures/review-flow.png'
+
 /** Typst settings both PDFs share: display equations carry their number. */
 const TYPST_HEADER = '#set math.equation(numbering: "(1)")'
 
@@ -135,7 +151,12 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   }
   const decl = paper.config.declarations ?? {}
   // The ledger quotes claims as they stand, placeholders included, so it is filled like every other part of the text.
-  if (paper.config.ledgerAppendix !== false) body.push(`# Appendix A: Claim ledger {.unnumbered}\n\n${fillPlaceholders(ledgerAppendix(paper), record).text}`)
+  const appendices: [string, string][] = []
+  if (paper.config.ledgerAppendix !== false) appendices.push(['Claim ledger', fillPlaceholders(ledgerAppendix(paper), record).text])
+  const flow = existsSync(paper.path('build', REVIEW_FLOW)) ? REVIEW_FLOW : null
+  const review = reviewAppendix(paper, (workId) => s.works[workId] ? `[@${keyFor(paper, s.works[workId])}]` : workId, flow)
+  if (review) appendices.push(['The systematic review: protocol, queries and included publications', review])
+  appendices.forEach(([title, text], i) => body.push(`# Appendix ${String.fromCharCode(65 + i)}: ${title} {.unnumbered}\n\n${text}`))
   body.push(`# Use of AI and production record {.unnumbered}\n\n${disclosure(paper, record)}`)
   const evidencePackage = 'Every claim in this manuscript, the evidence it rests on and the verbatim passages of its sources are available as an evidence package accompanying it (claims, evidence and sources in the Resolvent format).'
   const reproduction = runsOf(paper).length ? ` The simulations can be rerun, and every simulated number checked against this manuscript, with the reproduction package that accompanies it (simulation/: node simulate.mjs --verify, or index.html in a browser).` : ''
@@ -661,6 +682,14 @@ export async function typeset(paper: Paper): Promise<string[]> {
   const out = paper.path('out')
   mkdirSync(build, { recursive: true })
   mkdirSync(out, { recursive: true })
+  // The review's flow figure is drawn from its counts by the system before the manuscript is built around it.
+  const flowSource = paper.state.literature?.status === 'done' ? reviewFlowTypst(paper.state.literature) : null
+  if (flowSource) {
+    const figures = join(build, 'figures')
+    mkdirSync(figures, { recursive: true })
+    writeFileSync(join(figures, 'review-flow.typ'), flowSource)
+    try { await exec('typst', ['compile', 'review-flow.typ', 'review-flow.png', '--ppi', '250'], figures) } catch (error) { paper.note('typeset', `The systematic review's flow figure was not drawn: ${(error as Error).message.slice(0, 200)}`) }
+  }
   const { markdown, refs, record } = await buildManuscript(paper)
   writeFileSync(join(build, 'manuscript.md'), markdown)
   writeFileSync(join(build, 'refs.json'), JSON.stringify(refs, null, 2))
@@ -692,6 +721,7 @@ export async function typeset(paper: Paper): Promise<string[]> {
   if (existsSync(figures)) {
     mkdirSync(join(out, 'figures'), { recursive: true })
     for (const fig of paper.state.figures.filter((f) => f.status === 'rendered' && f.file)) copyFileSync(join(build, fig.file!), join(out, fig.file!))
+    if (existsSync(join(build, REVIEW_FLOW))) copyFileSync(join(build, REVIEW_FLOW), join(out, REVIEW_FLOW))
   }
   exportEvidence(paper)
   // The runnable reproduction of the paper's simulations: a reader reruns them and checks every simulated number with Node or a browser.
