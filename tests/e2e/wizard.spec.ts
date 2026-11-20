@@ -114,3 +114,32 @@ test('a seed that already has a paper shows where the paper stands, and opens th
   await status.getByRole('button', { name: 'Open the manuscript' }).click()
   await page.waitForFunction((s) => window.galley.slug === s, `${slug}-paper`)
 })
+
+test('the status window keeps the seed unfolded through its 10-second refresh', async ({ page }) => {
+  const slug = `seed-${Date.now()}`
+  writeFileSync(join(process.env.GALLEY_E2E_DIR!, `${slug}.md`), '# Street trees\n\nA seed.\n')
+  let calls = 17
+  const data = () => ({
+    slug, title: 'Pit Size and Street-Tree Survival', seedTitle: 'Street trees', startedAt: '2026-11-19T14:01:00.000Z', outcome: null, running: true, typeset: false, waiting: null,
+    now: [{ doing: 'Drafting', who: 'claude-opus-5-5', seconds: 30 }],
+    stages: ['Seed', 'Aim', 'Plan', 'Evidence', 'Draft', 'Review', 'Finish'].map((label, i) => ({ id: label.toLowerCase(), label, done: i < 4 })),
+    claims: { total: 12, supported: 3, narrowed: 1, own: 6, premises: 1, hypotheses: 1, open: 0 },
+    evidence: { screened: 140, verified: 4, rejected: 9 }, sections: { drafted: 2, total: 8 },
+    review: { round: 0, rounds: 2, findings: 0, open: 0 }, cost: { calls, tokensInM: 0.7, hours: 0.8 },
+    seed: 'City trees die young in narrow pavement pits.',
+    settings: { literatureReview: false, simulation: false, rounds: 2, words: 3000, venue: 'preprint (arXiv)', authors: [], materials: [] },
+  })
+  await page.route(`**/api/galley-papers/${slug}`, (route) => route.fulfill({ json: { data: data() } }))
+  await page.clock.install()
+  await page.goto(`/?doc=${slug}`)
+  await page.waitForFunction((s) => window.galley?.slug === s, slug)
+
+  await page.locator('[data-action="write-paper"]').click()
+  const status = page.locator('dialog.gw--status')
+  await status.locator('details.gw-seed summary').click()
+  calls = 18
+  await page.clock.fastForward(10_000)
+  await expect(status).toContainText('18 model calls')
+  await expect(status.locator('details.gw-seed')).toHaveAttribute('open', '')
+  await expect(status.locator('details.gw-seed blockquote')).toBeVisible()
+})
