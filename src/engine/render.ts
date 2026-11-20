@@ -11,6 +11,7 @@ import { FAMILY_NAMES, lightName, lightSpecFor } from './config.js'
 import { cleanCsl, cslForDoi, cslFromWork } from './evidence.js'
 import type { Paper } from './paper.js'
 import { LIT_PLACEHOLDERS, modelName, reviewAppendix, reviewFlowTypst } from './literature.js'
+import { availabilityStatement, datasetSources } from './materials.js'
 import { methodWords, runsOf, sizeOf } from './simulations.js'
 import { writeReproduction } from './simulation/index.js'
 import { PLACEHOLDERS } from './prompts.js'
@@ -41,8 +42,10 @@ async function references(paper: Paper): Promise<Record<string, unknown>[]> {
     const base = cleanCsl(work.csl ?? cslFromWork(work))
     out.push({ ...base, id: key })
   }
-  // Every publication a systematic review included is listed in its appendix, so each one is in the references too.
-  for (const { workId } of paper.state.literature?.status === 'done' ? paper.state.literature.included ?? [] : []) {
+  // Every publication a systematic review included is listed in its appendix, and each dataset is cited where it is
+  // described, so each one is in the references too.
+  const datasets = (paper.config.datasets ?? []).flatMap((unit) => Object.values(datasetSources(paper, unit))).map((workId) => ({ workId }))
+  for (const { workId } of [...(paper.state.literature?.status === 'done' ? paper.state.literature.included ?? [] : []), ...datasets]) {
     const work = paper.state.works[workId]
     if (!work) continue
     const key = keyFor(paper, work)
@@ -160,7 +163,8 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   body.push(`# Use of AI and production record {.unnumbered}\n\n${disclosure(paper, record)}`)
   const evidencePackage = 'Every claim in this manuscript, the evidence it rests on and the verbatim passages of its sources are available as an evidence package accompanying it (claims, evidence and sources in the Resolvent format).'
   const reproduction = runsOf(paper).length ? ` The simulations can be rerun, and every simulated number checked against this manuscript, with the reproduction package that accompanies it (simulation/: node simulate.mjs --verify, or index.html in a browser).` : ''
-  body.push(`# Data and code availability {.unnumbered}\n\n${decl.availability || `${s.brief?.aboutSystem ? `${sourceStatement()} ` : ''}${evidencePackage}${reproduction}`}`)
+  const data = availabilityStatement(paper)
+  body.push(`# Data and code availability {.unnumbered}\n\n${decl.availability || `${data ? `${data} ` : ''}${s.brief?.aboutSystem ? `${sourceStatement()} ` : ''}${evidencePackage}${reproduction}`}`)
   // A declaration only the author can make is printed once they have made it; until then the sign-off asks for it.
   if (decl.competing_interests?.trim()) body.push(`# Competing interests {.unnumbered}\n\n${decl.competing_interests.trim()}`)
   if (decl.funding?.trim()) body.push(`# Funding {.unnumbered}\n\n${decl.funding.trim()}`)
@@ -590,7 +594,10 @@ Canary run ${s.literature.key}, searched ${s.literature.searchedOn}: ${s.literat
 ` : ''}${runsOf(paper).length ? `## Simulations: check what each one assumes
 ${runsOf(paper).map((r) => `${r.id} ${r.title} (${methodWords(r.result.method)}, ${sizeOf(r.result)}, seed ${r.result.provenance.seed}${r.result.provenance.ok ? '' : `; checks: ${r.result.provenance.checks.filter((c) => !c.ok).map((c) => c.detail).join('; ')}`})\n${r.result.spec.inputs.map((i) => `- ${i.name} ~ ${i.dist}: ${r.assumptions.find((a) => a.name === i.name)?.basis ?? 'no basis given'}`).join('\n')}`).join('\n\n')}
 
-` : ''}## Your materials
+` : ''}## Your datasets: check where each one comes from
+${list((paper.config.datasets ?? []).map((u) => `${u.id} "${u.name}"${u.version ? `, version ${u.version}` : ''}: ${u.producedBy === 'others' ? 'produced by others' : 'produced by you'}${u.doi ? `, DOI ${u.doi}` : u.url ? `, at ${u.url}` : ', not published'}${u.describedIn ? `, first reported in ${u.describedIn}` : ''}${u.licence ? `, licence ${u.licence}` : ''}; ${u.private ? 'private' : 'shared'}; files ${u.materials.join(', ')}`), 'None given as datasets.')}
+
+## Your materials
 ${list((paper.config.materials ?? []).map((m) => `${m.id} ${m.kind} ${m.url ?? m.name}${m.kind === 'dataset' ? (m.private ? ': private, the models saw only its profile and the measurements' : ': shared, the models saw its profile and first rows') : ''}`), 'None.')}
 ${Object.values(s.measurements ?? {}).length ? `\nMeasurements galley computed from your data (check each against your own analysis):\n${Object.values(s.measurements ?? {}).map((m) => `- ${m.id}: ${m.summary}`).join('\n')}\n` : ''}
 

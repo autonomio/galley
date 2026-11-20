@@ -3,7 +3,7 @@
 import type { Paper } from '../paper.js'
 import { fillPlaceholders, productionRecord } from '../record.js'
 import { systemBlock } from '../self.js'
-import { materialsBlock, measurementsBlock } from '../materials.js'
+import { datasetSources, materialsBlock, measurementsBlock } from '../materials.js'
 import { simulationsBlock } from '../simulations.js'
 import { literatureBlock } from '../literature.js'
 import { authorYear, citationKey } from '../text.js'
@@ -43,6 +43,16 @@ export function keyFor(paper: Paper, work: Work): string {
     work.bibKey = citationKey(work, taken)
   }
   return work.bibKey
+}
+
+/** The citation keys a passage may carry: every verified citation's, and each dataset's own and its first report's. */
+export function citableKeys(paper: Paper): Set<string> {
+  const keys = new Set(paper.state.citations.filter((c) => c.status === 'verified').map((c) => keyFor(paper, paper.state.works[c.workId])))
+  for (const unit of paper.config.datasets ?? []) {
+    const sources = datasetSources(paper, unit)
+    for (const id of [sources.data, sources.article]) if (id) keys.add(keyFor(paper, paper.state.works[id]))
+  }
+  return keys
 }
 
 export function verifiedCitations(paper: Paper, claimId: string): Citation[] {

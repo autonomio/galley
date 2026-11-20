@@ -6,6 +6,8 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import type { Paper } from './paper.js'
+import { citationKey } from './text.js'
+import type { Work } from './types.js'
 import { readWorkbook, sheetTable, toCsv } from './workbook.js'
 
 export type MaterialKind = 'dataset' | 'document' | 'link'
@@ -21,6 +23,95 @@ export interface Material {
   url?: string
   /** For a dataset: only its profile and computed results reach a model. */
   private: boolean
+  /** The dataset unit this file belongs to, when it came as part of one. */
+  dataset?: string
+}
+
+/**
+ * A dataset as its producers know it: one or more files (tables, sheets, its
+ * README) under one name, with where it comes from. Its provenance decides how
+ * the paper may describe it: data the authors produced is their own work; data
+ * others produced, or that was published before, is cited as its source says.
+ */
+export interface DatasetUnit {
+  id: string
+  name: string
+  /** Its files, as materials (a workbook gives one per data sheet). */
+  materials: string[]
+  producedBy: 'authors' | 'others'
+  version?: string
+  /** Where it is published: a DOI or a link. */
+  doi?: string
+  url?: string
+  /** The publication that first reported it: a DOI or a link. */
+  describedIn?: string
+  licence?: string
+  /** How its producers ask for it to be cited, as they wrote it. */
+  citation?: string
+  private: boolean
+}
+
+/** A dataset as the start dialog or a manifest file gives it. */
+export interface DatasetManifest {
+  name: string
+  files: string[]
+  producedBy?: 'authors' | 'others'
+  version?: string
+  doi?: string
+  url?: string
+  describedIn?: string
+  licence?: string
+  citation?: string
+  private?: boolean
+}
+
+const doiIn = (text = '') => text.match(/10\.\d{4,9}\/[^\s"<>]+/)?.[0].replace(/[.,;)]+$/, '').toLowerCase()
+
+/** Datasets as units: each one's files are added as materials, and the unit keeps its provenance. */
+export async function addDatasets(dir: string, manifests: DatasetManifest[], offset = 0): Promise<{ materials: Material[]; datasets: DatasetUnit[] }> {
+  const materials: Material[] = []
+  const datasets: DatasetUnit[] = []
+  for (const [i, m] of manifests.entries()) {
+    const id = `D${i + 1}`
+    const added = await addMaterials(dir, m.files.map((source) => ({ source, shared: m.private === false })), offset + materials.length)
+    for (const item of added) item.dataset = id
+    materials.push(...added)
+    const doi = doiIn(m.doi) ?? undefined
+    datasets.push({
+      id, name: m.name.trim() || id, materials: added.map((a) => a.id), producedBy: m.producedBy === 'others' ? 'others' : 'authors',
+      ...(m.version?.trim() ? { version: m.version.trim() } : {}), ...(doi ? { doi } : {}),
+      ...(!doi && /^https?:\/\//i.test(m.doi ?? '') ? { url: m.doi!.trim() } : m.url?.trim() ? { url: m.url.trim() } : {}),
+      ...(m.describedIn?.trim() ? { describedIn: m.describedIn.trim() } : {}), ...(m.licence?.trim() ? { licence: m.licence.trim() } : {}),
+      ...(m.citation?.trim() ? { citation: m.citation.trim() } : {}), private: m.private !== false,
+    })
+  }
+  return { materials, datasets }
+}
+
+/**
+ * The sources a dataset is cited by: the dataset itself when it is published, and
+ * the publication that first reported it. Kept as works, so the paper cites them
+ * like any other source and they appear in the references.
+ */
+export function datasetSources(paper: Paper, unit: DatasetUnit): { data?: string; article?: string } {
+  const works = paper.state.works
+  const out: { data?: string; article?: string } = {}
+  if (unit.doi || unit.url) {
+    const id = `dataset:${unit.id}`
+    works[id] ??= {
+      id, doi: unit.doi ?? null, title: unit.name, authors: [], year: null, venue: null, abstract: '', citedBy: null, url: unit.url ?? (unit.doi ? `https://doi.org/${unit.doi}` : null),
+      // A dataset with no record behind its DOI is still listed as the dataset it is.
+      csl: unit.doi ? undefined : { type: 'dataset', title: unit.name, ...(unit.version ? { version: unit.version } : {}), URL: unit.url },
+    } as Work
+    out.data = id
+  }
+  if (unit.describedIn) {
+    const id = `dataset:${unit.id}:article`
+    const doi = doiIn(unit.describedIn)
+    works[id] ??= { id, doi: doi ?? null, title: doi ? '' : unit.describedIn, authors: [], year: null, venue: null, abstract: '', citedBy: null, url: doi ? `https://doi.org/${doi}` : unit.describedIn } as Work
+    out.article = id
+  }
+  return out
 }
 
 const UA = process.env.GALLEY_USER_AGENT || 'scholarly-client/0.1'
@@ -57,10 +148,10 @@ async function linkText(url: string): Promise<string | null> {
 }
 
 /** Copy files into the paper's materials folder and read links; a dataset stays private unless it is named shared. */
-export async function addMaterials(dir: string, sources: { source: string; shared?: boolean; name?: string }[]): Promise<Material[]> {
+export async function addMaterials(dir: string, sources: { source: string; shared?: boolean; name?: string }[], offset = 0): Promise<Material[]> {
   mkdirSync(join(dir, 'materials'), { recursive: true })
   const out: Material[] = []
-  let count = 0
+  let count = offset
   for (const { source, shared, name } of sources) {
     const id = `M${++count}`
     const kind = kindOf(source)
@@ -216,11 +307,37 @@ export function datasetRows(paper: Paper, m: Material): Row[] {
 
 const upTo = (text: string, n: number) => { const w = text.split(/\s+/); return w.length > n ? `${w.slice(0, n).join(' ')} […]` : text.trim() }
 
-/** The materials as the seats read them: a private dataset only as its profile, never a row of it. */
+/** A work's citation key, as the rest of the paper makes it (keyFor), so a dataset is cited by the key the references list. */
+export function workKey(paper: Paper, workId: string): string {
+  const work = paper.state.works[workId]
+  if (!work.bibKey) {
+    const taken = new Set(Object.values(paper.state.works).map((w) => w.bibKey).filter(Boolean) as string[])
+    work.bibKey = citationKey(work, taken)
+  }
+  return work.bibKey
+}
+
+/** How the paper may describe a dataset, from where it comes. */
+function provenance(paper: Paper, unit: DatasetUnit): string {
+  const sources = datasetSources(paper, unit)
+  const cite = [
+    sources.data ? `cite the dataset as [@${workKey(paper, sources.data)}]` : '',
+    sources.article ? `cite the publication that first reported it as [@${workKey(paper, sources.article)}]` : '',
+  ].filter(Boolean).join(', and ')
+  const published = !!(unit.doi || unit.url || unit.describedIn)
+  const origin = unit.producedBy === 'others'
+    ? 'produced by others: the paper analyses it and describes it as their data, never as measurements the authors made'
+    : published
+      ? 'produced by the authors and published before: the paper describes it as their earlier data, never as measurements made for this paper'
+      : 'produced by the authors: their own work'
+  return `${origin}.${unit.licence ? ` Licence: ${unit.licence}.` : ''}${unit.citation ? ` Its producers ask that it be cited as: ${unit.citation}.` : ''}${cite ? ` Where the paper describes the data, ${cite}.` : ''}`
+}
+
+/** The materials as the seats read them: a private dataset only as its profile, never a row of it; a dataset unit with where it comes from. */
 export function materialsBlock(paper: Paper): string {
   const list = paper.config.materials ?? []
   if (!list.length) return ''
-  const parts = list.map((m) => {
+  const describe = (m: Material) => {
     if (m.kind === 'dataset') {
       const rows = datasetRows(paper, m)
       const profile = profileText(profileDataset(rows)).split('\n').map((l) => `  ${l}`).join('\n')
@@ -230,8 +347,25 @@ export function materialsBlock(paper: Paper): string {
     const text = m.text ? readFileSync(paper.path(m.text), 'utf8') : ''
     const label = m.kind === 'link' ? `link ${m.url}` : `document "${m.name}"`
     return `[${m.id}] ${label}${text ? `:\n"""\n${upTo(text, m.kind === 'link' ? 2000 : 2500)}\n"""` : ' (its text could not be read)'}`
-  })
-  return `THE AUTHORS' OWN MATERIALS, which the paper draws on besides the literature. What rests on them is the authors' own work.\n${parts.join('\n\n')}`
+  }
+  const units = paper.config.datasets ?? []
+  const parts = [
+    ...units.map((u) => `[${u.id}] DATASET "${u.name}"${u.version ? `, version ${u.version}` : ''}, ${provenance(paper, u)} Its files:\n${list.filter((m) => m.dataset === u.id).map(describe).join('\n\n')}`),
+    ...list.filter((m) => !m.dataset).map(describe),
+  ]
+  return `THE MATERIALS the paper draws on besides the literature. Data the authors produced for this paper is their own work; a dataset produced by others, or published before, is described and cited as its provenance below says.\n${parts.join('\n\n')}`
+}
+
+/** The data availability statement, from each dataset's provenance: where it is, or that it is not public. */
+export function availabilityStatement(paper: Paper): string {
+  const units = paper.config.datasets ?? []
+  return units.map((u) => {
+    const sources = datasetSources(paper, u)
+    const where = sources.data ? ` It is available at ${u.doi ? `https://doi.org/${u.doi}` : u.url} [@${workKey(paper, sources.data)}].` : u.private ? ' It is not publicly available.' : ''
+    const first = sources.article ? ` It was first reported in [@${workKey(paper, sources.article)}].` : ''
+    const who = u.producedBy === 'others' ? 'was produced by others' : 'was produced by the authors'
+    return `The dataset "${u.name}"${u.version ? ` (version ${u.version})` : ''} ${who}.${where}${first}${u.licence ? ` Licence: ${u.licence}.` : ''}`
+  }).join(' ')
 }
 
 /** What galley measured in the authors' datasets, for every seat that writes or judges the paper. */

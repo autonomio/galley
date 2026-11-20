@@ -1,6 +1,6 @@
 // Who plays which seat, and the dials a paper can turn. A paper's paper.json
 // overrides any of these; nothing else does.
-import type { Material } from './materials.js'
+import type { DatasetUnit, Material } from './materials.js'
 import type { ModelSpec } from './models.js'
 import type { Family, Seat } from './types.js'
 
@@ -77,8 +77,10 @@ export interface PaperConfig {
   editorDoc?: string
   /** Statements only the authors can make; each one left empty is a sign-off item. */
   declarations?: { availability?: string; competing_interests?: string; funding?: string; acknowledgements?: string }
-  /** The authors' own datasets, documents and links, copied into the paper's materials folder when it starts. */
+  /** The datasets, documents and links the paper draws on, copied into the paper's materials folder when it starts. */
   materials?: Material[]
+  /** Datasets as units: each one's files (as materials) under one name, with where the data comes from. */
+  datasets?: DatasetUnit[]
   /** Include a systematic review of the literature, run by Canary: as its own section, or (load-bearing) as the paper's main contribution. */
   literatureReview?: boolean | 'load-bearing'
   /** Include a Monte Carlo simulation the author designs and galley runs on this machine: in support, or (load-bearing) as what the main contribution rests on. */

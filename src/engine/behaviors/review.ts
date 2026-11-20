@@ -11,7 +11,7 @@ import { applyExact, dropUnknownCitations, sameClaim, squash } from '../text.js'
 import type { Disposition, Family, Finding } from '../types.js'
 import { fillPlaceholders, productionRecord } from '../record.js'
 import { resolved } from '../findings.js'
-import { activeClaims, briefBlock, citationEvidenceBlock, claimsBlock, keyFor, live, manuscriptBlock, nextClaimId, now, placeholderLegend, seatFamily, sectionText } from './common.js'
+import { activeClaims, briefBlock, citableKeys, citationEvidenceBlock, claimsBlock, live, manuscriptBlock, nextClaimId, now, placeholderLegend, seatFamily, sectionText } from './common.js'
 import { setPassage } from './write.js'
 
 const families: Family[] = ['claude', 'gpt', 'gemini']
@@ -49,9 +49,7 @@ function limitsSection(paper: Paper): string | null {
   return found?.id ?? null
 }
 
-function knownKeys(paper: Paper): Set<string> {
-  return new Set(paper.state.citations.filter((c) => c.status === 'verified').map((c) => keyFor(paper, paper.state.works[c.workId])))
-}
+const knownKeys = citableKeys
 
 /** Apply an exact edit wherever in the manuscript its old text is unique. */
 function applyAnywhere(paper: Paper, edit: { old: string; new: string }, preferred: string | null, by: { family: Family; seat: string; behavior: string }, reason: string): boolean {

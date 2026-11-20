@@ -12,7 +12,7 @@ test('the paper wizard walks through seed, materials and settings, and starts th
   const dir = process.env.GALLEY_E2E_DIR!
   const slug = `seed-${Date.now()}`
   writeFileSync(join(dir, `${slug}.md`), `# Street trees\n\n${'City trees die young in narrow pavement pits. '.repeat(20)}\n`)
-  let posted: { settings: Record<string, unknown>; materials: Record<string, unknown>[] } | null = null
+  let posted: { settings: Record<string, unknown>; materials: Record<string, unknown>[]; datasets: Record<string, unknown>[] } | null = null
   await page.route('**/api/galley-papers/_context', (route) => route.fulfill({ json: {
     openalexKey: true,
     seats: { author: { family: 'claude', name: 'Claude Opus 5.5', model: 'claude-opus-5-5' }, checker: { family: 'gpt', name: 'GPT-6.2 Sol', model: 'gpt-6.2-sol' }, challenger: { family: 'gemini', name: 'Gemini 4 Carbon', model: 'gemini-4-carbon-high' }, verifier: { family: 'gemini', name: 'Gemini 4 Carbon', model: 'gemini-4-carbon-high' } },
@@ -36,9 +36,19 @@ test('the paper wizard walks through seed, materials and settings, and starts th
   await expect(wizard.locator('details.gw-seed summary')).toHaveText('Your seed, as you wrote it')
   await expect(wizard).toContainText('this document becomes the paper')
   await wizard.getByRole('button', { name: 'Next: Materials' }).click()
-  await wizard.locator('input[type=file]').setInputFiles({ name: 'trees.csv', mimeType: 'text/csv', buffer: Buffer.from('id,site,alive\n1,pit,no\n2,park,yes\n3,pit,no\n') })
-  await expect(wizard.locator('.gw-row')).toContainText('3 rows · 3 columns')
-  await wizard.getByLabel('Link').fill('https://example.org/survey')
+  // Files added together form one dataset, its README with it; where the data comes from is part of it.
+  await wizard.getByLabel('Choose files').setInputFiles([
+    { name: 'trees.csv', mimeType: 'text/csv', buffer: Buffer.from('id,site,alive\n1,pit,no\n2,park,yes\n3,pit,no\n') },
+    { name: 'README.md', mimeType: 'text/markdown', buffer: Buffer.from('# Street trees\nSurvival by site type, 2018 to 2024.\n') },
+  ])
+  const dataset = wizard.locator('.gw-dataset')
+  await expect(dataset).toHaveCount(1)
+  await expect(dataset.locator('.gw-row')).toHaveCount(2)
+  await expect(dataset).toContainText('3 rows · 3 columns')
+  await dataset.getByRole('radiogroup', { name: 'Who produced trees' }).getByRole('radio', { name: 'Others' }).click()
+  await dataset.getByLabel('Published as, trees').fill('https://doi.org/10.5281/zenodo.123')
+  await expect(dataset).toContainText('never as measurements made for this paper')
+  await wizard.getByLabel('Link', { exact: true }).fill('https://example.org/survey')
   await wizard.getByRole('button', { name: 'Add link' }).click()
   await expect(wizard).toContainText('Private datasets stay on this machine')
 
@@ -62,10 +72,11 @@ test('the paper wizard walks through seed, materials and settings, and starts th
   await expect(wizard.getByRole('heading', { name: 'Writing the paper' })).toBeVisible()
 
   expect(posted!.settings).toMatchObject({ author: 'Ada Lovelace', rounds: 1, dial: 'autonomous', citations: 'auto', literatureReview: true, reviewRole: 'load-bearing', simulation: true, simulationRole: 'supporting' })
-  expect(posted!.materials).toEqual([
-    expect.objectContaining({ name: 'trees.csv', private: true }),
-    { name: 'https://example.org/survey', url: 'https://example.org/survey' },
-  ])
+  expect(posted!.materials).toEqual([{ name: 'https://example.org/survey', url: 'https://example.org/survey' }])
+  expect(posted!.datasets).toEqual([expect.objectContaining({
+    name: 'trees', producedBy: 'others', doi: 'https://doi.org/10.5281/zenodo.123', private: true,
+    files: [expect.objectContaining({ name: 'trees.csv' }), expect.objectContaining({ name: 'README.md' })],
+  })])
 })
 
 test('a seed that already has a paper shows where the paper stands, and opens the manuscript once it is typeset', async ({ page }) => {

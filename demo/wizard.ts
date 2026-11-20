@@ -17,6 +17,8 @@ function seedReference(text: string): HTMLElement {
 }
 
 interface Item { name: string; kind: 'dataset' | 'document' | 'link'; url?: string; file?: File; detail: string; private: boolean }
+/** A dataset as its producers know it: one or more files under one name, with where the data comes from. */
+interface DatasetItem { name: string; files: { file: File; detail: string }[]; producedBy: 'authors' | 'others'; doi: string; version: string; describedIn: string; licence: string; private: boolean }
 
 const STEPS = ['Seed', 'Materials', 'Settings', 'Start'] as const
 const DATASET = /\.(csv|tsv|json|xlsx)$/i
@@ -69,6 +71,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   const words = text.split(/\s+/).filter(Boolean).length
   const paragraphs = text.split(/\n\s*\n/).filter((p) => p.trim()).length
   const items: Item[] = []
+  const datasets: DatasetItem[] = []
   let step = 0
   let context: Context | null = null
   const settings = { author: '', affiliation: '', funding: '', competingInterests: '', acknowledgements: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, reviewRole: 'supporting', simulation: false, simulationRole: 'supporting' }
@@ -122,10 +125,12 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   function materialsStep(): (Node | null)[] {
     const picker = h('input', { type: 'file', multiple: true, class: 'gw-file', 'aria-label': 'Choose files', accept: '.csv,.tsv,.json,.xlsx,.md,.txt,.tex,.docx,.odt,.html,.pdf' })
     picker.addEventListener('change', () => add([...(picker.files ?? [])]))
+    const folder = h('input', { type: 'file', multiple: true, class: 'gw-file', 'aria-label': 'Choose a folder', webkitdirectory: true })
+    folder.addEventListener('change', () => add([...(folder.files ?? [])]))
     const drop = h('label', { class: 'gw-drop' },
       picker,
       h('span', { class: 'gw-drop-main', text: 'Drop files here, or choose files' }),
-      h('span', { class: 'gw-drop-sub', text: 'Datasets: CSV, TSV, JSON · Documents: Markdown, text, Word, PDF' }))
+      h('span', { class: 'gw-drop-sub', text: 'Data files added together form one dataset (CSV, TSV, JSON, Excel), with any README among them · Documents: Markdown, text, Word, PDF' }))
     drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('is-over') })
     drop.addEventListener('dragleave', () => drop.classList.remove('is-over'))
     drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('is-over'); add([...(e.dataTransfer?.files ?? [])]) })
@@ -144,15 +149,16 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
         h('span', { class: 'gw-row-main' }, h('span', { class: 'gw-mono gw-row-name', text: item.name }), h('span', { class: 'gw-row-detail', text: item.detail })),
         item.kind === 'dataset' ? segmented([['Private', true], ['Shared', false]], item.private, (v) => { item.private = v; render() }, `Who may read ${item.name}`) : h('span', { class: 'gw-row-kind', text: item.kind }),
         h('button', { type: 'button', class: 'gw-x', 'aria-label': `Remove ${item.name}`, text: '×', onclick: () => { items.splice(i, 1); render() } }))))
-      : h('p', { class: 'gw-empty', text: 'No materials. The paper will rest on your seed and the literature.' })
-    const privateSets = items.filter((i) => i.kind === 'dataset' && i.private).length
-    const sharedSets = items.filter((i) => i.kind === 'dataset' && !i.private).length
-    const read = items.filter((i) => i.kind !== 'dataset').length
+      : datasets.length ? null : h('p', { class: 'gw-empty', text: 'No materials. The paper will rest on your seed and the literature.' })
+    const privateSets = datasets.filter((d) => d.private).length
+    const sharedSets = datasets.filter((d) => !d.private).length
+    const read = items.length
     return [
       h('h2', { id: 'gw-title', class: 'gw-title', text: 'What the paper draws on' }),
       h('p', { class: 'gw-lead', text: 'Besides the literature, a paper can rest on your own material: data, notes, drafts, pages.' }),
       drop,
-      h('div', { class: 'gw-linkrow' }, url, h('button', { type: 'button', class: 'gw-btn', text: 'Add link', onclick: addLink })),
+      h('div', { class: 'gw-linkrow' }, url, h('button', { type: 'button', class: 'gw-btn', text: 'Add link', onclick: addLink }), h('label', { class: 'gw-btn gw-folder' }, folder, 'Choose a folder')),
+      ...datasets.map(datasetCard),
       list,
       privateSets ? h('p', { class: 'gw-note' }, h('strong', { text: 'Private datasets stay on this machine. ' }), 'The models see only a summary of each column and the results galley computes here, and every number the paper states about your data comes from those results.') : null,
       sharedSets ? h('p', { class: 'gw-note', text: 'Shared datasets: the models also read their first 15 rows.' }) : null,
@@ -160,11 +166,57 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
     ]
   }
 
-  async function add(files: File[]): Promise<void> {
+  /** One dataset: its name, its files, and where the data comes from, which decides how the paper may describe it. */
+  function datasetCard(d: DatasetItem, index: number): HTMLElement {
+    const text = (key: 'name' | 'doi' | 'version' | 'describedIn' | 'licence', label: string, placeholder = label) => {
+      const el = h('input', { class: 'gw-input', value: d[key], placeholder, 'aria-label': `${label}, ${d.name}` })
+      el.addEventListener('input', () => { d[key] = el.value })
+      return el
+    }
+    const more = h('input', { type: 'file', multiple: true, class: 'gw-file', 'aria-label': `Add files to ${d.name}` })
+    more.addEventListener('change', async () => { await addTo(d, [...(more.files ?? [])]); render() })
+    const row = (label: string, control: Node) => h('div', { class: 'gw-dataset-row' }, h('span', { class: 'gw-label', text: label }), control)
+    return h('section', { class: 'gw-dataset', 'aria-label': `Dataset ${d.name}` },
+      h('div', { class: 'gw-dataset-head' },
+        h('span', { class: 'gw-kind gw-kind--dataset', 'aria-hidden': 'true' }), text('name', 'Dataset name'),
+        segmented([['Private', true], ['Shared', false]], d.private, (v) => { d.private = v; render() }, `Who may read ${d.name}`),
+        h('button', { type: 'button', class: 'gw-x', 'aria-label': `Remove ${d.name}`, text: '×', onclick: () => { datasets.splice(index, 1); render() } })),
+      h('ul', { class: 'gw-list' }, ...d.files.map((f, i) => h('li', { class: 'gw-row gw-row--file' },
+        h('span', { class: 'gw-row-main' }, h('span', { class: 'gw-mono gw-row-name', text: f.file.name }), h('span', { class: 'gw-row-detail', text: f.detail })),
+        h('button', { type: 'button', class: 'gw-x', 'aria-label': `Remove ${f.file.name}`, text: '×', onclick: () => { d.files.splice(i, 1); if (!d.files.length) datasets.splice(index, 1); render() } })))),
+      h('label', { class: 'gw-btn gw-addfiles' }, more, 'Add files to this dataset'),
+      row('Who produced it', segmented([['I or my group', 'authors'], ['Others', 'others']], d.producedBy, (v) => { d.producedBy = v as DatasetItem['producedBy']; render() }, `Who produced ${d.name}`)),
+      row('Published as', text('doi', 'Published as', 'DOI or link, if published')),
+      row('Version', text('version', 'Version', 'Version, if any')),
+      row('First reported in', text('describedIn', 'First reported in', 'DOI or link of the paper that first reported it')),
+      row('Licence', text('licence', 'Licence', 'Licence, if any')),
+      h('p', { class: 'gw-help', text: d.producedBy === 'others' || d.doi || d.describedIn
+        ? 'The paper analyses this data and cites it where it describes it, never as measurements made for this paper.'
+        : 'Data you produced for this paper is your own work. If it was published before, give where, and the paper cites it.' }))
+  }
+
+  async function addTo(d: DatasetItem, files: File[]): Promise<void> {
     for (const file of files) {
       if (file.size > 50e6) { alert(`${file.name} is larger than 50 MB.`); continue }
-      const kind = DATASET.test(file.name) ? 'dataset' : 'document'
-      items.push({ name: file.name, kind, file, detail: await describe(file), private: kind === 'dataset' })
+      d.files.push({ file, detail: await describe(file) })
+    }
+  }
+
+  /** Files added together: data files, with any README among them, form one dataset; documents on their own stay documents. */
+  async function add(files: File[]): Promise<void> {
+    const usable = files.filter((f) => !f.name.startsWith('.'))
+    const data = usable.filter((f) => DATASET.test(f.name))
+    if (data.length) {
+      const relative = (f: File) => (f as File & { webkitRelativePath?: string }).webkitRelativePath ?? ''
+      const folderName = relative(usable[0]).split('/')[0]
+      const d: DatasetItem = { name: folderName || data[0].name.replace(/\.[^.]+$/, ''), files: [], producedBy: 'authors', doi: '', version: '', describedIn: '', licence: '', private: true }
+      await addTo(d, usable)
+      if (d.files.length) datasets.push(d)
+    } else {
+      for (const file of usable) {
+        if (file.size > 50e6) { alert(`${file.name} is larger than 50 MB.`); continue }
+        items.push({ name: file.name, kind: 'document', file, detail: await describe(file), private: false })
+      }
     }
     render()
   }
@@ -237,12 +289,11 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   function startStep(): (Node | null)[] {
     const s = context?.seats
     const m = (seat: keyof Context['seats']) => s?.[seat]?.model ?? seat
-    const datasets = items.filter((i) => i.kind === 'dataset')
     const searches = context?.openalexKey ? 'two' : 'one'
     // A step that runs alongside the others shows its own time but adds little to the whole.
     const plan: [string, string, string, number, boolean?][] = [
       ['Read your seed', 'claims, concern, contribution and host field', m('author'), 1],
-      ...(items.length ? [['Read your materials', datasets.length ? 'profile datasets here; read documents and links' : 'read documents and links', 'this machine', 1] as [string, string, string, number]] : []),
+      ...(items.length || datasets.length ? [['Read your materials', datasets.length ? 'profile datasets here; read documents and links' : 'read documents and links', 'this machine', 1] as [string, string, string, number]] : []),
       ['Place the idea', '7 literature searches through Canary: closest work, bottleneck, consensus', m('checker'), 3],
       ['Challenge the idea', 'seven impact factors; three directions; one chosen', `${m('challenger')} · ${m('checker')}`, 10],
       ...(settings.literatureReview ? [['Systematic review', `Canary: search plan, screening, at least ${context?.review?.papers ?? 50} full papers read, every finding audited; ${settings.reviewRole === 'load-bearing' ? 'the paper\'s main contribution, so the plan waits for it' : 'alongside the steps below'}`, `${context?.review?.research ?? 'gpt-6.1-sol'} · ${context?.review?.audit ?? 'gpt-6-astra'}`, 40, settings.reviewRole !== 'load-bearing'] as [string, string, string, number, boolean]] : []),
@@ -256,7 +307,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
     ]
     const total = plan.reduce((a, p) => a + (p[4] ? 5 : p[3]), 0) + Math.round((settings.words - 7000) / 1000) * 3
     const leaves = [
-      [items.some((i) => i.kind !== 'dataset') ? 'Your seed, documents and links' : 'Your seed', 'go to the providers of the three model families (Anthropic, OpenAI, Google).'],
+      [items.length ? 'Your seed, documents and links' : 'Your seed', 'go to the providers of the three model families (Anthropic, OpenAI, Google).'],
       ...(datasets.some((d) => d.private) ? [['Private datasets', 'never leave this machine; the models see column summaries and computed results.']] : []),
       ...(datasets.some((d) => !d.private) ? [['Shared datasets', 'their summaries and first 15 rows go to the model providers.']] : []),
       ['Search terms', 'go to OpenAlex through Canary.'],
@@ -281,10 +332,14 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       const materials = await Promise.all(items.map(async (item) => item.kind === 'link'
         ? { name: item.name, url: item.url }
         : { name: item.name, private: item.private, data: await base64(item.file!) }))
+      const sets = await Promise.all(datasets.map(async (d) => ({
+        name: d.name, producedBy: d.producedBy, doi: d.doi, version: d.version, describedIn: d.describedIn, licence: d.licence, private: d.private,
+        files: await Promise.all(d.files.map(async (f) => ({ name: f.file.name, data: await base64(f.file) }))),
+      })))
       const response = await fetch(`/api/galley-papers/${encodeURIComponent(slug)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, settings, materials }),
+        body: JSON.stringify({ text, settings, materials, datasets: sets }),
       })
       if (!response.ok) throw new Error(await response.text())
       const at = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })

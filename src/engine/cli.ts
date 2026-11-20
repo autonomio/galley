@@ -14,7 +14,7 @@
 //   galley doctor                    check that every model, tool and source answers
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { basename, resolve } from 'node:path'
+import { basename, dirname, resolve } from 'node:path'
 import { LADDER } from './behaviors/index.js'
 import { answerChoice } from './behaviors/truth.js'
 import { defaultConfig, FAMILY_MODELS, FAMILY_NAMES } from './config.js'
@@ -25,7 +25,7 @@ import { editorDir, productionRecord, syncEditor, typeset } from './render.js'
 import { runPaper, Stalled } from './scheduler.js'
 import { obj, bool } from './schema.js'
 import { DOES } from './self.js'
-import { addMaterials } from './materials.js'
+import { addDatasets, addMaterials, type DatasetManifest } from './materials.js'
 import { reviewDone } from './behaviors/close.js'
 import { REVIEW_SETTINGS } from './literature.js'
 import type { Family } from './types.js'
@@ -245,10 +245,19 @@ async function main(): Promise<void> {
       const author = flag('author')
       // The authors' own materials: datasets stay private unless named shared.
       const sources = [...flags('material').map((source) => ({ source })), ...flags('shared-material').map((source) => ({ source, shared: true }))]
-      const materials = sources.length ? await addMaterials(dir, sources) : []
-      for (const m of materials) console.log(`Material ${m.id}: ${m.kind} ${m.url ?? m.name}${m.kind === 'dataset' ? (m.private ? ' (private)' : ' (shared)') : m.text ? '' : ' (its text could not be read)'}`)
+      const loose = sources.length ? await addMaterials(dir, sources) : []
+      // A dataset as a unit: a manifest names its files (relative to the manifest) and says where the data comes from.
+      const manifests = flags('dataset').map((path) => {
+        const manifest = JSON.parse(readFileSync(path, 'utf8')) as DatasetManifest
+        return { ...manifest, files: (manifest.files ?? []).map((file) => resolve(dirname(resolve(path)), file)) }
+      })
+      const units = manifests.length ? await addDatasets(dir, manifests, loose.length) : { materials: [], datasets: [] }
+      const materials = [...loose, ...units.materials]
+      for (const m of materials) console.log(`Material ${m.id}: ${m.kind} ${m.url ?? m.name}${m.dataset ? ` in ${m.dataset}` : ''}${m.kind === 'dataset' ? (m.private ? ' (private)' : ' (shared)') : m.text ? '' : ' (its text could not be read)'}`)
+      for (const u of units.datasets) console.log(`Dataset ${u.id}: ${u.name}, produced by ${u.producedBy}${u.doi ? `, DOI ${u.doi}` : u.url ? `, ${u.url}` : ''}${u.describedIn ? `, first reported in ${u.describedIn}` : ''}`)
       Paper.create(dir, seed, {
         ...(materials.length ? { materials } : {}),
+        ...(units.datasets.length ? { datasets: units.datasets } : {}),
         ...(flag('rounds') ? { rounds: Math.max(1, Number(flag('rounds'))) } : {}),
         ...(author ? { authors: [{ name: author, ...(flag('affiliation') ? { affiliation: flag('affiliation') } : {}) }] } : {}),
         ...(flag('venue') ? { venue: flag('venue')! } : {}),

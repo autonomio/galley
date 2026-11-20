@@ -8,15 +8,13 @@ import type { Behavior, Target } from '../scheduler.js'
 import { arr, enm, obj, str } from '../schema.js'
 import { applyExact, dropUnknownCitations, words } from '../text.js'
 import type { Passage, Section } from '../types.js'
-import { briefBlock, claimsBlock, keyFor, live, manuscriptBlock, now, seatFamily, sectionText } from './common.js'
+import { briefBlock, citableKeys, claimsBlock, keyFor, live, manuscriptBlock, now, seatFamily, sectionText } from './common.js'
 import { verifyCitationsSettled } from './truth.js'
 import { literatureBlock, REVIEW_SECTION, REVIEW_SECTION_RULES } from '../literature.js'
 import { simulationSeries } from '../simulations.js'
 import { fillPlaceholders, productionRecord } from '../record.js'
 
-function knownKeys(paper: Paper): Set<string> {
-  return new Set(paper.state.citations.filter((c) => c.status === 'verified').map((c) => keyFor(paper, paper.state.works[c.workId])))
-}
+const knownKeys = citableKeys
 
 function figureNumbers(paper: Paper): Map<string, number> {
   const numbers = new Map<string, number>()

@@ -156,7 +156,7 @@ function papersPlugin(): Plugin {
         let body = ''
         req.on('data', (chunk) => { body += chunk })
         req.on('end', () => {
-          const { text, settings = {}, materials = [], citations } = JSON.parse(body || '{}')
+          const { text, settings = {}, materials = [], datasets = [], citations } = JSON.parse(body || '{}')
           const stamp = Date.now()
           const seed = join(tmpdir(), `galley-seed-${slug}-${stamp}.md`)
           writeFileSync(seed, String(text || ''))
@@ -187,6 +187,25 @@ function papersPlugin(): Plugin {
             const file = join(inbox, m.name.replace(/[^\w.-]+/g, '_'))
             writeFileSync(file, Buffer.from(m.data, 'base64'))
             args.push(m.private === false ? '--shared-material' : '--material', file)
+          }
+          // A dataset is one unit of one or more files: they go in a folder of their own, with a manifest of where the data comes from.
+          const short = (value: unknown, max: number) => { const v = String(value ?? '').trim(); return v && v.length <= max ? v : undefined }
+          for (const [i, d] of (datasets as { name?: string; files?: { name?: string; data?: string }[]; producedBy?: string; version?: string; doi?: string; describedIn?: string; licence?: string; citation?: string; private?: boolean }[]).entries()) {
+            const files = (d.files ?? []).filter((f) => f.name && f.data)
+            if (!files.length) continue
+            const folder = join(inbox, `dataset-${i + 1}`)
+            mkdirSync(folder, { recursive: true })
+            const names = files.map((f) => {
+              const name = f.name!.replace(/[^\w.-]+/g, '_')
+              writeFileSync(join(folder, name), Buffer.from(f.data!, 'base64'))
+              return name
+            })
+            const manifest = {
+              name: short(d.name, 200) ?? `Dataset ${i + 1}`, files: names, producedBy: d.producedBy === 'others' ? 'others' : 'authors',
+              version: short(d.version, 50), doi: short(d.doi, 300), describedIn: short(d.describedIn, 300), licence: short(d.licence, 200), citation: short(d.citation, 1000), private: d.private !== false,
+            }
+            writeFileSync(join(folder, 'dataset.json'), JSON.stringify(manifest, null, 2))
+            args.push('--dataset', join(folder, 'dataset.json'))
           }
           mkdirSync(paperDir, { recursive: true })
           const log = openSync(join(paperDir, 'run.log'), 'a')
