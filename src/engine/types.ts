@@ -365,6 +365,10 @@ export interface PaperState {
   editorResolved?: string[]
   /** The typeset review: how many readings, what the last one found, how many defects were fixed and what is left for a person. */
   proof?: { rounds: number; hash: string; defects: ProofDefect[]; fixed: number; left: ProofDefect[] }
+  /** Works the text names, cited where they are named (placed), or listed without a place when the quote was not found. */
+  named?: { workId: string; quote: string; sectionId: string; placed: boolean }[]
+  /** Names of works the text gives that no source could be found for: on the sign-off sheet. */
+  unreferenced?: { quote: string; sectionId: string }[]
   /** The analysis of the authors' data: the field's conventions, the preparation, the reviewed plan, and what each analysis's code printed. */
   analysis?: DataAnalysis
   /** Replies a person wrote in the editor that are already findings. */

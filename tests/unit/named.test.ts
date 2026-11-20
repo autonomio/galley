@@ -1,0 +1,52 @@
+// A work the text names is cited where it is named, or put on the sign-off sheet.
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import { citeAt, citeNamed, matchNamed } from '../../src/engine/behaviors/named.js'
+import { Paper } from '../../src/engine/paper.js'
+import type { Work } from '../../src/engine/types.js'
+
+let dir = ''
+afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }) })
+
+const work = (id: string, author: string, year: number, title: string): Work => ({ id, doi: null, title, authors: [author], year, venue: null, abstract: '', citedBy: null, url: null })
+const works = [
+  work('W1', 'Samuel S. Wilks', 1941, 'Determination of sample sizes for setting tolerance limits'),
+  work('W2', 'Pouya Dehghankar', 2024, 'An Efficient Matrix Multiplication Algorithm for Accelerating Inference'),
+  work('W3', 'Pouya Dehghankar', 2026, 'RSR-core: A High-Performance Engine for Low-Bit Matrix-Vector Multiplication'),
+]
+
+describe('works the text names', () => {
+  it('finds the one work a name points to, and none when several fit and nothing tells them apart', () => {
+    expect(matchNamed({ section: 'S1', quote: 'Wilks (1941)', authors: ['Wilks'], year: 1941, title: '' }, works)?.id).toBe('W1')
+    expect(matchNamed({ section: 'S1', quote: 'Dehghankar et al. (2025)', authors: ['Dehghankar'], year: 2025, title: '' }, works)).toBeNull()
+    expect(matchNamed({ section: 'S1', quote: 'Dehghankar et al. (2025)', authors: ['Dehghankar'], year: 2025, title: 'efficient matrix multiplication algorithm' }, works)?.id).toBe('W2')
+  })
+
+  it('cites a name where it stands, keeping its words', () => {
+    expect(citeAt('As Wilks (1941) showed, n = 59.', 'Wilks (1941)', 'wilks1941')).toBe('As Wilks [-@wilks1941] showed, n = 59.')
+    expect(citeAt('JCGM 100:2008 defines it.', 'JCGM 100:2008', 'jcgm2008')).toBe('JCGM 100:2008 [@jcgm2008] defines it.')
+    expect(citeAt('Nothing here.', 'Wilks (1941)', 'wilks1941')).toBeNull()
+  })
+
+  it('cites what it holds after review, and lists what it cannot find for the sign-off', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const paper = Paper.create(join(dir, 'p'), 'seed')
+    const s = paper.state
+    paper.config.off = ['find-evidence']
+    s.outline = { sections: [{ id: 'S1', title: 'Methods', purpose: '', claimIds: [], words: 300, figureIds: [] }], style: '', glossary: [] }
+    s.passages = { S1: { sectionId: 'S1', text: 'Following Wilks (1941) and JCGM 100:2008, we bound the quantile.', revisions: [], checked: 'faithful' } }
+    s.frame = { title: 'T', abstract: 'A', keywords: [], limitations: '', opens: '' }
+    s.round = paper.config.rounds
+    s.works = { W1: works[0] }
+    paper.ask = (async () => ({ named: [
+      { section: '[S1]', quote: 'Wilks (1941)', authors: ['Wilks'], year: 1941, title: '' },
+      { section: 'S1', quote: 'JCGM 100:2008', authors: ['JCGM'], year: 2008, title: 'Guide to the expression of uncertainty in measurement' },
+    ] })) as Paper['ask']
+    await citeNamed.ready(paper)[0].run()
+    expect(s.passages.S1.text).toMatch(/^Following Wilks \[-@\w+\] and JCGM 100:2008, we bound/)
+    expect(s.named).toEqual([expect.objectContaining({ workId: 'W1', placed: true })])
+    expect(s.unreferenced).toEqual([{ quote: 'JCGM 100:2008', sectionId: 'S1' }])
+  })
+})

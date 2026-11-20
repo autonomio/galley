@@ -45,8 +45,9 @@ async function references(paper: Paper): Promise<Record<string, unknown>[]> {
   }
   // Every publication a systematic review included is listed in its appendix, and each dataset is cited where it is
   // described, so each one is in the references too.
+  // So is every work the text names.
   const datasets = (paper.config.datasets ?? []).flatMap((unit) => Object.values(datasetSources(paper, unit))).map((workId) => ({ workId }))
-  for (const { workId } of [...(paper.state.literature?.status === 'done' ? paper.state.literature.included ?? [] : []), ...datasets]) {
+  for (const { workId } of [...(paper.state.literature?.status === 'done' ? paper.state.literature.included ?? [] : []), ...datasets, ...(paper.state.named ?? [])]) {
     const work = paper.state.works[workId]
     if (!work) continue
     const key = keyFor(paper, work)
@@ -65,6 +66,11 @@ async function references(paper: Paper): Promise<Record<string, unknown>[]> {
 // ---------------------------------------------------------------- manuscript
 
 const yamlString = (text: string) => JSON.stringify(text)
+
+function unplacedNames(paper: Paper, known: Set<string>): string[] {
+  const keys = [...new Set((paper.state.named ?? []).filter((n) => !n.placed && paper.state.works[n.workId]).map((n) => keyFor(paper, paper.state.works[n.workId])))].filter((key) => known.has(key))
+  return keys.length ? [`nocite: ${yamlString(keys.map((key) => `@${key}`).join(', '))}`] : []
+}
 
 /** Every pipe table in Markdown has one rule line under its header, and Typst numbers every table, so this counts them. */
 export const tablesIn = (markdown: string) => (markdown.match(/^\|(?:\s*:?-{3,}:?\s*\|)+\s*$/gm) ?? []).length
@@ -179,6 +185,8 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
     `keywords: [${(s.frame?.keywords ?? []).map((k) => yamlString(plain(k))).join(', ')}]`,
     'link-citations: true',
     'reference-section-title: References',
+    // A work the text names where its words could not be found to cite it is still listed among the references.
+    ...unplacedNames(paper, known),
     '---',
   ].join('\n')
   const body: string[] = []
@@ -606,7 +614,10 @@ Outcome: **${s.outcome ?? 'in progress'}**. ${s.outcome === 'ready_for_submissio
 ## Declarations only you can make
 ${list(declare, 'All declared.')}
 
-## Claims the system added (${active.filter((c) => c.origin === 'system').length}). Stand behind each, or cut it
+${s.unreferenced?.length ? `## Works the text names that no source was found for (${s.unreferenced.length}). Add the reference, or drop the name
+${list(s.unreferenced.map((u) => `${u.sectionId}: "${u.quote}"`), 'None.')}
+
+` : ''}## Claims the system added (${active.filter((c) => c.origin === 'system').length}). Stand behind each, or cut it
 ${list(active.filter((c) => c.origin === 'system').map((c) => `${c.id} [${c.status}] ${c.text}`), 'None.')}
 
 ## Claims stated as hypotheses for lack of evidence (${active.filter((c) => c.status === 'unsupported').length})

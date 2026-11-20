@@ -10,6 +10,7 @@ import { analyzeData, extractData, planAnalysis, reviewAnalysisPlan } from './da
 import { literatureReview } from './literature.js'
 import { simulateModel } from './simulate.js'
 import { proof } from './proof.js'
+import { citeNamed } from './named.js'
 import { findWebSources } from './web.js'
 
 // One behavior writes the frame: once when the draft is checked, and again from the reviewed text.
@@ -32,6 +33,7 @@ export const LADDER: Behavior[] = [
   draft, figure, fidelity, frame,
   // Referees: other families review; the author answers; a third family settles; what it cannot settle becomes a limitation.
   referee, closeRound, respond, verifyDisposition, adjudicate, handleFinding,
-  // Close: the ledger is made to say what the reviewed text says, then the paper is profiled, typeset and read as printed.
-  reconcile, reprofile, typeset, proof, ready,
+  // Close: every work the text names is cited, the ledger is made to say what the reviewed text says, then the paper is
+  // profiled, typeset and read as printed.
+  citeNamed, reconcile, reprofile, typeset, proof, ready,
 ]
