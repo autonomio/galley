@@ -104,6 +104,8 @@ describe('the typeset review', () => {
     s.frame = { title: 'T', abstract: 'A', keywords: [], limitations: '', opens: '' }
     s.round = paper.config.rounds
     paper.settle('frame:final', 'done')
+    // The told paper has been read through: it is proofread next.
+    paper.settle('story:read:3', 'done')
     paper.settle(`typeset:${contentHash(paper)}`, 'done')
 
     const asked: string[] = []
@@ -147,6 +149,8 @@ describe('the typeset review', () => {
     s.frame = { title: 'T', abstract: 'A', keywords: [], limitations: '', opens: '' }
     s.round = paper.config.rounds
     paper.settle('frame:final', 'done')
+    // The told paper has been read through: it is proofread next.
+    paper.settle('story:read:3', 'done')
     paper.settle(`typeset:${contentHash(paper)}`, 'done')
     const asks: { seat: string; prompt: string }[] = []
     paper.ask = (async (options: { seat: string; prompt: string }) => {
@@ -181,6 +185,8 @@ describe('the typeset review', () => {
     s.frame = { title: 'T', abstract: 'A', keywords: [], limitations: '', opens: '' }
     s.round = paper.config.rounds
     paper.settle('frame:final', 'done')
+    // The told paper has been read through: it is proofread next.
+    paper.settle('story:read:3', 'done')
     const before = contentHash(paper)
     paper.settle(`typeset:${before}`, 'done')
     mkdirSync(paper.path('build'), { recursive: true })

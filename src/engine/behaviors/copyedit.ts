@@ -12,6 +12,7 @@ import { arr, obj, str } from '../schema.js'
 import { applyExact } from '../text.js'
 import { reviewDone } from './close.js'
 import { live, seatFamily, sectionText } from './common.js'
+import { storyTold } from './story.js'
 import { setPassage } from './write.js'
 
 export const copyedit: Behavior = {
@@ -22,6 +23,8 @@ export const copyedit: Behavior = {
     const s = paper.state
     if (!live(paper) || !s.outline || s.outcome || paper.isSettled('frame:final') || !reviewDone(paper)) return []
     if (!paper.isSettled('named:works') && !paper.config.off.includes('cite-named')) return []
+    // It reads the text as told: after the story steps, so their changes are made consistent with the rest.
+    if (!storyTold(paper)) return []
     return [{
       key: 'copyedit:text', label: 'the whole text, read once for consistency',
       run: async () => {

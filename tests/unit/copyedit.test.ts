@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { copyedit } from '../../src/engine/behaviors/copyedit.js'
+import { STORY_STEPS } from '../../src/engine/behaviors/story.js'
 import { reconcile } from '../../src/engine/behaviors/close.js'
 import { datedIn } from '../../src/engine/behaviors/web.js'
 import { Paper } from '../../src/engine/paper.js'
@@ -13,7 +14,7 @@ let dir = ''
 afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }) })
 
 describe('the copyedit', () => {
-  it('reads the whole text after the named works are cited, fixes sections and captions, and holds the ledger until then', async () => {
+  it('reads the whole text after the named works are cited and the paper is told, fixes sections and captions, and holds the ledger until then', async () => {
     dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
     const paper = Paper.create(join(dir, 'p'), 'seed')
     const s = paper.state
@@ -27,6 +28,9 @@ describe('the copyedit', () => {
     s.round = paper.config.rounds
     expect(copyedit.ready(paper)).toEqual([])
     paper.settle('named:works', 'done')
+    // It reads the text as told.
+    expect(copyedit.ready(paper)).toEqual([])
+    for (const step of STORY_STEPS) paper.settle(step.key, 'done')
     expect(reconcile.ready(paper)).toEqual([])
     paper.ask = (async (options: { seat: string }) => options.seat === 'checker'
       ? { problems: [

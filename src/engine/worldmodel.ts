@@ -14,6 +14,7 @@ import { basename, join } from 'node:path'
 import { ensureAnalysisEnv } from './analysis.js'
 import { completeByTitle, cslForDoi, openalexKey, type QueryResult, type SearchHit } from './evidence.js'
 import type { Paper } from './paper.js'
+import { personNames } from './text.js'
 import type { Work } from './types.js'
 
 export interface ModelClaim { id: string; statement: string; uncertainty?: string; class?: string; evidence_ids?: string[]; state?: string }
@@ -320,7 +321,7 @@ export async function describeWork(m: SearchableModel, work: Work): Promise<void
       if (response.ok) {
         const w = await response.json() as { doi?: string; publication_year?: number; authorships?: { author?: { display_name?: string } }[]; primary_location?: { source?: { display_name?: string } } }
         work.doi = w.doi ? w.doi.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '').toLowerCase() : null
-        work.authors = (w.authorships ?? []).map((a) => a.author?.display_name ?? '').filter(Boolean)
+        work.authors = personNames((w.authorships ?? []).map((a) => a.author?.display_name ?? '').filter(Boolean))
         work.year = w.publication_year ?? work.year
         work.venue = w.primary_location?.source?.display_name ?? work.venue
       }

@@ -15,10 +15,11 @@ import { fillPlaceholders, productionRecord, type Record_ } from '../record.js'
 import { contentHash, writeSignoff } from '../render.js'
 import type { Behavior } from '../scheduler.js'
 import { arr, enm, int, nstr, obj, str } from '../schema.js'
-import { applyExact, squash } from '../text.js'
+import { applyExact, citedKeys, squash } from '../text.js'
 import type { ProofDefect } from '../types.js'
 import { reviewDone } from './close.js'
 import { activeClaims, live, manuscriptBlock, noteForAuthors, seatFamily, sectionText, setClaim } from './common.js'
+import { storyReadDone } from './story.js'
 import { isNarrowing } from './truth.js'
 import { setPassage } from './write.js'
 
@@ -205,6 +206,8 @@ export const proof: Behavior = {
     const s = paper.state
     if (!live(paper) || s.outcome || paper.config.off.includes('proof')) return []
     if (!reviewDone(paper) || !paper.isSettled('frame:final')) return []
+    // The told paper is read through before it is proofread as printed.
+    if (!storyReadDone(paper)) return []
     const hash = contentHash(paper)
     if (!paper.isSettled(`typeset:${hash}`)) return []
     const reading = (s.proof?.rounds ?? 0) + 1
@@ -285,7 +288,8 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
             const fig = d.fixIn === 'figure' || d.where === 'figure' ? figureOf(paper, d, shown) : null
             // A figure is drawn again on any reading that can still fix things: the reading after it, the recording one at
             // the latest, reads the new drawing.
-            if (d.fixIn === 'figure' && fig) {
+            const chartOff = s.figures.find((f) => f.id === fig)?.kind === 'chart' && (paper.config.off.includes('story-charts') || paper.config.off.includes('story'))
+            if (d.fixIn === 'figure' && fig && !chartOff) {
               // The figure is drawn again with the defect named.
               const figure = s.figures.find((f) => f.id === fig)!
               figure.revise = [figure.revise, `${d.problem} ${d.fix}`.trim()].filter(Boolean).join(' ')
@@ -320,7 +324,7 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
               behavior: 'proof', target: `${hash}:${sectionId}`, seat: 'author', family: author,
               prompt: `${HOUSE}
 
-The typeset paper shows these defects in section ${section.id} ${section.title}. Fix each with exact edits to the section's source text below: old is copied character for character from it, and {{placeholders}} stay as they are where they belong. Change nothing else.
+The typeset paper shows these defects in section ${section.id} ${section.title}. Fix each with exact edits to the section's source text below: old is copied character for character from it, and {{placeholders}} stay as they are where they belong. A citation is written only as [@key], with a key the paper already cites; never as a link or as the words it prints as. How a reference prints (its authors, year or title) comes from its record, not from the prose: do not change a citation to fix it. Change nothing else.
 
 ${found.map((d, i) => `${i + 1}. "${d.quote}": ${d.problem} Fix: ${d.fix}`).join('\n')}
 
@@ -336,7 +340,12 @@ ${text}
               schema: obj({ edits: arr(obj({ old: str(), new: str() })) }),
             })
             let next = text
+            // A key the paper does not cite, or a citation written by hand as a link, is not an edit to make: it prints
+            // as a raw key or a broken link.
+            const keys = new Set(Object.values(s.passages).flatMap((p) => citedKeys(p.text)))
             for (const edit of answer.edits ?? []) {
+              const written = String(edit.new ?? '')
+              if (/\]\(#ref-/.test(written) || citedKeys(written).some((k) => !keys.has(k))) continue
               const changed = applyExact(next, edit)
               if (changed !== null) next = changed
             }
@@ -413,27 +422,37 @@ async function correctReferences(paper: Paper, hash: string, found: Found[], lef
   const path = paper.path('build', 'refs.json')
   const printed: Record<string, unknown>[] = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : []
   const works = new Map(Object.values(paper.state.works).filter((w) => w.bibKey).map((w) => [w.bibKey!, w]))
+  // A work with no registry record is described by what the index says of it: the opening of its abstract and its
+  // author's institution say whether it is a thesis, a report or a book, and where it was written.
+  const indexed = (id: unknown): Record<string, string> | null => {
+    const work = works.get(String(id))
+    if (!work || work.csl) return null
+    const said = Object.entries({ abstract: work.abstract?.slice(0, 400) ?? '', institution: work.institution ?? '' }).filter(([, v]) => v.trim())
+    return said.length ? Object.fromEntries(said) : null
+  }
   const reply = await paper.ask<any>({
     behavior: 'proof', target: `${hash}:references`, seat: 'author', family: seatFamily(paper, 'author'),
     prompt: `${HOUSE}
 
-A reader of the typeset paper found these entries of its reference list printed wrongly. The list is typeset in Chicago author-date style from the citation records below. For each defect, give the record it concerns (id) and how to correct that record so its entry prints as the publication it is: fields to set and fields to remove. A value you set must already be in that record, moved from another field or copied from a field the style does not print; only type may take any of these values: ${CSL_TYPES.join(', ')}. Never invent a title, volume, page, editor, publisher or venue. Where the record does not hold what is missing, remove what prints wrongly. Fields you may set or remove: ${RECORD_FIELDS.join(', ')}. A defect no record can fix gets no correction.
+A reader of the typeset paper found these entries of its reference list printed wrongly. The list is typeset in Chicago author-date style from the citation records below. For each defect, give the record it concerns (id) and how to correct that record so its entry prints as the publication it is: fields to set and fields to remove. A value you set must already be in that record, moved from another field, copied from a field the style does not print, or taken from what the index says of a work that has no registry record (its index: the opening of its abstract and its author's institution, as where a thesis was written); only type may take any of these values: ${CSL_TYPES.join(', ')}. Never invent a title, volume, page, editor, publisher or venue. Where the record does not hold what is missing, remove what prints wrongly. Fields you may set or remove: ${RECORD_FIELDS.join(', ')}. A defect no record can fix gets no correction.
 
 DEFECTS:
 ${found.map((d, i) => `${i + 1}. "${d.quote}": ${d.problem}`).join('\n')}
 
 RECORDS:
-${printed.map((r) => { const raw = works.get(String(r.id))?.csl; return JSON.stringify({ ...r, ...(raw ? { registry: published(raw) } : {}) }) }).join('\n')}`,
+${printed.map((r) => { const raw = works.get(String(r.id))?.csl; const index = indexed(r.id); return JSON.stringify({ ...r, ...(raw ? { registry: published(raw) } : {}), ...(index ? { index } : {}) }) }).join('\n')}`,
     schema: obj({ corrections: arr(obj({ defect: int(), id: str(), set: arr(obj({ field: str(), value: str() })), remove: arr(str()) })) }),
   })
   const corrected = new Set<number>()
+  // What the index says of each work, as the reader was shown it before any record changed.
+  const shownIndex = new Map(printed.map((r) => [String(r.id), indexed(r.id)]))
   for (const fix of reply.corrections ?? []) {
     const n = Number(fix.defect)
     const work = works.get(String(fix.id))
     if (!work || !found[n - 1]) continue
     const entry = printed.find((r) => r.id === fix.id) ?? {}
     const record: Record<string, unknown> = work.csl ?? Object.fromEntries(Object.entries(entry).filter(([key]) => key !== 'id'))
-    const holds = squash(JSON.stringify([published(record), entry]))
+    const holds = squash(JSON.stringify([published(record), entry, shownIndex.get(String(fix.id)) ?? {}]))
     const changes: string[] = []
     for (const { field, value } of fix.set ?? []) {
       const v = String(value ?? '').trim()

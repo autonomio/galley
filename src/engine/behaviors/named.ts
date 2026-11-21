@@ -4,7 +4,7 @@
 // ("Landauer's bound"), or one stated without a citation. Each is matched to a work the paper already holds or, where
 // the paper may search beyond its world model, found in the scholarly index, and cited where it is named or stated. A name that cannot be found is left as written and goes on the
 // sign-off sheet, so nothing stops over it.
-import { canarySearch, workFromHit } from '../evidence.js'
+import { canarySearch, titleWords, workFromHit } from '../evidence.js'
 import { datasetSources } from '../materials.js'
 import type { Paper } from '../paper.js'
 import { HOUSE } from '../prompts.js'
@@ -130,7 +130,7 @@ ${held.map(workLine).join('\n')}`,
                 behavior: 'cite-named', target: 'candidates', seat: 'checker', family: checker,
                 prompt: `${HOUSE}
 
-Each place below is a sentence of a manuscript that names a work, or states a result of earlier work, without citing the work, followed by works the scholarly index returned for it. For each place give the id of the work the sentence names, or of the work that established the result it states, judged by its authors, year and subject as the sentence describes them, or an empty id when none of them is that work. A work by an author of the same name on another subject is not it, and neither is a later work that only tested, applied or surveyed it.
+Each place below is a sentence of a manuscript that names a work, or states a result of earlier work, without citing the work, followed by works the scholarly index returned for it. For each place give the id of the work the sentence names, or of the work that established the result it states, judged by its authors, year and subject as the sentence describes them, or an empty id when none of them is that work. A work by an author of the same name on another subject is not it, and neither is a later work that only tested, applied or surveyed it. A record of the same title by the same authors dated later is the work itself, republished in a journal, reprinted or translated: of the records that are the work, give the one that says where it was published (its venue and its authors' full names).
 
 ${asked.map((a) => `${a.place}. "${a.n.quote}" in: "${sentenceAround(sectionText(paper, a.n.section), a.n.quote)}"${a.n.authors.length ? ` (the work: ${a.n.authors.join(', ')}${a.n.year ? ` ${a.n.year}` : ''}${a.n.title ? `, "${a.n.title}"` : ''})` : ''}\n${a.works.map((w) => `  ${workLine(w)}${w.venue ? ` | ${w.venue}` : ''}${w.abstract ? ` | ${w.abstract.slice(0, 240)}` : ''}`).join('\n')}`).join('\n\n')}`,
                 schema: obj({ choices: arr(obj({ place: str(), id: str() })) }),
@@ -181,7 +181,11 @@ function workLine(w: Work): string {
 
 /** Could this be the work a name points to: its first author by surname, and its year within one of the name's. */
 export function plausible(named: Named, work: Work): boolean {
-  if (named.year && work.year && Math.abs(work.year - named.year) > 1) return false
+  // The work's own title, word for word, is the work whatever year the index dates it by: its journal version, a reprint
+  // or a translation is often dated after it. Any other record must be of the year the text gives.
+  const title = titleWords(named.title)
+  const sameTitle = title.length >= 3 && title.join(' ') === titleWords(work.title).join(' ')
+  if (!sameTitle && named.year && work.year && Math.abs(work.year - named.year) > 1) return false
   const first = named.authors[0] ? fold(named.authors[0]).trim() : ''
   if (!first) return !!named.title && overlap(named.title, work.title) >= 0.6
   return !!work.authors[0] && new RegExp(`(^|[^a-z])${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`).test(fold(work.authors.join(' ')))
