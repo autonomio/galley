@@ -4,6 +4,12 @@ import type { Work } from './types.js'
 
 export const squash = (text: string) => text.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim()
 
+/** How printed text names a paper's authors: one author is "the author", never "the authors". */
+export function authorsNamed(count: number, possessive = false): string {
+  const many = count > 1
+  return possessive ? (many ? 'the authors’' : 'the author’s') : (many ? 'the authors' : 'the author')
+}
+
 /** Whether `passage` appears in `source`, ignoring whitespace and quote styles. */
 export function isVerbatim(passage: string, source: string): boolean {
   const p = squash(passage)

@@ -1,7 +1,8 @@
 // A work the text names is a work the paper cites. Once review is done, the text is read for every publication,
-// standard or dataset it names ("Wilks (1941)", "Pittet et al. (2026)", "JCGM 100:2008") without citing it. Each is
-// matched to a work the paper already holds or, where the paper may search beyond its world model, found in the
-// scholarly index, and cited where it is named. A name that cannot be found is left as written and goes on the
+// standard or dataset it names ("Wilks (1941)", "Pittet et al. (2026)", "JCGM 100:2008") without citing it, and for
+// every result a referee would expect cited to the work that established it: one named after its originators
+// ("Landauer's bound"), or one stated without a citation. Each is matched to a work the paper already holds or, where
+// the paper may search beyond its world model, found in the scholarly index, and cited where it is named or stated. A name that cannot be found is left as written and goes on the
 // sign-off sheet, so nothing stops over it.
 import { canarySearch, workFromHit } from '../evidence.js'
 import { datasetSources } from '../materials.js'
@@ -55,7 +56,11 @@ export function citeAt(text: string, quote: string, key: string, surname = ''): 
       return `${text.slice(0, start).trimEnd()} ${withAuthor ? `[@${key}]` : `[-@${key}]`}${text.slice(end + 1)}`
     }
   }
-  return `${text.slice(0, at)}${quote} [@${key}]${text.slice(at + quote.length)}`
+  // A citation that already follows the words takes the work beside its own: "bound [@a]" becomes "bound [@key; @a]".
+  const after = text.slice(at + quote.length)
+  const joined = after.match(/^(\s?)\[(@[^\]]+)\]/)
+  if (joined) return `${text.slice(0, at)}${quote}${joined[1]}[@${key}; ${joined[2]}]${after.slice(joined[0].length)}`
+  return `${text.slice(0, at)}${quote} [@${key}]${after}`
 }
 
 /** Where the parenthesis that opens at start closes, or -1. */
@@ -95,8 +100,9 @@ export const citeNamed: Behavior = {
           behavior: 'cite-named', target: 'works', seat: 'checker', family: checker,
           prompt: `${HOUSE}
 
-Below is a manuscript, section by section; a citation in it is written [@key], [-@key] or @key. List every place where the text names a specific publication, standard or dataset without citing it right there: an author and year such as "Wilks (1941)", "Dvoretzky, Kiefer and Wolfowitz (1956)" or "Pittet et al. (2026)", or a document's own designation such as "JCGM 100:2008". Leave out a method or result named after people that points to no publication (such as "the Kaplan–Meier estimator"), and anything a citation already follows.
-For each: section (its id in brackets), quote (the words that name it, copied character for character from the text, ending with the year in parentheses where the text gives one), authors (surnames, in order, as far as the text or your knowledge gives them), year (0 if none), title (the work's title if you know it with confidence, else empty), and id: the id of the work it names from the list of works the paper holds, below, when one of them is that work by its authors, year and subject as the sentence describes it; else empty. A work by an author of the same name on another subject is not it.
+Below is a manuscript, section by section; a citation in it is written [@key], [-@key] or @key. List every place where the text names a specific publication, standard or dataset without citing it right there: an author and year such as "Wilks (1941)", "Dvoretzky, Kiefer and Wolfowitz (1956)" or "Pittet et al. (2026)", or a document's own designation such as "JCGM 100:2008".
+List also every place where a referee in the host field would expect the work that established something cited and it is not: a result, bound, method or concept named after the people or the work that established it ("Landauer's bound", "Kolmogorov complexity"), or a specific result of earlier work stated without a citation ("exact learning from membership and equivalence queries needs only polynomially many queries"); also where a citation follows it, but only to a later work that tested, applied or surveyed it. Leave out what every reader of the field learned without a reference (Bayes' theorem, the normal distribution, gradient descent), the paper's own results, and anything the work that established it already follows.
+For each: section (its id in brackets), quote (the words that name or state it, copied character for character from the text, ending with the year in parentheses where the text gives one, or where the citation belongs), authors (the work's authors' surnames, in order, as far as the text or your knowledge gives them), year (0 if none), title (the work's title if you know it with confidence, else empty), and id: the id of the work from the list of works the paper holds, below, when one of them is that work by its authors, year and subject as the sentence describes it; else empty. A work by an author of the same name on another subject is not it.
 
 ${sections.map((sec) => `[${sec.id}] ${sec.title}\n${sectionText(paper, sec.id)}`).join('\n\n')}
 
@@ -124,9 +130,9 @@ ${held.map(workLine).join('\n')}`,
                 behavior: 'cite-named', target: 'candidates', seat: 'checker', family: checker,
                 prompt: `${HOUSE}
 
-Each place below is a sentence of a manuscript that names a work without citing it, followed by works the scholarly index returned for that name. For each place give the id of the work the sentence names, judged by its authors, year and subject as the sentence describes it, or an empty id when none of them is that work. A work by an author of the same name on another subject is not it.
+Each place below is a sentence of a manuscript that names a work, or states a result of earlier work, without citing the work, followed by works the scholarly index returned for it. For each place give the id of the work the sentence names, or of the work that established the result it states, judged by its authors, year and subject as the sentence describes them, or an empty id when none of them is that work. A work by an author of the same name on another subject is not it, and neither is a later work that only tested, applied or surveyed it.
 
-${asked.map((a) => `${a.place}. Names "${a.n.quote}" in: "${sentenceAround(sectionText(paper, a.n.section), a.n.quote)}"\n${a.works.map((w) => `  ${workLine(w)}${w.venue ? ` | ${w.venue}` : ''}`).join('\n')}`).join('\n\n')}`,
+${asked.map((a) => `${a.place}. "${a.n.quote}" in: "${sentenceAround(sectionText(paper, a.n.section), a.n.quote)}"${a.n.authors.length ? ` (the work: ${a.n.authors.join(', ')}${a.n.year ? ` ${a.n.year}` : ''}${a.n.title ? `, "${a.n.title}"` : ''})` : ''}\n${a.works.map((w) => `  ${workLine(w)}${w.venue ? ` | ${w.venue}` : ''}${w.abstract ? ` | ${w.abstract.slice(0, 240)}` : ''}`).join('\n')}`).join('\n\n')}`,
                 schema: obj({ choices: arr(obj({ place: str(), id: str() })) }),
               })
               for (const c of choice.choices ?? []) {

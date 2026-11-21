@@ -74,6 +74,7 @@ ${claimsBlock(paper, section.claimIds) || '(none; this section connects and fram
 
 Rules:
 - Every factual sentence states one of the claims above or connects them. Add no new factual claims, numbers or names.
+- Define a term, symbol or quantity only in the section whose purpose it is (see the whole paper above). Every other section uses it as defined there, pointing to that section or definition where a reader needs it, and never defines it again; the introduction names the central idea in a sentence, not its full definition. Each symbol stands for one thing only.
 - Cite only with the keys given above, in Pandoc form: [@key] or [@key1; @key2], or @key for a narrative citation. Cite a claim's evidence where the claim is made. Never cite a key that is not listed.
 - A claim without verified evidence is stated plainly, like the paper's other claims, and gets a note for the authors saying it has no verified source.
 - notes: everything the authors should know about this section that the text must not say: a claim with no verified source, a limit of the work, a doubt, a caution. Each note gives quote (the exact words of your section it concerns, copied character for character) and note (one or two sentences to the authors).
@@ -169,7 +170,7 @@ export const figure: Behavior = {
           behavior: 'figure', target: fig.id, seat: 'author', family: seatFamily(paper, 'author'),
           prompt: `${HOUSE}
 
-Draw one figure for the paper as a standalone Typst document (Typst 0.15). Use only built-in Typst: rect, circle, ellipse, line, polygon, path, place, grid, stack, box, block, align, text, table, arrows drawn with line and polygon. Do not import packages. Design it at the size it will be printed, which is exactly the size you draw it: start with #set page(width: 14cm, height: auto, margin: 6pt) and #set text(font: "New Computer Modern", size: 9pt), keep every label at 8pt or larger, and keep the figure no wider than it is tall by more than about two to one, so it stays legible on a printed page; stack or wrap rows rather than running one long row. Keep it clean and legible in greyscale with one accent colour (rgb("#2b5797")). The figure must show only what the paper describes; no invented data. Print no internal identifier (no claim, dataset, scenario, simulation, plan or section id such as C12, D1, S2 or P3): name each thing as the text names it. Put no citation or author–year reference inside the figure; the caption and the text cite.
+Draw one figure for the paper as a standalone Typst document (Typst 0.15). Use only built-in Typst: rect, circle, ellipse, line, polygon, path, place, grid, stack, box, block, align, text, table, arrows drawn with line and polygon. Do not import packages. Design it at the size it will be printed, which is exactly the size you draw it: start with #set page(width: 14cm, height: auto, margin: 6pt) and #set text(font: "New Computer Modern", size: 9pt), keep every label at 8pt or larger, and keep the figure no wider than it is tall by more than about two to one, so it stays legible on a printed page; stack or wrap rows rather than running one long row. Keep it clean and legible in greyscale with one accent colour (rgb("#2b5797")). The figure must show only what the paper describes; no invented data. Print no internal identifier (no claim, dataset, scenario, simulation, plan or section id such as C12, D1, S2 or P3): name each thing as the text names it. Put no citation or author–year reference inside the figure; the caption and the text cite. Put no note, paragraph or explanation inside the figure either: the caption explains it, so the figure carries only its labels, axis titles and legend.
 
 ${briefBlock(paper)}
 Figure: ${fig.caption}
@@ -190,7 +191,7 @@ Return typst (the complete document source), and caption: the caption as it shou
           .replace(/size:\s*(\d+(?:\.\d+)?)pt/g, (setting: string, size: string) => Number(size) < 8 ? 'size: 8pt' : setting)
         writeFileSync(`${dir}/${fig.id}.typ`, source)
         try {
-          await typst(['compile', `${fig.id}.typ`, `${fig.id}.png`, '--ppi', '250'], dir)
+          await typst(['compile', `${fig.id}.typ`, `${fig.id}.png`, '--ppi', '600'], dir)
         } catch (error) {
           const message = (error as Error).message.slice(0, 600)
           paper.state.notes.push({ at: now(), behavior: `figure:${fig.id}`, text: message })

@@ -175,7 +175,7 @@ describe('self-description', () => {
     for (const b of LADDER) expect(DOES[b.id], b.id).toBeTruthy()
     expect(block).toContain(`The ladder (${LADDER.length} behaviors`)
     expect(block).toContain('author Claude Opus 5.5 (claude-opus-5-5)')
-    expect(block).toContain('MIT licence, source at https://github.com/autonomio/galley')
+    expect(block).toContain('MIT license, source at https://github.com/autonomio/galley')
   })
 })
 

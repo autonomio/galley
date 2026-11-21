@@ -72,11 +72,11 @@ function repositoryUrl(pkg: Package): string | null {
   return raw ? raw.replace(/^git\+/, '').replace(/\.git$/, '') : null
 }
 
-/** The software that produced a manuscript, as its production statement names it: "galley 0.1.0 (MIT licence, https://…)". */
+/** The software that produced a manuscript, as its production statement names it: "galley 0.1.0 (MIT license, https://…)". */
 export function software(): string {
   const pkg = packageInfo()
   const repo = repositoryUrl(pkg)
-  const details = [pkg.license ? `${pkg.license} licence` : '', repo ?? ''].filter(Boolean).join(', ')
+  const details = [pkg.license ? `${pkg.license} license` : '', repo ?? ''].filter(Boolean).join(', ')
   return `galley${pkg.version ? ` ${pkg.version}` : ''}${details ? ` (${details})` : ''}`
 }
 
@@ -85,7 +85,7 @@ export function sourceStatement(): string {
   const pkg = packageInfo()
   const repo = repositoryUrl(pkg)
   if (!repo) return ''
-  return `galley's source code, including the behaviors that produced this manuscript, is available${pkg.license ? ` under the ${pkg.license} licence` : ''} at ${repo}.`
+  return `galley's source code, including the behaviors that produced this manuscript, is available${pkg.license ? ` under the ${pkg.license} license` : ''} at ${repo}.`
 }
 
 /** The system description, for every seat that writes or judges a manuscript about galley itself. Empty for any other paper, and outside a run. */
@@ -99,7 +99,7 @@ export function systemBlock(paper: Paper): string {
   const dial = { autonomous: 'autonomous (no step waits for a person)', assisted: 'assisted (load-bearing citations and answers to critical findings wait for a person)', propose: 'propose (every answer to a referee waits for a person to accept it)' }[c.dial]
   return [
     'THE SYSTEM THIS MANUSCRIPT IS ABOUT, WHICH IS ALSO PRODUCING IT. Generated from galley\'s own ladder, seats and package metadata for this run, so it is accurate; it is not part of the seed. What the manuscript says about how galley works rests on this, stated as the authors\' own work; the seed says what the paper is and argues. The numbers of this run are in the production record (the run.* placeholders) and in a generated section of the manuscript.',
-    pkg.name ? `Package: ${pkg.name}${pkg.version ? ` ${pkg.version}` : ''}${pkg.license ? `, ${pkg.license} licence` : ''}${repo ? `, source at ${repo}` : ''}.` : '',
+    pkg.name ? `Package: ${pkg.name}${pkg.version ? ` ${pkg.version}` : ''}${pkg.license ? `, ${pkg.license} license` : ''}${repo ? `, source at ${repo}` : ''}.` : '',
     `Seats in this run: author ${who(c.seats.author)}; checker ${who(c.seats.checker)}; challenger ${who(c.seats.challenger)}; verifier ${who(c.seats.verifier)}; referees: ${c.referees.map((r) => r.seat).join(', ')} seats, drawn from the families other than the author's and rotated between rounds; adjudicator: the family that is neither the author's nor the referee's.`,
     `Settings in this run: dial ${dial}; citations ${c.citations}; ${c.rounds} referee round(s); up to ${c.fixAttempts} answers per finding before adjudication; up to ${c.candidatesPerClaim} candidate works per claim; about ${c.words} words; venue ${c.venue}.`,
     `The ladder (${ladder.length} behaviors, scanned in this order):`,

@@ -324,6 +324,12 @@ export function cleanCsl(raw: Record<string, unknown>): Record<string, unknown> 
     if (typeof text === 'string' && text.trim()) out[key] = decodeEntities(text.replace(/<[^>]+>/g, '')).trim()
     else if (typeof text === 'number') out[key] = String(text)
   }
+  // A title with a subtitle prints whole ("Pebbles, Graphs, and a Pinch of Combinatorics: Towards Tight I/O Lower Bounds").
+  const subtitle = Array.isArray(raw.subtitle) ? raw.subtitle.find((v) => typeof v === 'string' && v.trim()) : raw.subtitle
+  if (typeof subtitle === 'string' && subtitle.trim() && typeof out.title === 'string') {
+    const sub = decodeEntities(subtitle.replace(/<[^>]+>/g, '')).trim()
+    if (!out.title.toLowerCase().includes(sub.toLowerCase())) out.title = `${out.title}${/[?!:.]$/.test(out.title) ? ' ' : ': '}${sub}`
+  }
   for (const key of CSL_NAMES) {
     const value = raw[key]
     if (!Array.isArray(value)) continue
@@ -349,6 +355,9 @@ export function cleanCsl(raw: Record<string, unknown>): Record<string, unknown> 
   // Registries name types their own way; citation styles expect CSL's names.
   const types: Record<string, string> = { 'journal-article': 'article-journal', 'proceedings-article': 'paper-conference', 'book-chapter': 'chapter', 'posted-content': 'article', dissertation: 'thesis', 'reference-entry': 'entry', 'monograph': 'book', 'edited-book': 'book' }
   out.type = types[String(out.type)] ?? (out.type || 'article-journal')
+  // A paper in proceedings, a chapter or a book is dated by its year: the day of the conference is not part of it.
+  const parts = (out.issued as { 'date-parts': number[][] } | undefined)?.['date-parts']?.[0]
+  if (['paper-conference', 'chapter', 'book'].includes(String(out.type)) && parts && parts.length > 1) out.issued = { 'date-parts': [[parts[0]]] }
   // A preprint server is where a preprint was posted, not a journal it appeared in.
   if (/^10\.48550\//i.test(String(out.DOI ?? '')) || /^arxiv\b/i.test(String(out['container-title'] ?? '')) || /^arxiv$/i.test(String(out.publisher ?? ''))) {
     out.type = 'article'

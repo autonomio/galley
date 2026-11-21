@@ -85,6 +85,8 @@ export function briefBlock(paper: Paper, options: { fullSchema?: boolean } = {})
   const lines = [
     brief ? `Concern: ${brief.concern}\nContribution (as the seed states it): ${brief.contribution}\nObject type: ${brief.objectType}\nHost field: ${brief.field}\nAudience: ${brief.audience}` : '',
     plan ? `Thesis: ${plan.thesis}\nWorking title: ${plan.workingTitle}\nThe paper's noun: ${plan.noun}` : '',
+    // The text speaks of its authors as the byline has them: one author is never "the authors".
+    paper.config.authors?.length ? `The paper has ${paper.config.authors.length === 1 ? 'one author' : `${paper.config.authors.length} authors`}.` : '',
   ]
   const chosen = selectedDirection && directions.find((d) => d.id === selectedDirection.id)
   if (chosen) lines.push(`Selected direction: ${chosen.title}: ${chosen.question} (shift: ${chosen.shift})`)

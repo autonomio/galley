@@ -7,7 +7,7 @@ import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import type { Paper } from './paper.js'
 import { query, resolveConnection, schema, type DatabaseSpec } from './databases.js'
-import { citationKey } from './text.js'
+import { authorsNamed, citationKey } from './text.js'
 import type { Work } from './types.js'
 import { readWorkbook, sheetTable, toCsv } from './workbook.js'
 
@@ -459,13 +459,14 @@ export function materialsBlock(paper: Paper, options: { fullSchema?: boolean } =
 /** The data availability statement, from each dataset's provenance: where it is, or that it is not public. */
 export function availabilityStatement(paper: Paper): string {
   const units = paper.config.datasets ?? []
+  const authors = authorsNamed(paper.config.authors?.length ?? 0)
   return units.map((u) => {
-    if (u.connection) return `The data come from the ${u.private ? 'private ' : ''}database "${u.name}" (ClickHouse), ${u.producedBy === 'others' ? 'kept by others' : 'kept by the authors'}${u.private ? ', which is not publicly available' : ''}; the query that extracted each table the analyses used is in the evidence package, so anyone with access to the database can extract them again.`
+    if (u.connection) return `The data come from the ${u.private ? 'private ' : ''}database "${u.name}" (ClickHouse), ${u.producedBy === 'others' ? 'kept by others' : `kept by ${authors}`}${u.private ? ', which is not publicly available' : ''}; the query that extracted each table the analyses used is in the evidence package, so anyone with access to the database can extract them again.`
     const sources = datasetSources(paper, u)
     const where = sources.data ? ` It is available at ${u.doi ? `https://doi.org/${u.doi}` : u.url} [@${workKey(paper, sources.data)}].` : u.private ? ' It is not publicly available.' : ''
     const first = sources.article ? ` It was first reported in [@${workKey(paper, sources.article)}].` : ''
-    const who = u.producedBy === 'others' ? 'was produced by others' : 'was produced by the authors'
-    return `The dataset "${u.name}"${u.version ? ` (version ${u.version})` : ''} ${who}.${where}${first}${u.licence ? ` Licence: ${u.licence}.` : ''}`
+    const who = u.producedBy === 'others' ? 'was produced by others' : `was produced by ${authors}`
+    return `The dataset "${u.name}"${u.version ? ` (version ${u.version})` : ''} ${who}.${where}${first}${u.licence ? ` License: ${u.licence}.` : ''}`
   }).join(' ')
 }
 

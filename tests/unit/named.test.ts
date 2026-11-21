@@ -32,6 +32,8 @@ describe('works the text names', () => {
     expect(citeAt('As Wilks (1941) showed, n = 59.', 'Wilks (1941)', 'wilks1941')).toBe('As Wilks [-@wilks1941] showed, n = 59.')
     expect(citeAt('JCGM 100:2008 defines it.', 'JCGM 100:2008', 'jcgm2008')).toBe('JCGM 100:2008 [@jcgm2008] defines it.')
     expect(citeAt('Nothing here.', 'Wilks (1941)', 'wilks1941')).toBeNull()
+    // A result cited only to a later work takes the work that established it beside that one, in one citation.
+    expect(citeAt("Landauer's bound [@hong2014experimental] sets the floor.", "Landauer's bound", 'landauer1961')).toBe("Landauer's bound [@landauer1961; @hong2014experimental] sets the floor.")
     // A reference in parentheses of its own becomes the citation, its typed-out details left to the reference list.
     expect(citeAt('upper limits (Wilks, 1941, Ann. Math. Stat. 12(1), 91–96). Next', 'Wilks, 1941', 'wilks1941')).toBe('upper limits [@wilks1941]. Next')
     expect(citeAt('the order statistic (Wilks, 1941). Each', '(Wilks, 1941)', 'wilks1941')).toBe('the order statistic [@wilks1941]. Each')

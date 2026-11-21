@@ -259,16 +259,17 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
         // A figure the text never refers to is the text's to fix: drawing it again cannot add a callout. Each one is also
         // found mechanically, and sent to the figure's own section.
         for (const d of defects) if (d.fixIn === 'figure' && CALLOUT.test(d.problem)) d.fixIn = 'prose'
-        const prose = (s.outline?.sections ?? []).map((sec) => sectionText(paper, sec.id)).join('\n')
+        // A figure is referred to in the section it belongs to, which discusses what it shows; a mention elsewhere alone
+        // leaves the reader of that section without it.
         shown.forEach((fig, i) => {
-          if (calledOut(prose, i + 1) || defects.some((d) => CALLOUT.test(d.problem) && figureOf(paper, d, shown) === fig.id)) return
-          defects.push({ page: null, where: 'figure', quote: `Figure ${i + 1}`, problem: `Figure ${i + 1} is never referred to in the text.`, fix: `Refer to it as Figure ${i + 1} in the sentence that discusses what it shows.`, by: 'check', figureId: fig.id, fixIn: 'prose' })
+          if (calledOut(sectionText(paper, fig.sectionId), i + 1) || defects.some((d) => CALLOUT.test(d.problem) && figureOf(paper, d, shown) === fig.id)) return
+          defects.push({ page: null, where: 'figure', quote: `Figure ${i + 1}`, problem: `Figure ${i + 1} is never referred to in the section that discusses what it shows.`, fix: `Refer to it as Figure ${i + 1} in the sentence of that section that discusses what it shows.`, by: 'check', figureId: fig.id, fixIn: 'prose' })
         })
         // So is a table the sections print: it is numbered in the order the sections print them.
         const tables = printedTables(paper)
         tables.forEach((table, i) => {
-          if (calledOut(prose, i + 1, 'table') || defects.some((d) => CALLOUT.test(d.problem) && /\btable\b/i.test(`${d.quote} ${d.problem}`) && tableOf(d) === i)) return
-          defects.push({ page: null, where: 'table', quote: `Table ${i + 1}`, problem: `Table ${i + 1}${table.caption ? ` (${table.caption.slice(0, 80)})` : ''} is never referred to in the text.`, fix: `Refer to it as Table ${i + 1} in the sentence that introduces what it shows.`, by: 'check', tableSection: table.sectionId, fixIn: 'prose' })
+          if (calledOut(sectionText(paper, table.sectionId), i + 1, 'table') || defects.some((d) => CALLOUT.test(d.problem) && /\btable\b/i.test(`${d.quote} ${d.problem}`) && tableOf(d) === i)) return
+          defects.push({ page: null, where: 'table', quote: `Table ${i + 1}`, problem: `Table ${i + 1}${table.caption ? ` (${table.caption.slice(0, 80)})` : ''} is never referred to in the section it is printed in.`, fix: `Refer to it as Table ${i + 1} in the sentence that introduces what it shows.`, by: 'check', tableSection: table.sectionId, fixIn: 'prose' })
         })
 
         const rounds = (s.proof?.rounds ?? 0) + 1

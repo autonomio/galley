@@ -18,7 +18,7 @@ import { writeReproduction } from './simulation/index.js'
 import { PLACEHOLDERS } from './prompts.js'
 import { fillPlaceholders, productionRecord, type Record_ } from './record.js'
 import { software, sourceStatement } from './self.js'
-import { escapeUnknownCitations, squash } from './text.js'
+import { authorsNamed, escapeUnknownCitations, squash } from './text.js'
 import type { Annotation, AnnotationAuthor, AnnotationLabel, AnnotationReply } from '../types.js'
 import type { AuthorNote, Claim, Family, Finding, Work } from './types.js'
 
@@ -94,8 +94,7 @@ export const tablesIn = (markdown: string) => (markdown.match(/^\|(?:\s*:?-+:?\s
 
 /** Who wrote the seed, as the byline has them: one author or several (possessive: whose machine). */
 function theAuthors(paper: Paper, possessive = false): string {
-  const many = paper.config.authors.length > 1
-  return possessive ? (many ? 'the authors’' : 'the author’s') : (many ? 'the authors' : 'the author')
+  return authorsNamed(paper.config.authors.length, possessive)
 }
 
 function disclosure(paper: Paper, record: Record_, table = 1): string {
@@ -107,8 +106,9 @@ function disclosure(paper: Paper, record: Record_, table = 1): string {
   const settling = [...new Set([seats.author, ...paper.config.referees.map((r) => r.family)])].map((f) => lightName(lightSpecFor(paper.config, f)))
   const settled = paper.state.round >= 1 ? ` A first answer to a finding and the first verdict on it ran on lighter reasoning settings (${settling.join(', ')}); later answers, second verdicts and every adjudication ran at full effort.` : ''
   // Primary sources from the web, when any is cited.
-  const web = paper.state.citations.filter((c) => c.status === 'verified' && c.workId.startsWith('web:')).length
-  const fromWeb = web ? ` Where the scholarly index had no source for a claim, GPT-6.2 Sol searched the web for the primary document (the issuer's own rules, standards, specifications or reports); galley fetched and kept a copy of each, and each of the ${web} citation${web === 1 ? '' : 's'} to such documents was verified against its passage like any other.` : ''
+  // A document from the web that turned out to be a scholarly publication is cited as that publication, not as a web document.
+  const web = new Set(paper.state.citations.filter((c) => c.status === 'verified' && c.workId.startsWith('web:') && !paper.state.works[c.workId]?.doi).map((c) => c.workId)).size
+  const fromWeb = web ? ` Where the scholarly index had no source for a claim, GPT-6.2 Sol searched the web for the primary document (the issuer's own rules, standards, specifications or reports); galley fetched and kept a copy of ${web === 1 ? 'the one document cited' : `each of the ${web} documents cited`}, and every citation of ${web === 1 ? 'it' : 'one'} was verified against its passage like any other.` : ''
   const sims = runsOf(paper)
   const simulated = sims.length ? ` The Monte Carlo simulation${sims.length > 1 ? 's' : ''} (${sims.map((r) => `${r.id}, ${methodWords(r.result.method)} with ${sizeOf(r.result)}, seed ${r.result.provenance.seed}`).join('; ')}) ran on ${theAuthors(paper, true)} machine with galley's simulation engine, from a specification ${FAMILY_NAMES[seats.author]} wrote; every simulated number in the text is filled in from that run at the precision its Monte Carlo error supports, and the evidence package holds each specification with its results, so every number can be reproduced.` : ''
   const review = lit ? ` The systematic review ${paper.config.literatureReview === 'load-bearing' ? 'this paper reports' : 'reported in its own section'} was carried out with Canary: ${modelName(lit.models?.research)} planned the search of OpenAlex, screened the candidates, read the full texts and quoted the passages behind each finding, and ${modelName(lit.models?.audit)} audited every finding against those passages; the review's citations rest on them.` : ''
@@ -125,7 +125,7 @@ function disclosure(paper: Paper, record: Record_, table = 1): string {
 | Tokens | ${record['run.tokens_in_m']} M in, ${Number(record['run.tokens_out_k']) >= 1000 ? `${(Number(record['run.tokens_out_k']) / 1000).toFixed(1)} M` : `${record['run.tokens_out_k']} k`} out |
 | Claims | ${record['run.claims']} (${record['run.claims_seed']} from the seed, ${record['run.claims_added']} added; ${record['run.claims_narrowed']} narrowed; ${record['run.claims_unsupported']} stated as hypotheses) |
 | Works screened | ${record['run.works_screened']} |
-| Citations | ${record['run.citations_verified']} verified, ${record['run.citations_rejected']} rejected |
+| Claim–source pairs | ${record['run.citations_verified']} verified against the source's passage, ${record['run.citations_rejected']} rejected |
 ${sims.length ? `| Simulations | ${sims.map((r) => `${r.id}: ${methodWords(r.result.method)}, ${sizeOf(r.result)}; ${r.result.provenance.ok ? 'every check passed' : `${r.result.provenance.checks.filter((c) => !c.ok).length} check(s) noted`}`).join('; ')} |\n` : ''}${lit ? `| Systematic review | ${record['lit.discovered']} records identified, ${record['lit.screened']} screened, ${record['lit.reviewed']} read in full and included; ${record['lit.findings']} findings, ${record['lit.audited']} audited |\n` : ''}| Referee findings | ${findingsSummary(record, theAuthors(paper))} |
 | Verifier calibration | ${record['run.calibration'] === 'none to check' ? 'no verified citations to check' : `${record['run.calibration']} planted defective citations caught; ${record['run.calibration_controls']} unaltered controls accepted`} |
 
@@ -389,6 +389,24 @@ function atTop(tex: string, pattern: RegExp): number {
   return -1
 }
 
+
+/** Words a title-cased heading keeps in lower case, unless they open it or follow a colon. */
+const SMALL_WORDS = new Set(['a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'from', 'in', 'into', 'nor', 'of', 'on', 'or', 'over', 'per', 'the', 'to', 'via', 'vs', 'with'])
+
+/** Whether a paper's section headings are in title case ("Results of the Paired Audit"), not sentence case. */
+export function inTitleCase(titles: string[]): boolean {
+  const words = titles.flatMap((t) => t.split(/\s+/).slice(1)).filter((w) => /^[A-Za-z]/.test(w) && !SMALL_WORDS.has(w.toLowerCase()))
+  return words.length > 0 && words.filter((w) => /^[A-Z]/.test(w)).length / words.length > 0.6
+}
+
+/** A heading in title case: each word capitalised but the small ones inside it. */
+export function titleCased(title: string): string {
+  return title.split(/(\s+)/).map((word, i, all) => {
+    const opens = i === 0 || /:$/.test(all[i - 2] ?? '')
+    return /^[a-z]/.test(word) && (opens || !SMALL_WORDS.has(word.toLowerCase())) ? word[0].toUpperCase() + word.slice(1) : word
+  }).join('')
+}
+
 export async function buildManuscript(paper: Paper): Promise<{ markdown: string; refs: Record<string, unknown>[]; record: Record_ }> {
   const s = paper.state
   const record = productionRecord(paper)
@@ -443,14 +461,16 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   const numbers = { figure: body.join('\n\n').match(/\]\([^)]*\)\{#fig-/g)?.length ?? 0, table: tablesIn([...body, ...appendices.map(([, text]) => text)].join('\n\n')) }
   const review = reviewAppendix(paper, (workId) => s.works[workId] ? `[@${keyFor(paper, s.works[workId])}]` : workId, flow, { figure: numbers.figure + 1, table: numbers.table + 1 })
   if (review) appendices.push(['The literature review: protocol, queries and included publications', review])
-  appendices.forEach(([title, text], i) => body.push(`# Appendix ${String.fromCharCode(65 + i)}: ${title} {.unnumbered}\n\n${text}`))
-  body.push(`# Use of AI and production record {.unnumbered}\n\n${disclosure(paper, record, tablesIn(body.join('\n\n')) + 1)}`)
+  // The back matter's headings follow the case of the paper's own.
+  const heading = (title: string) => inTitleCase(sections.map((sec) => sec.title)) ? titleCased(title) : title
+  appendices.forEach(([title, text], i) => body.push(`# ${heading(`Appendix ${String.fromCharCode(65 + i)}: ${title}`)} {.unnumbered}\n\n${text}`))
+  body.push(`# ${heading('Use of AI and production record')} {.unnumbered}\n\n${disclosure(paper, record, tablesIn(body.join('\n\n')) + 1)}`)
   const evidencePackage = 'The claims of this manuscript, the evidence each rests on and the verbatim passages of its sources accompany it as a supplementary evidence package.'
   const reproduction = runsOf(paper).length ? ` The simulations can be rerun, and every simulated number checked against this manuscript, with the reproduction package that accompanies it (simulation/: \`node simulate.mjs --verify\`, or index.html in a browser).` : ''
   const data = availabilityStatement(paper)
-  body.push(`# Data and code availability {.unnumbered}\n\n${decl.availability || `${data ? `${data} ` : ''}${s.brief?.aboutSystem ? `${sourceStatement()} ` : ''}${evidencePackage}${reproduction}`}`)
+  body.push(`# ${heading('Data and code availability')} {.unnumbered}\n\n${decl.availability || `${data ? `${data} ` : ''}${s.brief?.aboutSystem ? `${sourceStatement()} ` : ''}${evidencePackage}${reproduction}`}`)
   // A declaration only the author can make is printed once they have made it; until then the sign-off asks for it.
-  if (decl.competing_interests?.trim()) body.push(`# Competing interests {.unnumbered}\n\n${decl.competing_interests.trim()}`)
+  if (decl.competing_interests?.trim()) body.push(`# ${heading('Competing interests')} {.unnumbered}\n\n${decl.competing_interests.trim()}`)
   if (decl.funding?.trim()) body.push(`# Funding {.unnumbered}\n\n${decl.funding.trim()}`)
   if (decl.acknowledgements?.trim()) body.push(`# Acknowledgements {.unnumbered}\n\n${decl.acknowledgements.trim()}`)
   body.push('# References {.unnumbered}\n\n::: {#refs}\n:::')
@@ -839,11 +859,18 @@ const NOTE_SETTLE_MS = 15_000
 
 /** How the referee findings were settled, every material one accounted for. */
 function findingsSummary(record: Record_, authors = 'the authors'): string {
+  const n = (key: string) => Number(record[key]) || 0
+  // A finding left for the authors is one category, whether its answer was a stated limitation or adjudication could
+  // not settle it.
+  const left = n('run.findings_limitation') + n('run.findings_fallback')
+  const unsettled = n('run.findings_fallback')
+  const leftWords = `left for ${authors}${unsettled ? ` (${unsettled === left ? '' : `${unsettled} of them `}because adjudication could not settle ${unsettled === 1 ? 'it' : 'them'})` : ''}`
   const parts = ([
-    ['run.findings_fixed', 'fixed'], ['run.findings_rebutted', 'rebutted'], ['run.findings_limitation', `left for ${authors}`],
-    ['run.findings_decided', 'decided by a third model family'], ['run.findings_set_aside', 'set aside by a third model family, with the text answering each'],
-    ['run.findings_fallback', `left for ${authors} when adjudication could not settle them`], ['run.findings_yours', `set aside by ${authors}`], ['run.findings_open', 'still open'],
-  ] as const).filter(([key]) => Number(record[key]) > 0).map(([key, what]) => `${record[key]} ${what}`)
+    [n('run.findings_fixed'), 'fixed'], [n('run.findings_rebutted'), 'rebutted'], [left, leftWords],
+    [n('run.findings_decided'), 'decided by a third model family'],
+    [n('run.findings_set_aside'), `set aside by a third model family, with the text answering ${n('run.findings_set_aside') === 1 ? 'it' : 'each'}`],
+    [n('run.findings_yours'), `set aside by ${authors}`], [n('run.findings_open'), 'still open'],
+  ] as const).filter(([count]) => count > 0).map(([count, what]) => `${count} ${what}`)
   return `${record['run.findings']} over ${record['run.rounds']} round${Number(record['run.rounds']) === 1 ? '' : 's'}; ${record['run.findings_material']} material or critical${parts.length ? `: ${parts.join(', ')}` : ''}`
 }
 
@@ -1053,7 +1080,7 @@ export async function typeset(paper: Paper): Promise<string[]> {
     const figures = join(build, 'figures')
     mkdirSync(figures, { recursive: true })
     writeFileSync(join(figures, 'review-flow.typ'), flowSource)
-    try { await exec('typst', ['compile', 'review-flow.typ', 'review-flow.png', '--ppi', '250'], figures) } catch (error) { paper.note('typeset', `The systematic review's flow figure was not drawn: ${(error as Error).message.slice(0, 200)}`) }
+    try { await exec('typst', ['compile', 'review-flow.typ', 'review-flow.png', '--ppi', '600'], figures) } catch (error) { paper.note('typeset', `The systematic review's flow figure was not drawn: ${(error as Error).message.slice(0, 200)}`) }
   }
   const { markdown, refs, record } = await buildManuscript(paper)
   writeFileSync(join(build, 'manuscript.md'), markdown)
@@ -1072,9 +1099,16 @@ export async function typeset(paper: Paper): Promise<string[]> {
   } catch (error) {
     paper.note('typeset', `paper-review.pdf was not produced: ${(error as Error).message.slice(0, 200)}`)
   }
-  for (const [format, file] of [['latex', 'paper.tex'], ['docx', 'paper.docx'], ['typst-smart', 'paper.typ']] as const) {
+  // Each source numbers its sections as the PDF does, so "Section 4" points somewhere in every format; the Typst source
+  // is set exactly as the PDF was.
+  const formats: [string, string, string[]][] = [
+    ['latex', 'paper.tex', ['--number-sections']],
+    ['docx', 'paper.docx', ['--number-sections']],
+    ['typst-smart', 'paper.typ', ['-V', 'papersize=a4', '-V', 'fontsize=10.5pt', '-V', 'section-numbering=1.1', '-V', `header-includes=${TYPST_HEADER}`]],
+  ]
+  for (const [format, file, options] of formats) {
     try {
-      await exec('pandoc', [...common, '-s', '-t', format, '-o', join(out, file)], build)
+      await exec('pandoc', [...common, '-s', '-t', format, ...options, '-o', join(out, file)], build)
       made.push(file)
     } catch (error) {
       paper.note('typeset', `${file} was not produced: ${(error as Error).message.slice(0, 200)}`)

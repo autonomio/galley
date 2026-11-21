@@ -31,6 +31,13 @@ describe('reference records', () => {
     expect(cleanCsl({ type: 'article-journal', 'container-title': 'LIPIcs, Volume 50, CCC 2016', volume: '50' }).volume).toBeUndefined()
   })
 
+  it('prints a title with its subtitle, and a paper in proceedings by its year alone', () => {
+    const clean = cleanCsl({ type: 'proceedings-article', title: 'Pebbles, Graphs, and a Pinch of Combinatorics', subtitle: ['Towards Tight I/O Lower Bounds for Statically Analyzable Programs'], 'container-title': 'Proceedings of the 33rd ACM Symposium on Parallelism in Algorithms and Architectures', issued: { 'date-parts': [[2021, 7, 6]] } })
+    expect(clean).toMatchObject({ type: 'paper-conference', title: 'Pebbles, Graphs, and a Pinch of Combinatorics: Towards Tight I/O Lower Bounds for Statically Analyzable Programs', issued: { 'date-parts': [[2021]] } })
+    // A journal article keeps its full date, and a title that already holds its subtitle is left as it is.
+    expect(cleanCsl({ type: 'journal-article', title: 'Fast Learning Requires Good Memory: A Time-Space Lower Bound', subtitle: ['A Time-Space Lower Bound'], issued: { 'date-parts': [[2018, 12, 12]] } })).toMatchObject({ title: 'Fast Learning Requires Good Memory: A Time-Space Lower Bound', issued: { 'date-parts': [[2018, 12, 12]] } })
+  })
+
   it('cites an arXiv record as a preprint, whatever type its registry gave it', () => {
     const clean = cleanCsl({ type: 'article-journal', title: 'Broken Neural Scaling Laws', 'container-title': 'arXiv', publisher: 'arXiv', DOI: '10.48550/ARXIV.2210.14891' })
     expect(clean).toMatchObject({ type: 'article', publisher: 'arXiv' })

@@ -1,8 +1,8 @@
 // The copyedit. Sections are drafted one at a time and revised by different steps, so once review is done the whole
 // text is read once more, as a copyeditor reads it, for what no single section shows: a definition, count or quantity
 // stated one way here and another there (a figure caption included), a statement a later passage contradicts, a
-// symbol given two meanings or renamed partway, a passage given twice, a sentence cut off from what it refers to, a
-// citation used as a noun, labels written two ways. A family other than the author's finds them; the author fixes each
+// symbol given two meanings or renamed partway, one thing under two names, a definition or a scope stated again where
+// it was already made, a sentence cut off from what it refers to, a citation used as a noun, labels written two ways. A family other than the author's finds them; the author fixes each
 // with exact edits to the section or caption it is in.
 import type { Paper } from '../paper.js'
 import { HOUSE } from '../prompts.js'
@@ -27,25 +27,33 @@ export const copyedit: Behavior = {
       run: async () => {
         const record = productionRecord(paper)
         const sections = s.outline!.sections
-        const figures = s.figures.filter((f) => f.status === 'rendered')
+        // The figures in the order they print, so each caption carries the number the text refers to it by.
+        const figures = sections.flatMap((sec) => s.figures.filter((f) => f.sectionId === sec.id && f.status === 'rendered'))
         const checker = seatFamily(paper, 'checker')
         const reply = await paper.ask<any>({
           behavior: 'copyedit', target: 'text', seat: 'checker', family: checker,
           prompt: `${HOUSE}
 
-You are the copyeditor. The manuscript below was drafted section by section and revised by several hands. Read it once as a whole and report every place where it is inconsistent with itself:
+You are the copyeditor. The manuscript below was drafted section by section and revised by several hands. Read it once as a whole and report every place where it is inconsistent with itself or says a thing twice:
 - a definition, quantity, count, unit or name stated one way in one place and another way elsewhere, a figure caption included (a caption that describes what the text defines differently; a count of one thing called a count of another);
 - a statement that another passage contradicts (a definition, proposition or claim that a later passage states otherwise);
-- a symbol given two meanings, a symbol renamed partway through, or a symbol used before it is defined;
-- the same passage, example or fact given twice in nearly the same words;
+- a symbol given two meanings or used for two things, a symbol renamed partway through, or a symbol or term used before it is defined;
+- one thing called by two names (a quantity, its unit, a measure, a method), or one name used for two things;
+- a definition, explanation, example or fact stated again where it was already made, in the same words or in others: it stays where it belongs and is referred to elsewhere;
+- a scope, assumption or condition repeated paragraph after paragraph once it has been stated for the section or the paper;
+- an abbreviation not spelled out at its first use in the body (the abstract does not count);
+- a figure or table not referred to in the section that discusses what it shows, or first referred to before one with a lower number;
 - a sentence cut off from what it refers to ("this", "these" with nothing before it to refer to), or a one-sentence paragraph left stranded between others;
+- a list with no sentence introducing it, or a list of the paper's contributions that leaves out what a whole section contributes;
 - a citation in parentheses used as a noun ("summarized in (Author 2026)");
 - numbered statements labelled two ways (some with their name inside the bold label, others outside it);
-- one term written two ways without reason (capitalised in one place and not in another).
+- an aside that explains a number or a choice away (rounding, what a pooled figure mixes) where the plain statement would do;
+- a punctuation or spelling convention the text follows almost everywhere and breaks in a few places (the serial comma, one variety of English);
+- one term written two ways without reason (capitalised in one place and not in another, hyphenated in one and not the other, two spellings).
 Do not judge the science, the argument or the style beyond these; other steps did. For each problem give where (the ids in brackets of the sections and captions it concerns), quote (the words concerned, copied character for character from one of them), problem, and fix (what the text should say, the same everywhere it is said). If the text is consistent, return no problems.
 
 ${sections.map((sec) => `[${sec.id}] # ${sec.title}\n\n${fillPlaceholders(sectionText(paper, sec.id), record).text}`).join('\n\n')}
-${figures.length ? `\nFIGURE CAPTIONS:\n${figures.map((f) => `[${f.id}] ${fillPlaceholders(f.caption, record).text}`).join('\n')}\n` : ''}`,
+${figures.length ? `\nFIGURE CAPTIONS:\n${figures.map((f, i) => `[${f.id}] Figure ${i + 1}: ${fillPlaceholders(f.caption, record).text}`).join('\n')}\n` : ''}`,
           schema: obj({ problems: arr(obj({ where: arr(str()), quote: str(), problem: str(), fix: str() })) }),
         })
         const ids = new Set([...sections.map((sec) => sec.id), ...figures.map((f) => f.id)])
@@ -60,7 +68,7 @@ ${figures.length ? `\nFIGURE CAPTIONS:\n${figures.map((f) => `[${f.id}] ${fillPl
             behavior: 'copyedit', target: 'fixes', seat: 'author', family: author,
             prompt: `${HOUSE}
 
-The copyeditor found these inconsistencies in the manuscript. Fix each with exact edits: in is the id of the section or figure caption the edit is made in, old is copied character for character from its source below, and new replaces it; {{placeholders}} stay as they are where they belong. Where a problem names two places, make them agree on the reading the rest of the paper and its claims support. Change nothing else, and add no hedge or caveat.
+The copyeditor found these inconsistencies in the manuscript. Fix each with exact edits: in is the id of the section or figure caption the edit is made in, old is copied character for character from its source below, and new replaces it; {{placeholders}} stay as they are where they belong. Where a problem names two places, make them agree on the reading the rest of the paper and its claims support. Where a thing is said twice, keep the one statement where it belongs and, elsewhere, refer to it or remove the repetition. Change nothing else, and add no hedge or caveat.
 
 ${problems.map((p: { where: string[]; quote: string; problem: string; fix: string }, i: number) => `${i + 1}. [${p.where.join(', ')}] "${p.quote}": ${p.problem} Fix: ${p.fix}`).join('\n')}
 
@@ -89,7 +97,7 @@ ${involved.map((id) => {
           }
         }
         paper.journal({ event: 'copyedit', problems: problems.length, changed })
-        if (problems.length) paper.note('copyedit', `${problems.length} inconsistenc${problems.length === 1 ? 'y' : 'ies'} found across the text; ${changed} section${changed === 1 ? '' : 's'} or caption${changed === 1 ? '' : 's'} made consistent.`)
+        if (problems.length) paper.note('copyedit', `${problems.length} inconsistenc${problems.length === 1 ? 'y' : 'ies'} or repetition${problems.length === 1 ? '' : 's'} found across the text; ${changed} section${changed === 1 ? '' : 's'} or caption${changed === 1 ? '' : 's'} made consistent.`)
         paper.save()
       },
       // An improvement pass: if it cannot run, the text stands as reviewed and the proof reading still reads it.
