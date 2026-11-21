@@ -22,8 +22,9 @@ export {
   type SelectionAction,
 } from './editor/editor.js'
 export { icons } from './editor/icons.js'
+export { confirmOn, iconButton } from './editor/toolbar.js'
 
-export { createSurface, type Surface, type SurfaceOptions, type SurfaceCommand } from './surface/surface.js'
+export { createSurface, type Surface, type SurfaceOptions, type SurfaceCommand, type TextPatch } from './surface/surface.js'
 
 export type { DocumentStore, UnloadSave } from './stores/types.js'
 export { createHttpStore, type HttpStoreOptions } from './stores/http.js'

@@ -23,7 +23,8 @@ export default defineConfig({
   webServer: {
     command: `npx vite --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}`,
-    env: { GALLEY_DIR: process.env.GALLEY_E2E_DIR, GALLEY_PAPERS: process.env.GALLEY_E2E_PAPERS },
+    // The engine's start runs for real; the stand-in stops before the first model call.
+    env: { GALLEY_DIR: process.env.GALLEY_E2E_DIR, GALLEY_PAPERS: process.env.GALLEY_E2E_PAPERS, GALLEY_CLI: 'tests/e2e/support/engine.mjs' },
     reuseExistingServer: false,
     stdout: 'ignore',
   },

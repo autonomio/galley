@@ -1,0 +1,42 @@
+/* A project's files (files.ts), in the paper's own dialog frame (wizard.css's
+   .gw), one row a file: what it is, what it holds, and its controls. */
+.gw--files { width: min(92vw, 640px); }
+
+.df-head { display: flex; align-items: flex-start; gap: 12px; padding: 18px 14px 14px 24px; border-bottom: 1px solid var(--gw-line); }
+.df-heading { flex: 1; min-width: 0; }
+.df-heading .gw-label { margin-bottom: 4px; }
+.df-heading .gw-title { display: block; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; outline: none; }
+.df-tools { display: flex; gap: 2px; }
+
+.df-body { padding-top: 4px; padding-bottom: 16px; }
+.df-group { padding-top: 16px; }
+.df-group .gw-label { margin-bottom: 6px; }
+.df-list { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--gw-line); }
+.df-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 0 12px; min-height: 48px; padding: 5px 0; border-bottom: 1px solid var(--gw-line); }
+.df-kind { justify-self: start; padding: 2px 5px; border: 1px solid var(--gw-edge); border-radius: 2px; color: var(--gw-muted); font: 500 10px/1.3 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .04em; }
+.df-kind--folder { padding: 0; border: 0; color: var(--gw-soft); }
+.df-kind--folder svg { display: block; }
+.df-main { display: grid; gap: 1px; min-width: 0; }
+.df-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--gw-text); font-weight: 600; text-decoration: none; }
+a.df-name:hover { color: var(--gw-strong); text-decoration: underline; text-underline-offset: 3px; }
+.df-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--gw-muted); font-size: 12.5px; }
+.df-actions { display: flex; gap: 2px; }
+.df-body a:focus-visible { outline: 2px solid var(--gw-accent); outline-offset: 2px; border-radius: 2px; }
+
+/* A folder's own files, under its row. */
+.df-sub { grid-column: 2 / -1; max-height: 232px; margin: 4px 0 4px; padding: 0 0 0 12px; overflow: auto; list-style: none; border-left: 1px solid var(--gw-line); }
+.df-sub[hidden] { display: none; }
+.df-sub li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 30px; }
+.df-sub a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--gw-soft); font: 12.5px/1.4 "IBM Plex Mono", ui-monospace, monospace; text-decoration: none; }
+.df-sub a:hover { color: var(--gw-text); text-decoration: underline; text-underline-offset: 3px; }
+.df-size { color: var(--gw-muted); font: 12px/1 "IBM Plex Mono", ui-monospace, monospace; white-space: nowrap; }
+
+@media (max-width: 560px) {
+  .df-head { padding-left: 16px; padding-right: 8px; }
+  .df-row { grid-template-columns: 36px minmax(0, 1fr) auto; gap: 0 8px; }
+  /* On a phone what a file is wraps rather than losing its size off the end. */
+  .df-detail { white-space: normal; }
+  .df-sub { grid-column: 1 / -1; }
+  /* The footer holds only the count, which wizard.css hides at this width. */
+  .gw--files .gw-foot { display: none; }
+}

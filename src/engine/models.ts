@@ -50,7 +50,8 @@ export function codexBin(): string {
   return process.env.GALLEY_CODEX_BIN || (existsSync(APP_CODEX) ? APP_CODEX : 'codex')
 }
 
-const TIMEOUTS: Record<Family, number> = { claude: 25 * 60_000, gpt: 30 * 60_000, gemini: 40 * 60_000 }
+// A watchdog for a call that hangs, the same for every family: a call at full effort on a large request can run long.
+const TIMEOUTS: Record<Family, number> = { claude: 40 * 60_000, gpt: 40 * 60_000, gemini: 40 * 60_000 }
 
 const LIMIT_WORDS = /usage limit|rate[ _-]?limit|quota|resource_exhausted|too many requests|\b429\b|overloaded|server_overloaded/i
 // A provider that cannot be reached is waited out like a limit: an unattended run at night outlasts a network blip.
@@ -135,14 +136,14 @@ async function callClaude(spec: ModelSpec, prompt: string, schema: Schema, cwd: 
 // No shell, no apps, no plugins, no hooks, no memories and no delegation.
 const CODEX_DISABLED = ['shell_tool', 'unified_exec', 'multi_agent', 'multi_agent_v2', 'apps', 'plugins', 'hooks', 'memories', 'browser_use', 'computer_use', 'image_generation', 'skill_search']
 
-async function callCodex(spec: ModelSpec, prompt: string, schema: Schema, cwd: string, timeoutMs: number) {
+async function callCodex(spec: ModelSpec, prompt: string, schema: Schema, cwd: string, timeoutMs: number, images: string[] = [], web = false) {
   const env = scrubbed(/^(OPENAI_API_KEY|CODEX_API_KEY|OPENAI_BASE_URL)$/)
   const schemaPath = join(cwd, 'schema.json')
   const lastPath = join(cwd, 'last.json')
   writeFileSync(schemaPath, JSON.stringify(schema))
-  const args = ['exec', '--ignore-user-config', '--ignore-rules', '--ephemeral', '--skip-git-repo-check',
+  const args = ['exec', ...images.flatMap((path) => ['--image', path]), '--ignore-user-config', '--ignore-rules', '--ephemeral', '--skip-git-repo-check',
     '--sandbox', 'read-only', '-C', cwd, '--model', spec.model,
-    '-c', `model_reasoning_effort="${spec.effort}"`, '-c', 'web_search="disabled"', '-c', 'approval_policy="never"',
+    '-c', `model_reasoning_effort="${spec.effort}"`, '-c', `web_search="${web ? 'live' : 'disabled'}"`, '-c', 'approval_policy="never"',
     '-c', 'project_doc_max_bytes=0', '-c', 'forced_login_method="chatgpt"',
     ...CODEX_DISABLED.flatMap((feature) => ['--disable', feature]),
     '--output-schema', schemaPath, '--output-last-message', lastPath, '--json', '--color', 'never', '-']
@@ -242,16 +243,22 @@ export interface CallOptions {
   /** Directory holding replayable answers, keyed by the exact request. */
   cacheDir?: string
   timeoutMs?: number
+  /** Image files attached to the request (read by GPT). */
+  images?: string[]
+  /** Let the model search the web (GPT's live web search). */
+  web?: boolean
 }
 
-export function requestKey(spec: ModelSpec, prompt: string, schema: Schema): string {
-  return createHash('sha256').update(JSON.stringify({ spec, prompt, schema })).digest('hex').slice(0, 32)
+export function requestKey(spec: ModelSpec, prompt: string, schema: Schema, images: string[] = [], web = false): string {
+  // An image is part of the request by its content, so a changed page never replays an old answer.
+  const seen = images.map((path) => existsSync(path) ? createHash('sha256').update(readFileSync(path)).digest('hex') : path)
+  return createHash('sha256').update(JSON.stringify({ spec, prompt, schema, ...(seen.length ? { images: seen } : {}), ...(web ? { web } : {}) })).digest('hex').slice(0, 32)
 }
 
 /** One answer from one model. An identical earlier request replays from the cache. */
 export async function callModel(options: CallOptions): Promise<CallResult> {
   const { spec, prompt, schema } = options
-  const key = requestKey(spec, prompt, schema)
+  const key = requestKey(spec, prompt, schema, options.images, options.web)
   if (options.cacheDir) {
     const hit = join(options.cacheDir, `${key}.json`)
     if (existsSync(hit)) {
@@ -264,7 +271,7 @@ export async function callModel(options: CallOptions): Promise<CallResult> {
   try {
     const timeoutMs = options.timeoutMs ?? TIMEOUTS[spec.family]
     const answer = spec.family === 'claude' ? await callClaude(spec, prompt, schema, cwd, timeoutMs)
-      : spec.family === 'gpt' ? await callCodex(spec, prompt, schema, cwd, timeoutMs)
+      : spec.family === 'gpt' ? await callCodex(spec, prompt, schema, cwd, timeoutMs, options.images ?? [], options.web ?? false)
         : await callAgy(spec, prompt, schema, cwd, timeoutMs)
     const result: CallResult = { ...answer, ms: Date.now() - started, spec, cached: false }
     if (options.cacheDir) {

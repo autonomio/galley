@@ -3,7 +3,7 @@
 // the paper stands, its working notes, and what has happened, in the words a
 // person reads. A host polls it beside the editor; the editor's copy carries
 // the text and the threads themselves.
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { defaultConfig, FAMILY_NAMES } from './config.js'
 import type { Family, PaperState } from './types.js'
@@ -59,6 +59,15 @@ export interface LiveView {
   waiting: { family: Family, name: string, until: string } | null
   notes: WorkingNote[]
   activity: LiveEntry[]
+  /** When anything in the paper's folder last changed. */
+  updated: string | null
+  /** When the paper was started. */
+  started: string | null
+  /** How far the writing and the review have come, as numbers: what the working notes say in words. */
+  progress: {
+    sections: { written: number, total: number } | null
+    review: { round: number, rounds: number, findings: number, open: number } | null
+  }
 }
 
 const SEATS: Record<string, string> = { author: 'Author', checker: 'Checker', challenger: 'Challenger', verifier: 'Verifier', adjudicator: 'Adjudicator', referee: 'Referee', human: 'You', galley: 'Galley' }
@@ -214,7 +223,7 @@ function activity(s: PaperState, events: JournalEvent[]): LiveEntry[] {
   return out
 }
 
-function workingNotes(s: PaperState, config: { rounds?: number, literatureReview?: unknown, simulation?: unknown }): WorkingNote[] {
+function workingNotes(s: PaperState, config: { rounds?: number, literatureReview?: unknown, simulation?: unknown, datasets?: unknown[], materials?: { kind?: string }[] }): WorkingNote[] {
   const notes: WorkingNote[] = []
   const note = (key: string, label: string, text: string, seat: string, family: Family | null = null) => notes.push({ key, label, text, seat, family })
   if (!s.brief) note('start', 'Starting', 'The Author is reading your seed.', 'author')
@@ -222,8 +231,21 @@ function workingNotes(s: PaperState, config: { rounds?: number, literatureReview
   if (s.positioning.priorArt) note('placed', 'Placed', `${s.positioning.priorArt.verdict.replace(/_/g, ' ')} · ${s.positioning.priorArt.summary.split(/(?<=\.)\s/)[0]}`, 'checker')
   const profile = s.profileAfter ?? s.ideaReview
   if (profile) note('idea', s.profileAfter ? 'Profile' : 'Idea', `${profile.verdict.replace(/_/g, ' ')} · ${profile.factors.reduce((a, f) => a + f.score, 0)} of 21`, 'challenger')
-  if (s.directions.length) note('direction', 'Direction', s.selectedDirection ? `${s.selectedDirection.id} · ${s.directions.find((d) => d.id === s.selectedDirection!.id)?.title ?? ''}` : 'Three directions proposed; one to choose', 'checker')
+  // The direction chosen: one of those proposed, or the seed's own.
+  const chosen = s.selectedDirection && s.directions.find((d) => d.id === s.selectedDirection!.id)
+  if (s.directions.length) note('direction', 'Direction', !s.selectedDirection ? 'Three directions proposed; one to choose' : chosen ? `${chosen.id} · ${chosen.title}` : `${s.selectedDirection.id} · the seed's own`, 'checker')
   if (config.literatureReview && s.literature) note('literature', 'Review', s.literature.status === 'done' ? `${s.literature.counts?.reviewed ?? '?'} publications read · ${s.literature.counts?.findings ?? '?'} findings audited` : s.literature.status === 'failed' ? 'ended without an answer' : 'Canary is reading the literature', 'galley')
+  // The analysis of the authors' data, step by step: planned and reviewed, extracts taken, the shared preparation, the analyses computed.
+  const a = s.analysis
+  if (a?.plan.length) {
+    const computed = Object.values(a.runs ?? {}).filter((r) => r.ok).length
+    note('analysis', 'Analysis', [
+      `${plural(a.plan.length, 'analysis', 'analyses')} planned${a.reviewed ? `, reviewed by ${FAMILY_NAMES[a.reviewed.family] ?? a.reviewed.family}` : ', in review'}`,
+      ...(a.extracts?.length ? [`${a.extracts.filter((e) => e.ok).length} of ${a.extracts.length} extracts taken`] : []),
+      ...(a.mode === 'code' ? [a.prepare?.ok ? 'shared preparation done' : 'shared preparation being written'] : []),
+      `${computed} of ${a.plan.length} computed${a.notComputed?.length ? ` · ${a.notComputed.length} not computed` : ''}`,
+    ].join(' · '), 'author')
+  } else if (config.datasets?.length || config.materials?.some((m) => m.kind === 'dataset')) note('analysis', 'Analysis', 'The Author is planning the analysis of your data.', 'author')
   if (s.outline) {
     const verified = s.citations.filter((c) => c.status === 'verified').length
     const rejected = s.citations.filter((c) => c.status === 'rejected').length
@@ -246,7 +268,7 @@ function workingNotes(s: PaperState, config: { rounds?: number, literatureReview
 export function liveView(dir: string, options: { limit?: number } = {}): LiveView | null {
   const s = readJson<PaperState>(join(dir, 'state.json'))
   if (!s) return null
-  const config = readJson<{ title?: string, rounds?: number, literatureReview?: unknown, simulation?: unknown, seats?: Record<string, Family>, referees?: { seat: string }[] }>(join(dir, 'paper.json')) ?? {}
+  const config = readJson<{ title?: string, rounds?: number, literatureReview?: unknown, simulation?: unknown, seats?: Record<string, Family>, referees?: { seat: string }[], editorDoc?: string }>(join(dir, 'paper.json')) ?? {}
   const progress = readJson<{ pid: number, outcome: string | null, inFlight?: { behavior: string, target: string, what: string, started: string }[] }>(join(dir, 'progress.json'))
   let running = false
   if (progress && !progress.outcome && !s.outcome) {
@@ -300,9 +322,12 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
     member('adjudicator', lastAs.adjudicator ?? null),
   ]
   const sections = (s.outline?.sections ?? []).map((sec) => ({ id: sec.id, title: sec.title, written: !!s.passages[sec.id] }))
+  const findings = s.findings.filter((f) => f.origin === 'agent')
+  // A paper that does not set its rounds has the engine's default, never just the round it is in.
+  const rounds = Math.max(config.rounds ?? defaults.rounds, s.round)
   return {
     slug: s.slug,
-    doc: editorSlug(s.slug),
+    doc: config.editorDoc || editorSlug(s.slug),
     title: config.title || s.titleByHuman || s.frame?.title || s.plan?.workingTitle || 'Untitled paper',
     running,
     outcome: s.outcome ?? null,
@@ -312,7 +337,58 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
     sections,
     now,
     waiting,
-    notes: workingNotes(s, config),
+    notes: [...workingNotes(s, { ...config, rounds }), lastActivity(dir, running, now, s.outcome ?? null)],
     activity: all.slice(-(options.limit ?? 400)),
+    updated: updatedAt(dir),
+    started: s.createdAt ?? null,
+    progress: {
+      sections: s.outline ? { written: sections.filter((sec) => sec.written).length, total: sections.length } : null,
+      review: s.round ? { round: s.round, rounds, findings: findings.length, open: findings.filter((f) => f.status === 'open').length } : null,
+    },
   }
+}
+
+/**
+ * Every paper in a folder of papers, as liveView sees each, with the folder it is in: those being written first, then
+ * those ready, then those stopped, each newest first. The order stays put while the papers change, so a list drawn from
+ * it does not reshuffle at every step.
+ */
+export function livePapers(root: string, options: { limit?: number } = {}): { dir: string, view: LiveView }[] {
+  if (!existsSync(root)) return []
+  const rank = (v: LiveView) => (v.running ? 0 : v.outcome === 'ready_for_submission' ? 1 : 2)
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+    .map((entry) => ({ dir: join(root, entry.name), view: liveView(join(root, entry.name), { limit: options.limit ?? 3 }) }))
+    .filter((p): p is { dir: string, view: LiveView } => !!p.view)
+    .sort((a, b) => rank(a.view) - rank(b.view) || (b.view.started ?? '').localeCompare(a.view.started ?? '') || a.view.slug.localeCompare(b.view.slug))
+}
+
+/** When anything in the paper's folder last changed: its state, the run's progress, its journal or its log. */
+function updatedAt(dir: string): string | null {
+  const times = ['state.json', 'progress.json', 'journal.jsonl', 'run.log'].map((file) => { try { return statSync(join(dir, file)).mtimeMs } catch { return 0 } })
+  const last = Math.max(...times)
+  return last ? new Date(last).toISOString() : null
+}
+
+const ago = (ms: number) => {
+  const s = Math.max(0, Math.round(ms / 1000))
+  return s < 60 ? `${s} s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min ago`
+}
+
+/**
+ * The last note: how long ago anything in the paper last changed, and what is being worked on right now, so a person
+ * can see the run is alive even while a long step shows nothing new.
+ */
+function lastActivity(dir: string, running: boolean, now: LiveSeat[], outcome: string | null): WorkingNote {
+  const updated = updatedAt(dir)
+  const when = updated ? `${ago(Date.now() - Date.parse(updated))} (${new Date(updated).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })})` : 'not yet'
+  // One line per seat at work: what it is doing, for how long, and how many more it is doing at once.
+  const bySeat = new Map<string, LiveSeat[]>()
+  for (const n of now) bySeat.set(n.name, [...(bySeat.get(n.name) ?? []), n])
+  const working = [...bySeat].map(([name, list]) => {
+    const longest = list.reduce((a, b) => (b.seconds > a.seconds ? b : a))
+    return `${name} ${longest.doing} (${longest.seconds < 60 ? `${longest.seconds} s` : `${Math.round(longest.seconds / 60)} min`}${list.length > 1 ? `, ${list.length} at once` : ''})`
+  })
+  const state = outcome === 'ready_for_submission' ? '' : running ? (working.length ? ` · now: ${working.join('; ')}` : ' · between steps') : ' · the run has stopped; run it again to resume'
+  return { key: 'updated', label: 'Last activity', text: `${when}${state}`, seat: 'galley', family: null }
 }

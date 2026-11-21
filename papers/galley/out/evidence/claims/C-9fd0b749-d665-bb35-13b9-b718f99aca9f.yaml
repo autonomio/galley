@@ -1,0 +1,6 @@
+id: "C-9fd0b749-d665-bb35-13b9-b718f99aca9f"
+class: "observed_fact"
+statement: "Large language models produce fabricated bibliographic citations, or real citations with errors."
+uncertainty: "medium"
+evidence_ids: ["E-6fb7c7ca-a37e-08a7-d1ba-cb51f654ec9a","E-156d3b0b-b14d-a8db-2a02-cfaeddc52b19"]
+state: "active"

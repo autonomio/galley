@@ -6,6 +6,7 @@
 //   editor/session.ts    persistence: versions, save queues, beacons
 //   editor/marks.ts      note underlines and highlights
 //   editor/notes.ts      the note panel under a passage
+//   editor/margin.ts     the comments column beside the text
 //   editor/selection.ts  the floating selection actions
 //   editor/toolbar.ts    header actions; editor/doc-picker.ts the picker
 //   editor/status.ts     the status line and notices
@@ -23,8 +24,10 @@ import type { Annotation, AnnotationRange, DocSummary, EditOutcome, EditProposal
 import { Emitter, el } from './dom.js'
 import { createDocPicker, type DocPicker } from './doc-picker.js'
 import { icons } from './icons.js'
+import { createMargin } from './margin.js'
 import { drawHighlight, pageRects, renderAnnotationMarks } from './marks.js'
 import { createNotePanel, type ThreadView } from './notes.js'
+import { createMotion } from './motion.js'
 import { createSelectionCluster, type ClusterAction, type SelectedPassage } from './selection.js'
 import { DocumentSession, type Notice, type SaveState } from './session.js'
 import { createNoticeStack, createStatusLine } from './status.js'
@@ -35,7 +38,7 @@ export type { SelectedPassage } from './selection.js'
 
 /** A header button. Built-ins are named by id; hosts add their own. */
 export type EditorAction = ToolbarAction<Editor>
-export type BuiltinAction = 'writer' | 'new' | 'import' | 'copy' | 'delete'
+export type BuiltinAction = 'writer' | 'comments' | 'new' | 'import' | 'copy' | 'delete'
 
 /** A floating action on selected text. */
 export interface SelectionAction {
@@ -63,12 +66,14 @@ export interface EditorEvents {
   'writer-mode': { on: boolean }
   /** Notes were added, changed or removed. */
   annotations: { annotations: Annotation[] }
+  /** Comments were shown or hidden: their marks, the column beside the text and the panel. */
+  'annotations-visible': { on: boolean }
 }
 
 export interface EditorOptions {
   store: DocumentStore
-  /** Header actions, in order. Default: writer, new, import, copy, delete. */
-  toolbar?: (BuiltinAction | EditorAction)[]
+  /** Header actions, in order; `'|'` draws a divider between groups. Default: writer, new, import, copy, delete. `comments` hides and shows every comment. */
+  toolbar?: (BuiltinAction | EditorAction | '|')[]
   /** Selection actions, in order. Default: comment. */
   selectionActions?: (BuiltinSelectionAction | SelectionAction)[]
   /** Show the document picker. Default true. */
@@ -136,18 +141,27 @@ export interface Editor {
   /** The versions the open document and its notes were last read or saved at. */
   versions(): { doc: Version | null, annotations: Version | null }
   /**
-   * Room for the host inside the editor: `header` is a strip under the
-   * toolbar that stays put; `top` sits above the text and scrolls with it.
-   * Created on first use.
+   * Room for the host inside the editor, created on first use:
+   * - `bar-start` and `bar-end`: the start and the end of the toolbar's row,
+   *   for the host's own name and controls (`iconButton` makes them match);
+   * - `header`: a strip under the toolbar that stays put;
+   * - `top`: a block above the text that scrolls with it;
+   * - `side`: a pane beside the page, under the bar;
+   * - `start`: a pane before the page, under the bar, as wide as what it holds.
+   * All but `top` hide in writer mode.
    */
-  slot(where: 'header' | 'top'): HTMLElement
+  slot(where: 'bar-start' | 'bar-end' | 'header' | 'top' | 'side' | 'start'): HTMLElement
   notify(notice: Notice): void
   annotations: {
     list(): Annotation[]
+    /** Open a note's panel, showing the comments if they are hidden. */
     open(id: string): void
     remove(id: string): void
     /** Notes changed elsewhere: merge them in, as `receive` does for text. */
     receive(annotations: Annotation[], version: Version): boolean
+    /** Show or hide every comment: the marks in the text, the column beside it and the panel. Shown by default. */
+    setVisible(on: boolean): void
+    visible(): boolean
   }
   /** Suggested edits, as an agent proposes them. */
   edits: {
@@ -195,6 +209,8 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
   root.innerHTML = ''
   const bar = el('header', { class: 'galley-bar' })
   const barRight = el('div', { class: 'galley-bar-right' })
+  // The page, and whatever a host puts before it (slot 'start') and beside it (slot 'side'), under the bar.
+  const body = el('div', { class: 'galley-body' })
   const main = el('main', { class: 'galley-main' })
   const page = el('div', { class: 'galley-page' })
   const docEl = el('div', { class: 'galley-doc' })
@@ -202,11 +218,14 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
   const marksLayer = el('div', { class: 'galley-layer galley-marks' })
   const highlightLayer = el('div', { class: 'galley-layer galley-highlights', 'aria-hidden': 'true' })
   const fileInput = el('input', { type: 'file', accept: '.md,.markdown,.txt,text/markdown,text/plain', hidden: '' })
-  page.append(docEl, highlightLayer, marksLayer)
+  // Lines that are gone fade out here while their room closes (motion.ts).
+  const ghostLayer = el('div', { class: 'galley-layer galley-ghosts', 'aria-hidden': 'true' })
+  page.append(docEl, ghostLayer, highlightLayer, marksLayer)
   const status = createStatusLine()
   main.append(page, status.element)
   const notices = options.notify ? null : createNoticeStack()
-  root.append(bar, main, fileInput)
+  body.append(main)
+  root.append(bar, body, fileInput)
   if (notices) root.append(notices.element)
 
   const events = new Emitter<EditorEvents>()
@@ -269,6 +288,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     },
     onNotice: (message) => notify({ source: 'save', level: 'attention', message }),
   })
+  const motion = createMotion({ root, scroller: main, page, doc: docEl, ghosts: ghostLayer, follow: () => [marksLayer, highlightLayer] })
 
   let wordsFrame = 0
   function updateWords(): void {
@@ -289,6 +309,9 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
   // ── Notes ─────────────────────────────────────────────────────────
 
   const notes = comments ? createNotePanel(page, docEl, () => renderOverlay()) : null
+  const margin = comments ? createMargin({ root, main, page, marks: marksLayer, me, open: openFromMargin }) : null
+  // The writer's switch for every comment at once; hidden notes are still kept in step with the text.
+  let shown = true
   let rendering = false
 
   // A note someone answered, or one an agent opened, is shown as a thread.
@@ -304,27 +327,18 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     if (id && thread) notes!.update(id, thread)
   }
 
-  // Text that arrives from elsewhere goes in without moving the writer: the
-  // caret stays on its line, found again by its text when lines above it
-  // moved, and the arrival is one step the writer can undo.
+  // Text that arrives from elsewhere goes in as the smallest change to the
+  // page, without moving the writer: unchanged lines keep their elements (and
+  // the caret), the line at the top of the screen stays where it is, what is
+  // on screen eases into place, and the arrival is one step the writer can undo.
   function applyExternal(text: string): void {
-    const caret = surface.isFocused() ? surface.caret() : null
-    const caretLine = caret ? (surface.lines()[caret.line]?.textContent ?? '') : ''
+    motion.finish()
+    const anchor = motion.anchor()
     surface.history.record()
-    surface.setText(text)
-    if (caret) {
-      const lines = text.split('\n')
-      let target = caret.line
-      if (lines[target] !== caretLine) {
-        for (let d = 1; d < 60; d++) {
-          if (lines[caret.line + d] === caretLine) { target = caret.line + d; break }
-          if (caret.line - d >= 0 && lines[caret.line - d] === caretLine) { target = caret.line - d; break }
-        }
-      }
-      surface.setCaret(Math.min(target, lines.length - 1), caret.offset)
-    }
+    const patch = surface.patchText(text, motion.enabled())
+    if (!patch.changed) return
     updateWords()
-    renderOverlay()
+    motion.play(patch, anchor, renderOverlay)
   }
 
   function renderOverlay(): void {
@@ -332,14 +346,17 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     if (rendering) return
     rendering = true
     try {
-      if (comments) {
-        renderAnnotationMarks({
+      if (margin) {
+        // The column's room first: taking it narrows the text, and the marks are drawn where the text then lies.
+        margin.fit(shown ? session.annotations.length : 0)
+        const places = renderAnnotationMarks({
           layer: marksLayer,
           page,
           surface,
           annotations: session.annotations,
           moved: () => session.scheduleAnnotationsSave(),
         })
+        margin.draw(session.annotations, places, notes?.current() ?? null)
       }
       events.emit('layout', {})
     } finally {
@@ -374,6 +391,8 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     if (!a) return
     const lines = surface.lines()
     if (!lines.length) return
+    // Asking for one note is asking to see the comments.
+    setCommentsVisible(true)
     // A passage that can no longer be found keeps its note: the panel opens
     // at the line it was last seen on.
     const located = reAnchor(a, lines.map((line) => line.textContent || ''), session.annotations)
@@ -392,6 +411,8 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
         a.comment = value
         a.updated_at = new Date().toISOString()
         session.scheduleAnnotationsSave()
+        // Its card beside the text says what is being written.
+        renderOverlay()
       },
       // The note is looked up again on every answer: a merge may have replaced it since it opened.
       onReply: (text) => {
@@ -418,6 +439,28 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       onDelete: () => removeNote(id),
       onClose: (returnCaret) => noteClosed(id, returnCaret),
     })
+  }
+
+  // A card can sit well below its passage, past the cards above it: opening
+  // it brings the passage, and the thread under it, into view.
+  function openFromMargin(id: string): void {
+    openNote(id)
+    const a = session.annotations.find((x) => x.id === id)
+    const line = a ? surface.lines()[a.range.start_line] : null
+    if (!line) return
+    const box = line.getBoundingClientRect()
+    const view = main.getBoundingClientRect()
+    if (box.top < view.top || box.bottom > view.bottom) line.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
+
+  function setCommentsVisible(on: boolean): void {
+    if (!comments || shown === on) return
+    shown = on
+    marksLayer.hidden = !on
+    if (!on) notes?.close()
+    renderOverlay()
+    toolbar?.update()
+    events.emit('annotations-visible', { on })
   }
 
   function removeNote(id: string): void {
@@ -506,6 +549,16 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       pressed: () => writer,
       run: () => setWriterMode(!writer),
     },
+    comments: {
+      id: 'comments',
+      label: 'Hide comments',
+      description: 'Hide every comment, its mark in the text and its card beside it, to read the text alone. Press again to bring them back.',
+      icon: icons.commentOff,
+      pressedIcon: icons.comment,
+      keepInWriterMode: true,
+      pressed: () => !shown,
+      run: () => setCommentsVisible(!shown),
+    },
     new: { id: 'new', label: 'New document', description: 'Start a new, empty document in this list.', shortcut: '⌘N', icon: icons.plus, run: () => create() },
     import: { id: 'import', label: 'Import a Markdown file', description: 'Open a Markdown file from your computer as a new document.', icon: icons.import, run: () => fileInput.click() },
     copy: {
@@ -518,7 +571,8 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     delete: { id: 'delete', label: 'Delete the document', description: 'Delete this document. You are asked before anything is removed.', icon: icons.trash, danger: true, run: () => remove() },
   }
   const actions = (options.toolbar ?? ['writer', 'new', 'import', 'copy', 'delete'])
-    .map((item) => (typeof item === 'string' ? builtins[item] : item))
+    .filter((item) => item !== 'comments' || comments)
+    .map((item) => (item === '|' ? 'separator' as const : typeof item === 'string' ? builtins[item] : item))
   // Made once the editor object exists, since actions receive it.
   let toolbar: Toolbar | null = null
   bar.append(barRight)
@@ -594,6 +648,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       const historyOutcome = persistHistory()
       session.open(data)
       surface.setEditable(!session.frozen)
+      motion.finish()
       surface.setText(data.content)
       // History is per document: undo must never walk back into the
       // previous document's text and save it over this one.
@@ -664,6 +719,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       void session.fetchDocs({ fresh: true })
       await loadDoc(slug)
       if (session.slug !== slug) return
+      motion.finish()
       surface.setText(content)
       surface.history.reset()
       session.markSaved()
@@ -725,6 +781,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     notes?.close()
     session.forget(d.slug)
     surface.setEditable(false)
+    motion.finish()
     surface.setText('')
     surface.history.reset()
     renderOverlay()
@@ -794,6 +851,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     const result = applyEdit(surface.getText(), edit)
     if (!result) return 'conflict'
     surface.history.record() // an accepted edit is one undoable step
+    motion.finish()
     surface.setText(result.text)
     const target = surface.lines()[locateLine(surface.snapshot().lineStarts, result.start)]
     target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -860,6 +918,16 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     renderOverlay()
     notes?.layout()
   })
+  // The panes beside the page change its room without the window changing
+  // (a rail folds, Activity opens): the column and the marks follow. The
+  // border box, so the column taking its room does not count as a change.
+  const resizes = new ResizeObserver(() => renderOverlay())
+  resizes.observe(main, { box: 'border-box' })
+  cleanups.push(() => resizes.disconnect())
+  // A web font that arrives after the first drawing moves every word: marks
+  // drawn over the stand-in font sat beside their passages, and so did cards.
+  // The page takes up the new font only after the event, so the next frame.
+  if (document.fonts) listen(document.fonts, 'loadingdone', () => requestAnimationFrame(() => renderOverlay()))
   // A bfcache entry can be evicted without a second pagehide, so persist on
   // every transition.
   listen(window, 'pagehide', () => {
@@ -898,6 +966,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     adopt(slug, content, version) {
       if (session.slug !== slug) return
       session.adopt(slug, version)
+      motion.finish()
       surface.setText(content)
       surface.history.reset()
       session.markSaved()
@@ -924,8 +993,14 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       const existing = root.querySelector<HTMLElement>(`.galley-slot[data-slot="${where}"]`)
       if (existing) return existing
       const slot = el('div', { class: 'galley-slot', 'data-slot': where })
-      if (where === 'header') root.insertBefore(slot, main)
-      else page.insertBefore(slot, docEl)
+      if (where === 'bar-start') bar.insertBefore(slot, bar.firstChild)
+      else if (where === 'bar-end') bar.append(slot)
+      else if (where === 'header') root.insertBefore(slot, body)
+      else if (where === 'side') body.append(slot)
+      else if (where === 'start') body.insertBefore(slot, main)
+      // Above the page rather than inside it, so what is drawn over the text
+      // (marks, faces) moves with the text when this block changes height.
+      else main.insertBefore(slot, page)
       return slot
     },
     notify,
@@ -943,6 +1018,8 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
         events.emit('annotations', { annotations: session.annotations })
         return true
       },
+      setVisible: setCommentsVisible,
+      visible: () => comments && shown,
     },
     edits: {
       locate: (edit) => findEditRange(surface.getText(), edit),
@@ -969,12 +1046,13 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       if (destroyed) return
       suspend()
       destroyed = true
+      motion.finish()
       notes?.close()
       for (const cleanup of cleanups.splice(0)) cleanup()
       picker?.destroy()
       surface.destroy()
       events.clear()
-      root.classList.remove('galley', 'galley--writer')
+      root.classList.remove('galley', 'galley--writer', 'galley--margin')
       root.innerHTML = ''
     },
   }

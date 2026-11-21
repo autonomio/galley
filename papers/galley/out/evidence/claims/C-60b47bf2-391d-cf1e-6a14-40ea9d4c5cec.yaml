@@ -1,6 +1,6 @@
 id: "C-60b47bf2-391d-cf1e-6a14-40ea9d4c5cec"
 class: "derived_inference"
-statement: "Referee seats for methods, the host field, citations and the desk editor are drawn from families other than the author's and rotated between rounds. They review the whole manuscript and raise findings, each with a severity and the decision it asks for."
+statement: "Peer review is run by agents from different families. Referee seats for methods, the host field, citations and the desk editor are drawn from families other than the author's and rotated between rounds, and each finding they raise carries a severity. The author answers each material finding by fixing it with exact edits, rebutting it, stating it as a limitation, or asking for new evidence. The referee who raised the finding judges the answer. If a finding is still disputed after a cap of answers (three in this run), a third family adjudicates. This run used two referee rounds, and every exchange is kept in the journal."
 uncertainty: "medium"
 evidence_ids: ["E-4deb4ba8-5db2-0ddb-0c5d-2b5f4df7eccb"]
 state: "active"

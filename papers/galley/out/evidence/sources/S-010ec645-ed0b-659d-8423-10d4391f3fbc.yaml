@@ -1,0 +1,8 @@
+id: "S-010ec645-ed0b-659d-8423-10d4391f3fbc"
+kind: "publication"
+title: "Applying centrality measures to impact analysis: A coauthorship network analysis"
+uri: "https://doi.org/10.1002/asi.21128"
+date: "2009"
+locator: "abstract"
+excerpt: "Using coauthorship data from 16 journals in the field of library and information science (LIS) with a time span of 20 years (1988–2007), we construct an evolving coauthorship network and calculate four centrality measures (closeness centrality, betweenness centrality, degree centrality, and PageRank) for authors in this network. We find that the four centrality measures are significantly correlated with citation counts."
+access: "inspected"

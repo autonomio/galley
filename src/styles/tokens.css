@@ -115,6 +115,9 @@
   --galley-size-bar: calc(var(--galley-sp-unit) * 12);
   --galley-size-button: calc(var(--galley-sp-unit) * 6.5);
   --galley-size-floating: 24px;     /* the selection buttons; selection.ts lays them out at this size */
+  --galley-w-side: calc(var(--galley-sp-unit) * 84);   /* a pane beside the page (slot 'side') */
+  --galley-w-margin: calc(var(--galley-sp-unit) * 64); /* the comments column beside the text (margin.ts) */
+  --galley-sp-margin: var(--galley-sp-10);             /* between the text and that column */
   --galley-line-hair: 1px;
   --galley-line-focus: 2px;
   --galley-r-card: calc(4px * var(--galley-ctl-radius));
@@ -127,6 +130,11 @@
   --galley-dur-feedback: calc(100ms * var(--galley-ctl-motion));
   --galley-dur-settle: calc(320ms * var(--galley-ctl-motion));
   --galley-ease-spring: cubic-bezier(0.22, 1.2, 0.36, 1);
+  /* Text arriving from elsewhere (motion.ts): room opening and closing, ink settling, lines one after another. */
+  --galley-dur-flow: calc(380ms * var(--galley-ctl-motion));
+  --galley-dur-ink: calc(640ms * var(--galley-ctl-motion));
+  --galley-dur-stagger: calc(26ms * var(--galley-ctl-motion));
+  --galley-ease-flow: cubic-bezier(0.25, 0.8, 0.25, 1);
   --galley-z-layer: 2;
   --galley-z-notes: 5;
   --galley-z-menu: 40;

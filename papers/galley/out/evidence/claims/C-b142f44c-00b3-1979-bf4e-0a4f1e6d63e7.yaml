@@ -1,6 +1,6 @@
 id: "C-b142f44c-00b3-1979-bf4e-0a4f1e6d63e7"
 class: "derived_inference"
-statement: "This manuscript is galley's first production, compiled in one autonomous run set for two referee rounds and a preprint venue. The run used the authors' seed and a separate specification generated from galley's code, seats and package metadata. The models drafted the account of galley's mechanics from that specification."
+statement: "The evaluation is a single self-referential run. Galley produced this manuscript, which introduces galley, from the authors' seed with the dial set to autonomous, so no step waited for a person. The production record generated from the run's journal reports what each behavior did. 'Submission-ready' means galley's own gates held on one revision, not that outside reviewers accepted the paper."
 uncertainty: "medium"
 evidence_ids: ["E-3dbf182a-097c-d95c-4ba1-25c9b7233802"]
 state: "active"

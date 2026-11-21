@@ -1,5 +1,5 @@
 // A paper being written in the editor, as a writer sees it: who is working on
-// it right now, its threads, its history, and the agents' changes arriving in
+// it right now, its threads, its activity, and the agents' changes arriving in
 // the open document while the writer works in it.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -13,7 +13,7 @@ const docs = () => process.env.GALLEY_E2E_DIR!
 const papers = () => process.env.GALLEY_E2E_PAPERS!
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
 
-/** A paper in its first review round: one section drafted, one finding answered, the Author at work on the introduction. */
+/** A paper in its first review round: one section drafted, one finding answered, the Author at work on the methods. */
 function paperFixture(): string {
   const slug = `trees-${Date.now()}-paper`
   const dir = join(papers(), slug)
@@ -55,22 +55,56 @@ async function openPaper(page: Page, slug: string): Promise<void> {
   await page.waitForFunction(() => !!window.galley?.slug)
   await page.evaluate((s) => window.galley.open(s), slug)
   await page.waitForFunction((s) => window.galley.slug === s, slug)
+  await expect(page.locator('.lv-bar')).toBeVisible()
 }
 
-test('the team at work shows above the paper, beside the passage each is writing, and in its history', async ({ page }) => {
+test('the top of the page is one row: the name, the actions, the title, the team at work, Activity and the host controls', async ({ page }) => {
   const slug = paperFixture()
   await openPaper(page, slug)
-  const team = page.locator('.lv-team')
-  await expect(team.locator('.lv-seat.is-busy')).toContainText('drafting Methods')
-  await expect(team.locator('.lv-state')).toContainText('Writing')
+  const bar = await page.locator('.galley-bar').boundingBox()
+  expect(bar!.height).toBeLessThan(60)
+  for (const selector of ['.demo-name', '[data-action="new"]', '.galley-picker-trigger', '.lv-seat.is-busy', '.lv-activity-btn', '[aria-label="Light theme"]']) {
+    const box = await page.locator(selector).first().boundingBox()
+    expect(box, selector).not.toBeNull()
+    // Every control sits inside the one row.
+    expect(box!.y, selector).toBeGreaterThanOrEqual(bar!.y)
+    expect(box!.y + box!.height, selector).toBeLessThanOrEqual(bar!.y + bar!.height)
+  }
+})
+
+test('the team at work shows in the row, beside the passage each is writing, and in Activity', async ({ page }) => {
+  const slug = paperFixture()
+  await openPaper(page, slug)
+  const bar = page.locator('.lv-bar')
+  await expect(bar.locator('.lv-seat.is-busy')).toHaveCount(1)
+  await expect(bar.locator('.lv-seat.is-busy')).toHaveAttribute('data-description', /drafting Methods/)
+  await expect(bar.locator('.lv-stage')).toHaveAttribute('data-state', 'running')
   await expect(page.locator('.lv-notes')).toContainText('Seed read')
   await expect(page.locator('.lv-mark .lv-face')).toHaveCount(1)
 
-  await page.locator('[data-history]').first().click()
-  const history = page.locator('#history')
-  await expect(history).toBeVisible()
-  await expect(history.locator('.lv-now')).toContainText('drafting Methods')
-  await expect(history.locator('.lv-entry')).toContainText(['You started the paper from your seed.', 'Author drafted Introduction.', 'Methods referee reviewed the manuscript: major revision.'])
+  await page.locator('.lv-activity-btn').click()
+  const pane = page.locator('.galley-slot[data-slot="side"]')
+  await expect(pane).toBeVisible()
+  // Now stands apart, above what has happened, which reads newest first.
+  await expect(pane.locator('.lv-now')).toContainText('drafting Methods')
+  await expect(pane.locator('.lv-entry')).toContainText(['Methods referee reviewed the manuscript: major revision.', 'Author drafted Introduction.', 'You started the paper from your seed.'])
+  await expect(pane.locator('.lv-entry.is-new')).toHaveCount(2)
+  await pane.getByRole('button', { name: 'Mark all read' }).click()
+  await expect(pane.locator('.lv-entry.is-new')).toHaveCount(0)
+  await pane.getByRole('button', { name: 'Close' }).click()
+  await expect(pane).toBeHidden()
+})
+
+test('Activity is in the link: opening it shows in the address, and the address opens it', async ({ page }) => {
+  const slug = paperFixture()
+  await page.goto(`/?doc=${slug}&view=activity`)
+  const pane = page.locator('.galley-slot[data-slot="side"]')
+  await expect(pane.locator('.lv-now')).toContainText('drafting Methods')
+  await pane.getByRole('button', { name: 'Close' }).click()
+  await expect(pane).toBeHidden()
+  await expect(page).toHaveURL(new RegExp(`\\?doc=${slug}$`))
+  await page.locator('.lv-activity-btn').click()
+  await expect(page).toHaveURL(new RegExp(`\\?doc=${slug}&view=activity$`))
 })
 
 test('a finding is a thread: every answer shows, and a reply is saved beside the paper', async ({ page }) => {
@@ -90,6 +124,45 @@ test('a finding is a thread: every answer shows, and a reply is saved beside the
   }).toBe('Cite the street-tree survey as well.')
   await thread.getByRole('button', { name: 'Resolve' }).click()
   await expect(thread).toHaveClass(/is-resolved/)
+})
+
+test('an agent\'s paragraph arrives in place: the lines around it stay as they are and only the new one eases in', async ({ page }) => {
+  const slug = paperFixture()
+  await openPaper(page, slug)
+  const before = await page.evaluate(() => {
+    const lines = [...document.querySelectorAll<HTMLElement>('.galley-line')]
+    lines.forEach((line, i) => { line.dataset.probe = String(i) })
+    const arrived: string[] = []
+    ;(window as unknown as { arrived: string[] }).arrived = arrived
+    new MutationObserver((changes) => {
+      for (const c of changes) if ((c.target as HTMLElement).classList.contains('is-arriving')) arrived.push((c.target as HTMLElement).textContent ?? '')
+    }).observe(document.querySelector('.galley-doc')!, { attributes: true, subtree: true, attributeFilter: ['class'] })
+    return lines.length
+  })
+  writeFileSync(join(docs(), `${slug}.md`), '# Pit Size and Street-Tree Survival\n\n## Introduction\n\nWider pits help street trees live longer.\n\n## Methods\n\nWe measured 412 pits across three cities.\n')
+  await expect(page.locator('.galley-doc')).toContainText('We measured 412 pits')
+  // Every line that was on the page is still the same element: nothing was drawn again.
+  await expect(page.locator('.galley-line[data-probe]')).toHaveCount(before)
+  await expect.poll(() => page.evaluate(() => (window as unknown as { arrived: string[] }).arrived)).toContain('We measured 412 pits across three cities.')
+  // Once it has arrived nothing is left moving.
+  await expect(page.locator('.is-arriving, .is-revised, .is-closing, .galley-ghost')).toHaveCount(0)
+})
+
+test('a poll that brings nothing new changes nothing on screen', async ({ page }) => {
+  const slug = paperFixture()
+  await openPaper(page, slug)
+  await page.locator('.lv-activity-btn').click()
+  await expect(page.locator('.lv-now')).toContainText('drafting Methods')
+  const redrawn = await page.evaluate(async () => {
+    let added = 0
+    const watch = new MutationObserver((changes) => { for (const c of changes) added += c.addedNodes.length })
+    for (const selector of ['.lv-bar', '.lv-notes', '.galley-slot[data-slot="side"]', '.galley-doc']) watch.observe(document.querySelector(selector)!, { childList: true, subtree: true })
+    // Two polls go by.
+    await new Promise((resolve) => setTimeout(resolve, 6000))
+    watch.disconnect()
+    return added
+  })
+  expect(redrawn).toBe(0)
 })
 
 test('an agent\'s change arrives in the open document and merges with what the writer is typing', async ({ page }) => {

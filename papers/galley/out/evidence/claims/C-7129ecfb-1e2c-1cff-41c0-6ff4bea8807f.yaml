@@ -1,0 +1,6 @@
+id: "C-7129ecfb-1e2c-1cff-41c0-6ff4bea8807f"
+class: "observed_fact"
+statement: "Panels of LLM evaluators composed of models from disjoint model families have been used to judge model outputs, and such panels show less intra-model bias than a single large judge model (Verga et al., 2024, Panel of LLm evaluators, PoLL)."
+uncertainty: "medium"
+evidence_ids: ["E-4471bcd2-2474-d9a8-8135-b7321a4273be"]
+state: "active"

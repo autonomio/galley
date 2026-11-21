@@ -1,0 +1,8 @@
+id: "S-ee4d5783-9c0e-0017-f880-0c338cca0047"
+kind: "publication"
+title: "DraftMarks: Enhancing Transparency in Human-AI Co-Writing Through Interactive Skeuomorphic Process Traces"
+uri: "https://doi.org/10.1145/3772318.3791109"
+date: "2026"
+locator: "abstract"
+excerpt: "DraftMarks employs skeuomorphic encodings such as eraser crumbs to convey the intensity of revision, and masking tape or smudges to mark AI-generated content, simulating the process within the final written artifact. By using data from writer-AI interactions, DraftMarks’ algorithm computes various collaboration metrics and writing traces."
+access: "inspected"

@@ -1,0 +1,8 @@
+id: "S-819a68ec-a07a-7057-f0c3-0a4131cdcebd"
+kind: "publication"
+title: "The HaLLMark Effect: Supporting Provenance and Transparent Use of Large Language Models in Writing with Interactive Visualization"
+uri: "https://doi.org/10.1145/3613904.3641895"
+date: "2024"
+locator: "abstract"
+excerpt: "We argue that a system that captures the provenance of interaction with an LLM can help writers retain their agency, conform to policies, and communicate their use of AI to publishers and readers transparently. Thus we propose HaLLMark, a tool for visualizing the writer’s interaction with the LLM."
+access: "inspected"

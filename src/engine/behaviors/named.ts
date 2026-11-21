@@ -1,0 +1,202 @@
+// A work the text names is a work the paper cites. Once review is done, the text is read for every publication,
+// standard or dataset it names ("Wilks (1941)", "Pittet et al. (2026)", "JCGM 100:2008") without citing it, and for
+// every result a referee would expect cited to the work that established it: one named after its originators
+// ("Landauer's bound"), or one stated without a citation. Each is matched to a work the paper already holds or, where
+// the paper may search beyond its world model, found in the scholarly index, and cited where it is named or stated. A name that cannot be found is left as written and goes on the
+// sign-off sheet, so nothing stops over it.
+import { canarySearch, titleWords, workFromHit } from '../evidence.js'
+import { datasetSources } from '../materials.js'
+import type { Paper } from '../paper.js'
+import { HOUSE } from '../prompts.js'
+import type { Behavior } from '../scheduler.js'
+import { arr, int, obj, str } from '../schema.js'
+import type { Work } from '../types.js'
+import { onlyWorldModel } from '../worldmodel.js'
+import { reviewDone } from './close.js'
+import { keyFor, live, seatFamily, sectionText } from './common.js'
+import { setPassage } from './write.js'
+
+export interface Named { section: string; quote: string; authors: string[]; year: number | null; title: string }
+
+const fold = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+const words = (text: string) => new Set(fold(text).split(/[^a-z0-9]+/).filter((w) => w.length > 3))
+/** How much of the shorter title the other one shares, word by word. */
+const overlap = (a: string, b: string) => {
+  const x = words(a), y = words(b)
+  if (!x.size || !y.size) return 0
+  let n = 0
+  for (const w of x) if (y.has(w)) n++
+  return n / Math.min(x.size, y.size)
+}
+
+
+/**
+ * The text with the work cited where the quote names it:
+ * - A reference in parentheses of its own, "(Wilks, 1941)" or "(Dvoretzky, Kiefer and Wolfowitz, 1956, Ann. Math.
+ *   Stat. 27(3), 642–669)", becomes the citation, "[@key]": the reference list gives the rest.
+ * - A name that ends with its year in parentheses keeps its words, and the year becomes the citation ("Wilks (1941)" →
+ *   "Wilks [-@key]", printed "Wilks (1941)").
+ * - Any other name is followed by one ("JCGM 100:2008 [@key]").
+ * Null when the quote is not in the text.
+ */
+export function citeAt(text: string, quote: string, key: string, surname = ''): string | null {
+  const at = text.indexOf(quote)
+  if (!quote || at < 0) return null
+  const own = ownParentheses(text, at, quote)
+  if (own) return `${text.slice(0, own.start)}[@${key}]${text.slice(own.end)}`
+  // A parenthesis that opens inside the name: "Wilks (1941)" keeps the name and its year becomes the citation;
+  // "SSR (Pittet et al. 2026, October manuscript)" holds the reference itself, which becomes the citation.
+  const open = quote.lastIndexOf('(')
+  if (open >= 0) {
+    const start = at + open
+    const end = closing(text, start)
+    const inner = end > 0 ? text.slice(start + 1, end) : ''
+    if (end > 0 && end - start < 140 && !inner.includes(';') && /\b\d{4}[a-z]?\b/.test(inner)) {
+      const withAuthor = !!surname && fold(inner).includes(fold(surname))
+      return `${text.slice(0, start).trimEnd()} ${withAuthor ? `[@${key}]` : `[-@${key}]`}${text.slice(end + 1)}`
+    }
+  }
+  // A citation that already follows the words takes the work beside its own: "bound [@a]" becomes "bound [@key; @a]".
+  const after = text.slice(at + quote.length)
+  const joined = after.match(/^(\s?)\[(@[^\]]+)\]/)
+  if (joined) return `${text.slice(0, at)}${quote}${joined[1]}[@${key}; ${joined[2]}]${after.slice(joined[0].length)}`
+  return `${text.slice(0, at)}${quote} [@${key}]${after}`
+}
+
+/** Where the parenthesis that opens at start closes, or -1. */
+function closing(text: string, start: number): number {
+  let depth = 0
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === '(') depth++
+    else if (text[i] === ')' && --depth === 0) return i
+  }
+  return -1
+}
+
+/** The parentheses a reference stands in alone, with at most its own bibliographic details after it; null otherwise. */
+function ownParentheses(text: string, at: number, quote: string): { start: number; end: number } | null {
+  if (quote.startsWith('(') && closing(text, at) === at + quote.length - 1) return { start: at, end: at + quote.length }
+  const open = text.slice(0, at).search(/\(\s*$/)
+  if (open < 0) return null
+  const end = closing(text, open)
+  if (end < 0) return null
+  // Never a second reference or a remark: those stay, and the name is cited where it stands.
+  const tail = text.slice(at + quote.length, end)
+  return tail.length > 90 || tail.includes(';') || /\b(see|also|e\.g\.|cf\.|and|for)\b/i.test(tail) ? null : { start: open, end: end + 1 }
+}
+
+export const citeNamed: Behavior = {
+  id: 'cite-named', stage: 'close', improver: true, title: 'Cite every work the text names',
+  ready: (paper) => {
+    const s = paper.state
+    if (!live(paper) || !s.outline || s.outcome || paper.isSettled('frame:final') || !reviewDone(paper)) return []
+    return [{
+      key: 'named:works', label: 'every work the text names, cited where it is named',
+      run: async () => {
+        const sections = s.outline!.sections
+        const checker = seatFamily(paper, 'checker')
+        const held = Object.values(s.works)
+        const reply = await paper.ask<any>({
+          behavior: 'cite-named', target: 'works', seat: 'checker', family: checker,
+          prompt: `${HOUSE}
+
+Below is a manuscript, section by section; a citation in it is written [@key], [-@key] or @key. List every place where the text names a specific publication, standard or dataset without citing it right there: an author and year such as "Wilks (1941)", "Dvoretzky, Kiefer and Wolfowitz (1956)" or "Pittet et al. (2026)", or a document's own designation such as "JCGM 100:2008".
+List also every place where a referee in the host field would expect the work that established something cited and it is not: a result, bound, method or concept named after the people or the work that established it ("Landauer's bound", "Kolmogorov complexity"), or a specific result of earlier work stated without a citation ("exact learning from membership and equivalence queries needs only polynomially many queries"); also where a citation follows it, but only to a later work that tested, applied or surveyed it. Leave out what every reader of the field learned without a reference (Bayes' theorem, the normal distribution, gradient descent), the paper's own results, and anything the work that established it already follows.
+For each: section (its id in brackets), quote (the words that name or state it, copied character for character from the text, ending with the year in parentheses where the text gives one, or where the citation belongs), authors (the work's authors' surnames, in order, as far as the text or your knowledge gives them), year (0 if none), title (the work's title if you know it with confidence, else empty), and id: the id of the work from the list of works the paper holds, below, when one of them is that work by its authors, year and subject as the sentence describes it; else empty. A work by an author of the same name on another subject is not it.
+
+${sections.map((sec) => `[${sec.id}] ${sec.title}\n${sectionText(paper, sec.id)}`).join('\n\n')}
+
+THE WORKS THE PAPER HOLDS (id | authors | year | title):
+${held.map(workLine).join('\n')}`,
+          schema: obj({ named: arr(obj({ section: str(), quote: str(), authors: arr(str()), year: int(), title: str(), id: str() })) }),
+        })
+        const named: (Named & { id: string })[] = (reply.named ?? [])
+          .map((n: any) => ({ section: String(n.section ?? '').replace(/[[\]]/g, ''), quote: String(n.quote ?? ''), authors: (n.authors ?? []).map(String).filter(Boolean), year: Number(n.year) || null, title: String(n.title ?? ''), id: String(n.id ?? '').trim() }))
+          .filter((n: Named) => n.quote && sections.some((sec) => sec.id === n.section))
+        const found = new Map<Named, Work>()
+        for (const n of named) if (s.works[n.id]) found.set(n, s.works[n.id])
+        // Beyond the works it holds, a paper looks only where it may: never past a world model it rests on alone. What the
+        // index returns for a name is a candidate until the sentence it is named in is read against it: a surname and a
+        // year are shared by works on other subjects.
+        const missing = named.filter((n) => !found.has(n))
+        if (missing.length && !onlyWorldModel(paper) && !paper.config.off.includes('find-evidence')) {
+          const queries = missing.map((n, i) => ({ id: `N${i + 1}`, search: n.title || `${n.authors.join(' ')} ${n.year ?? ''}`.trim() }))
+          try {
+            const results = await canarySearch(paper.path('canary', 'named'), `galley:${s.slug}:named`, queries, 8)
+            const candidates = missing.map((n, i) => (results[`N${i + 1}`]?.results ?? []).map(workFromHit).filter((w) => plausible(n, w)).slice(0, 5))
+            const asked = missing.map((n, i) => ({ n, place: `N${i + 1}`, works: candidates[i] })).filter((a) => a.works.length)
+            if (asked.length) {
+              const choice = await paper.ask<any>({
+                behavior: 'cite-named', target: 'candidates', seat: 'checker', family: checker,
+                prompt: `${HOUSE}
+
+Each place below is a sentence of a manuscript that names a work, or states a result of earlier work, without citing the work, followed by works the scholarly index returned for it. For each place give the id of the work the sentence names, or of the work that established the result it states, judged by its authors, year and subject as the sentence describes them, or an empty id when none of them is that work. A work by an author of the same name on another subject is not it, and neither is a later work that only tested, applied or surveyed it. A record of the same title by the same authors dated later is the work itself, republished in a journal, reprinted or translated: of the records that are the work, give the one that says where it was published (its venue and its authors' full names).
+
+${asked.map((a) => `${a.place}. "${a.n.quote}" in: "${sentenceAround(sectionText(paper, a.n.section), a.n.quote)}"${a.n.authors.length ? ` (the work: ${a.n.authors.join(', ')}${a.n.year ? ` ${a.n.year}` : ''}${a.n.title ? `, "${a.n.title}"` : ''})` : ''}\n${a.works.map((w) => `  ${workLine(w)}${w.venue ? ` | ${w.venue}` : ''}${w.abstract ? ` | ${w.abstract.slice(0, 240)}` : ''}`).join('\n')}`).join('\n\n')}`,
+                schema: obj({ choices: arr(obj({ place: str(), id: str() })) }),
+              })
+              for (const c of choice.choices ?? []) {
+                const a = asked.find((x) => x.place === String(c.place ?? '').trim())
+                const work = a?.works.find((w) => w.id === String(c.id ?? '').trim())
+                if (!a || !work) continue
+                s.works[work.id] = s.works[work.id] ?? work
+                found.set(a.n, s.works[work.id])
+              }
+            }
+          } catch (error) {
+            paper.note('cite-named', `The scholarly index could not be searched for the works the text names: ${(error as Error).message.slice(0, 200)}`)
+          }
+        }
+        const by = { kind: 'agent' as const, family: checker, model: paper.config.models[checker]?.model ?? checker, seat: 'checker' as const, behavior: 'cite-named' }
+        // A work is cited once in a section, at its first mention, and not at all where the section cites it already;
+        // a dataset is cited where it is described, not wherever its name recurs.
+        const datasets = new Set((paper.config.datasets ?? []).flatMap((unit) => Object.values(datasetSources(paper, unit))))
+        const cited: NonNullable<typeof s.named> = []
+        for (const [n, work] of found) {
+          if (datasets.has(work.id)) continue
+          const key = keyFor(paper, work)
+          const text = sectionText(paper, n.section)
+          if (text.includes(`@${key}`) || cited.some((c) => c.workId === work.id && c.sectionId === n.section && c.placed)) continue
+          const next = citeAt(text, n.quote, key, n.authors[0] ?? '')
+          if (next) setPassage(paper, n.section, next, by, `cited ${key} where the text names it`)
+          cited.push({ workId: work.id, quote: n.quote, sectionId: n.section, placed: !!next })
+        }
+        s.named = [...(s.named ?? []), ...cited]
+        s.unreferenced = named.filter((n) => !found.has(n)).map((n) => ({ quote: n.quote, sectionId: n.section }))
+        paper.journal({ event: 'cite_named', named: named.length, cited: cited.length, unreferenced: s.unreferenced.length })
+        if (named.length) paper.note('cite-named', `${cited.length} of ${named.length} works the text names are now cited${s.unreferenced.length ? `; not found: ${s.unreferenced.map((u) => u.quote).join('; ')}` : ''}.`)
+        paper.save()
+      },
+      // An improvement pass: if it cannot run, the text stands as written and the proof reading still sees it.
+      skip: () => {},
+    }]
+  },
+}
+
+
+/** A work as one line of a list a model chooses from. */
+function workLine(w: Work): string {
+  return `${w.id} | ${w.authors.slice(0, 3).join(', ')}${w.authors.length > 3 ? ' et al.' : ''} | ${w.year ?? 'n.d.'} | ${w.title}`
+}
+
+/** Could this be the work a name points to: its first author by surname, and its year within one of the name's. */
+export function plausible(named: Named, work: Work): boolean {
+  // The work's own title, word for word, is the work whatever year the index dates it by: its journal version, a reprint
+  // or a translation is often dated after it. Any other record must be of the year the text gives.
+  const title = titleWords(named.title)
+  const sameTitle = title.length >= 3 && title.join(' ') === titleWords(work.title).join(' ')
+  if (!sameTitle && named.year && work.year && Math.abs(work.year - named.year) > 1) return false
+  const first = named.authors[0] ? fold(named.authors[0]).trim() : ''
+  if (!first) return !!named.title && overlap(named.title, work.title) >= 0.6
+  return !!work.authors[0] && new RegExp(`(^|[^a-z])${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`).test(fold(work.authors.join(' ')))
+}
+
+/** The sentence of a section's text that holds a quote, to read what the quote names. */
+export function sentenceAround(text: string, quote: string): string {
+  const at = text.indexOf(quote)
+  if (at < 0) return quote
+  const start = Math.max(text.lastIndexOf('. ', at) + 2, text.lastIndexOf('\n', at) + 1)
+  const ends = [text.indexOf('. ', at + quote.length), text.indexOf('\n', at + quote.length)].filter((i) => i >= 0)
+  const end = ends.length ? Math.min(...ends) + 1 : text.length
+  return text.slice(start, end).trim().slice(0, 600)
+}

@@ -1,0 +1,8 @@
+id: "S-f46a4359-1292-8dd1-5f8c-f9beb8e04c75"
+kind: "publication"
+title: "The AI Scientist-v2: Workshop-Level Automated Scientific Discovery via Agentic Tree Search"
+uri: "https://doi.org/10.48550/arxiv.2504.08066"
+date: "2025"
+locator: "abstract"
+excerpt: "We introduce The AI Scientist-v2, an end-to-end agentic system capable of producing the first entirely AI generated peer-review-accepted workshop paper. This system iteratively formulates scientific hypotheses, designs and executes experiments, analyzes and visualizes data, and autonomously authors scientific manuscripts."
+access: "inspected"

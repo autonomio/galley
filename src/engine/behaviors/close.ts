@@ -10,6 +10,7 @@ import { activeClaims, claim, live, manuscriptBlock, seatFamily, setClaim } from
 import { isNarrowing } from './truth.js'
 import { toReview } from './front.js'
 import { resolved } from './review.js'
+import { storyReadDone } from './story.js'
 import { FRAME_NUMBERS } from './write.js'
 
 const FACTORS = ['input_not_output', 'shared_bottleneck', 'conventional_body_one_graft', 'surprising_and_certain', 'opens_more_than_closes', 'cheap_to_adopt', 'early'] as const
@@ -99,6 +100,19 @@ export function reviewDone(paper: Paper): boolean {
   return s.round >= 1 && !s.findings.some((f) => f.round === s.round && f.severity !== 'minor')
 }
 
+/** A claim's standing, weakest first: of two claims that say the same, the ledger keeps the stronger. */
+const STANDING = ['open', 'unsupported', 'assumed', 'internal', 'narrowed', 'supported']
+const idNumber = (id: string) => Number(id.replace(/\D/g, '')) || 0
+/** The letters of a text, with LaTeX's backslashes gone: typesetting its mathematics may add command names, never change a word. */
+const letters = (text: string) => text.replace(/\\/g, '').replace(/[^a-z]/gi, '').toLowerCase()
+export function sameWords(text: string, typeset: string): boolean {
+  const before = letters(text), after = letters(typeset)
+  if (!typeset.includes('$') || after.length > before.length * 1.5 + 20) return false
+  let i = 0
+  for (const ch of after) if (ch === before[i]) i++
+  return i === before.length
+}
+
 /**
  * Review edits the prose, never the ledger. Once review is done, a family other
  * than the author's reads the final text against every claim, so the ledger,
@@ -106,7 +120,10 @@ export function reviewDone(paper: Paper): boolean {
  */
 export const reconcile: Behavior = {
   id: 'reconcile', stage: 'close', improver: true, title: 'Reconcile the ledger with the text',
-  ready: (paper) => !live(paper) || !paper.state.outline || paper.isSettled('frame:final') || !reviewDone(paper) ? [] : [{
+  // After the works the text names are cited, so the ledger is read against the text as it will print.
+  ready: (paper) => !live(paper) || !paper.state.outline || paper.isSettled('frame:final') || !reviewDone(paper)
+    || (!paper.isSettled('named:works') && !paper.config.off.includes('cite-named'))
+    || (!paper.isSettled('copyedit:text') && !paper.config.off.includes('copyedit')) ? [] : [{
     key: 'reconcile:ledger', label: 'every claim against the final text',
     run: async () => {
       const claims = activeClaims(paper)
@@ -119,13 +136,16 @@ The manuscript below went through review after its claim ledger was written, and
 - narrowed: the text states only a narrower or weaker version of it. Give narrowed: the claim reworded to exactly what the text now states, in the claim's own terms.
 - absent: the text no longer states it, not even as a hypothesis or an open question.
 Give quote: the sentence of the text that states it, copied exactly (empty when absent). Judge only the sections, not the title or abstract.
+Also give, for each claim:
+- duplicate_of: the id of another claim in the ledger that says the same thing, possibly in other words; empty when none.
+- typeset: when the claim writes mathematics as plain text (such as T_A, log2(1/(1-p)), x^2 or <1-p, p>), the claim with that mathematics in LaTeX between dollar signs ($T_A$, $\\log_2(1/(1-p))$), every word unchanged; empty otherwise.
 
 LEDGER:
 ${claims.map((c) => `${c.id}: ${c.text}`).join('\n')}
 
 MANUSCRIPT:
 ${manuscriptBlock(paper, false, false)}`,
-        schema: obj({ items: arr(obj({ claim_id: str(), how: enm(['stated', 'narrowed', 'absent']), quote: str(), narrowed: nstr() })) }),
+        schema: obj({ items: arr(obj({ claim_id: str(), how: enm(['stated', 'narrowed', 'absent']), quote: str(), narrowed: nstr(), duplicate_of: nstr(), typeset: nstr() })) }),
       })
       for (const item of reply.items ?? []) {
         const c = claims.find((k) => k.id === item.claim_id)
@@ -133,6 +153,20 @@ ${manuscriptBlock(paper, false, false)}`,
         if (item.how === 'absent') setClaim(paper, c, 'dropped', 'reconcile', 'not stated in the final text')
         // A rewording that keeps little of the claim is a different claim: the ledger keeps the original.
         else if (item.how === 'narrowed' && item.narrowed && isNarrowing(c.text, item.narrowed)) setClaim(paper, c, c.status, 'reconcile', `the final text states it more narrowly: "${String(item.quote).slice(0, 300)}"`, item.narrowed)
+        // Its mathematics typeset, only where every word stays as it was.
+        if (c.status !== 'dropped' && item.typeset && sameWords(c.text, item.typeset)) setClaim(paper, c, c.status, 'reconcile', 'its mathematics typeset', item.typeset)
+      }
+      // A claim the ledger holds twice is kept once: the one with the stronger standing, the earlier on a tie; the other's
+      // verified sources and dependants pass to it.
+      for (const item of reply.items ?? []) {
+        const a = claims.find((k) => k.id === item.claim_id)
+        const b = claims.find((k) => k.id === item.duplicate_of)
+        if (!a || !b || a === b || a.status === 'dropped' || b.status === 'dropped') continue
+        const rank = (k: typeof a) => STANDING.indexOf(k.status)
+        const [keep, drop] = rank(b) > rank(a) || (rank(b) === rank(a) && idNumber(b.id) < idNumber(a.id)) ? [b, a] : [a, b]
+        for (const cite of paper.state.citations) if (cite.claimId === drop.id && cite.status === 'verified') cite.claimId = keep.id
+        for (const k of paper.state.claims) k.dependsOn = (k.dependsOn ?? []).map((id) => id === drop.id ? keep.id : id)
+        setClaim(paper, drop, 'dropped', 'reconcile', `states the same as ${keep.id}`)
       }
       paper.save()
     },
@@ -141,7 +175,8 @@ ${manuscriptBlock(paper, false, false)}`,
 
 export const reprofile: Behavior = {
   id: 'reprofile', stage: 'close', improver: true, title: 'Re-profile impact',
-  ready: (paper) => !live(paper) || paper.state.profileAfter || !reviewDone(paper) ? [] : [{
+  // The finished paper is the told one, read through: it is profiled once that is done.
+  ready: (paper) => !live(paper) || paper.state.profileAfter || !reviewDone(paper) || !storyReadDone(paper) ? [] : [{
     key: 'reprofile:final', label: 'the finished paper against the standard',
     run: async () => {
       const s = paper.state
@@ -184,8 +219,8 @@ export function finalFrame(paper: Paper): Target[] {
 ${STYLE}
 
 The manuscript below has been through review, and its sections changed. Rewrite its frame so it states exactly what the manuscript now states.
-- title: keep the current title ("${frame.title}") unless it no longer fits the text; at most 15 words.
-- abstract: 150 to 250 words, one paragraph, no citations: the problem, what the paper contributes, how the contribution is supported, and what it opens. State only what the manuscript states, with the same hedges and limits. ${FRAME_NUMBERS}
+- title: keep the current title ("${frame.title}") unless it no longer fits the text. A reader in the field understands it without reading the paper: it says what the paper finds or provides, in words the field already uses, and a term the paper itself coins appears in it only where the title's own words make it clear. At most 15 words.
+- abstract: 150 to 250 words, one paragraph, no citations. Its opening sentences state the paper's main findings, plainly and with their key numbers; then the problem they answer, how they are supported, and what they open. State only what the manuscript states, plainly: no hedges, limitations or caveats (those are the Limitations section's), and no remark on how the work was produced or reviewed. ${FRAME_NUMBERS}
 - keywords: 5 to 7.
 
 ${placeholderGuide()}
@@ -231,6 +266,8 @@ export const ready: Behavior = {
     if (!(s.profileAfter || paper.isSettled('reprofile:final') || paper.config.off.includes('reprofile'))) return []
     if (!paper.isSettled('frame:final')) return []
     if (!paper.isSettled(`typeset:${contentHash(paper)}`)) return []
+    // The typeset paper has been read as a reader sees it, on this very revision.
+    if (!paper.config.off.includes('proof') && !paper.isSettled(`proof:${contentHash(paper)}`)) return []
     return [{
       key: 'ready:paper', label: 'every gate on one revision',
       run: async () => {

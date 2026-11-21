@@ -4,5 +4,5 @@ title: "Argument plan of the manuscript"
 uri: null
 date: "2026-11-19"
 locator: "C28"
-excerpt: "PaperOrchestra is a multi-agent framework that turns unconstrained pre-writing materials into submission-ready LaTeX research manuscripts."
+excerpt: "Interactive provenance visualization can show authors which parts of a text an LLM contributed (HaLLMark)."
 access: "inspected"

@@ -1,163 +1,327 @@
 [
   {
     "type": "article-journal",
-    "title": "Hedging in Medical and Pharmaceutical Academic Writing",
-    "container-title": "Forum for Linguistic Studies",
-    "container-title-short": "Forum Linguist. Stud.",
-    "volume": "7",
-    "issue": "7",
-    "DOI": "10.30564/fls.v7i7.10269",
-    "URL": "http://dx.doi.org/10.30564/fls.v7i7.10269",
-    "publisher": "Bilingual Publishing Group",
-    "ISSN": "2705-0602",
-    "author": [
-      {
-        "family": "Alshbeekat",
-        "given": "Aseel"
-      }
-    ],
-    "issued": {
-      "date-parts": [
-        [
-          2025,
-          7,
-          17
-        ]
-      ]
-    },
-    "id": "alshbeekat2025hedging"
-  },
-  {
-    "type": "chapter",
-    "title": "How Atypical Combinations of Scientific Ideas Are Related to Impact: The General Case and the Case of the Field of Geography",
-    "container-title": "Knowledge and Space",
-    "page": "243-267",
-    "DOI": "10.1007/978-3-319-45023-0_12",
-    "URL": "http://dx.doi.org/10.1007/978-3-319-45023-0_12",
-    "publisher": "Springer International Publishing",
-    "ISSN": "1877-9220",
-    "ISBN": "9783319450223",
-    "author": [
-      {
-        "family": "Mukherjee",
-        "given": "Satyam"
-      },
-      {
-        "family": "Uzzi",
-        "given": "Brian"
-      },
-      {
-        "family": "Jones",
-        "given": "Benjamin F."
-      },
-      {
-        "family": "Stringer",
-        "given": "Michael"
-      }
-    ],
-    "issued": {
-      "date-parts": [
-        [
-          2017
-        ]
-      ]
-    },
-    "id": "mukherjee2017atypical"
-  },
-  {
-    "type": "article",
-    "title": "DeepSciVerify: Verifying Scientific Claim--Citation Alignment via LLM-Driven Evidence Escalation",
-    "DOI": "10.48550/ARXIV.2605.27710",
-    "URL": "https://arxiv.org/abs/2605.27710",
-    "publisher": "arXiv",
-    "author": [
-      {
-        "family": "Sadeghi",
-        "given": "Shaghayegh"
-      },
-      {
-        "family": "Khajavi",
-        "given": "Khashayar"
-      },
-      {
-        "family": "Adhikari",
-        "given": "Rise"
-      },
-      {
-        "family": "Tessier",
-        "given": "Alexander"
-      }
-    ],
-    "issued": {
-      "date-parts": [
-        [
-          2026
-        ]
-      ]
-    },
-    "id": "sadeghi2026deepsciverif"
-  },
-  {
-    "type": "paper-conference",
-    "title": "Show Me How You Cite: Citation Fidelity, Usage, and Topology in the Evidence Behavior of AI Scientific Writing",
-    "container-title": "Proceedings of the 2026 Conference on Empirical Methods in Natural Language Processing",
-    "page": "46978-47004",
-    "DOI": "10.18653/2026.emnlp-main.2063",
-    "URL": "http://dx.doi.org/10.18653/2026.emnlp-main.2063",
-    "publisher": "Association for Computational Linguistics",
-    "author": [
-      {
-        "family": "Oh",
-        "given": "Jihwan"
-      },
-      {
-        "family": "Sun",
-        "given": "Gyeonghun"
-      },
-      {
-        "family": "Kim",
-        "given": "Jisoo"
-      },
-      {
-        "family": "Lee",
-        "given": "Yuho"
-      },
-      {
-        "family": "Yun",
-        "given": "Taewon"
-      },
-      {
-        "family": "Shin",
-        "given": "Jisu"
-      },
-      {
-        "family": "Song",
-        "given": "Hwanjun"
-      }
-    ],
-    "issued": {
-      "date-parts": [
-        [
-          2026
-        ]
-      ]
-    },
-    "id": "oh2026show"
-  },
-  {
-    "type": "article-journal",
-    "title": "Can AI Evaluate AI Scientists? A Benchmarking Study of Autonomous Research Generation Systems Using Automated Multi-Model Review",
-    "container-title": "Unpublished",
-    "DOI": "10.13140/RG.2.2.27158.31045",
-    "URL": "https://www.researchgate.net/doi/10.13140/RG.2.2.27158.31045",
-    "publisher": "Unpublished",
+    "title": "Hallucinations in large language models within academic contexts: a systematic review",
+    "container-title": "Journal of Science and Technology Policy Management",
+    "page": "1-28",
+    "DOI": "10.1108/jstpm-01-2026-0015",
+    "URL": "http://dx.doi.org/10.1108/jstpm-01-2026-0015",
+    "publisher": "Emerald",
+    "ISSN": "2053-4620",
     "language": "en",
     "author": [
       {
-        "literal": "Vaibhava Lakshmi Ravideshik"
+        "family": "Lai",
+        "given": "Ke En"
       },
       {
-        "literal": "Mayank Kejriwal"
+        "family": "Mustaffa",
+        "given": "Nuremma"
+      },
+      {
+        "family": "Preece",
+        "given": "Christopher Nigel"
+      },
+      {
+        "family": "Wong",
+        "given": "Foo Yeu"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2026,
+          7,
+          22
+        ]
+      ]
+    },
+    "id": "lai2026hallucinatio"
+  },
+  {
+    "type": "article-journal",
+    "title": "Fluency Without Fidelity: Errors in Citation-Attributed Claims in Large Language Model-Generated Literature Reviews in Mental Health",
+    "container-title": "Journal of Technology in Behavioral Science",
+    "container-title-short": "J. technol. behav. sci.",
+    "DOI": "10.1007/s41347-026-00630-6",
+    "URL": "http://dx.doi.org/10.1007/s41347-026-00630-6",
+    "publisher": "Springer Science and Business Media LLC",
+    "ISSN": "2366-5963",
+    "language": "en",
+    "author": [
+      {
+        "family": "Linardon",
+        "given": "Jake"
+      },
+      {
+        "family": "Messer",
+        "given": "Mariel"
+      },
+      {
+        "family": "Anderson",
+        "given": "Cleo"
+      },
+      {
+        "family": "Soliman",
+        "given": "Olivia Marie"
+      },
+      {
+        "family": "Liu",
+        "given": "Claudia"
+      },
+      {
+        "family": "Firth",
+        "given": "Joseph"
+      },
+      {
+        "family": "Torous",
+        "given": "John"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2026,
+          4,
+          20
+        ]
+      ]
+    },
+    "id": "linardon2026fluency"
+  },
+  {
+    "type": "article-journal",
+    "title": "Using Mutation Analysis for Assessing and Comparing Testing Coverage Criteria",
+    "container-title": "IEEE Transactions on Software Engineering",
+    "container-title-short": "IIEEE Trans. Software Eng.",
+    "volume": "32",
+    "issue": "8",
+    "page": "608-624",
+    "DOI": "10.1109/tse.2006.83",
+    "URL": "http://dx.doi.org/10.1109/tse.2006.83",
+    "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+    "ISSN": "0098-5589",
+    "author": [
+      {
+        "family": "Andrews",
+        "given": "J.H."
+      },
+      {
+        "family": "Briand",
+        "given": "L.C."
+      },
+      {
+        "family": "Labiche",
+        "given": "Y."
+      },
+      {
+        "family": "Namin",
+        "given": "A.S."
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2006,
+          8
+        ]
+      ]
+    },
+    "id": "andrews2006using"
+  },
+  {
+    "type": "paper-conference",
+    "title": "DeepMutation: Mutation Testing of Deep Learning Systems",
+    "container-title": "2018 IEEE 29th International Symposium on Software Reliability Engineering (ISSRE)",
+    "page": "100-111",
+    "DOI": "10.1109/issre.2018.00021",
+    "URL": "http://dx.doi.org/10.1109/issre.2018.00021",
+    "publisher": "IEEE",
+    "author": [
+      {
+        "family": "Ma",
+        "given": "Lei"
+      },
+      {
+        "family": "Zhang",
+        "given": "Fuyuan"
+      },
+      {
+        "family": "Sun",
+        "given": "Jiyuan"
+      },
+      {
+        "family": "Xue",
+        "given": "Minhui"
+      },
+      {
+        "family": "Li",
+        "given": "Bo"
+      },
+      {
+        "family": "Juefei-Xu",
+        "given": "Felix"
+      },
+      {
+        "family": "Xie",
+        "given": "Chao"
+      },
+      {
+        "family": "Li",
+        "given": "Li"
+      },
+      {
+        "family": "Liu",
+        "given": "Yang"
+      },
+      {
+        "family": "Zhao",
+        "given": "Jianjun"
+      },
+      {
+        "family": "Wang",
+        "given": "Yadong"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2018,
+          10
+        ]
+      ]
+    },
+    "id": "ma2018deepmutation"
+  },
+  {
+    "type": "article-journal",
+    "title": "Predicting scientific success based on coauthorship networks",
+    "container-title": "EPJ Data Science",
+    "container-title-short": "EPJ Data Sci.",
+    "volume": "3",
+    "issue": "1",
+    "DOI": "10.1140/epjds/s13688-014-0009-x",
+    "URL": "http://dx.doi.org/10.1140/epjds/s13688-014-0009-x",
+    "publisher": "Springer Science and Business Media LLC",
+    "ISSN": "2193-1127",
+    "language": "en",
+    "author": [
+      {
+        "family": "Sarigöl",
+        "given": "Emre"
+      },
+      {
+        "family": "Pfitzner",
+        "given": "René"
+      },
+      {
+        "family": "Scholtes",
+        "given": "Ingo"
+      },
+      {
+        "family": "Garas",
+        "given": "Antonios"
+      },
+      {
+        "family": "Schweitzer",
+        "given": "Frank"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2014,
+          9,
+          25
+        ]
+      ]
+    },
+    "id": "sarigol2014predicting"
+  },
+  {
+    "type": "article-journal",
+    "title": "Applying centrality measures to impact analysis: A coauthorship network analysis",
+    "container-title": "Journal of the American Society for Information Science and Technology",
+    "container-title-short": "J. Am. Soc. Inf. Sci.",
+    "volume": "60",
+    "issue": "10",
+    "page": "2107-2118",
+    "DOI": "10.1002/asi.21128",
+    "URL": "http://dx.doi.org/10.1002/asi.21128",
+    "publisher": "Wiley",
+    "ISSN": "1532-2882",
+    "language": "en",
+    "author": [
+      {
+        "family": "Yan",
+        "given": "Erjia"
+      },
+      {
+        "family": "Ding",
+        "given": "Ying"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2009,
+          6,
+          12
+        ]
+      ]
+    },
+    "id": "yan2009applying"
+  },
+  {
+    "type": "article",
+    "title": "DeepSurvey: Agent-Oriented Automated Survey Generation with Analytical Depth and Citation Reliability",
+    "DOI": "10.48550/ARXIV.2605.29522",
+    "URL": "https://arxiv.org/abs/2605.29522",
+    "publisher": "arXiv",
+    "author": [
+      {
+        "family": "Yang",
+        "given": "Ziyue"
+      },
+      {
+        "family": "Ma",
+        "given": "Da"
+      },
+      {
+        "family": "Li",
+        "given": "Hanqi"
+      },
+      {
+        "family": "Wang",
+        "given": "Zijian"
+      },
+      {
+        "family": "Huang",
+        "given": "Tiancheng"
+      },
+      {
+        "family": "Hu",
+        "given": "Zijian"
+      },
+      {
+        "family": "Wang",
+        "given": "Chenrun"
+      },
+      {
+        "family": "Zhang",
+        "given": "Yunzhe"
+      },
+      {
+        "family": "Wu",
+        "given": "Xiaobao"
+      },
+      {
+        "family": "Yu",
+        "given": "Kai"
+      },
+      {
+        "family": "Chen",
+        "given": "Lu"
       }
     ],
     "issued": {
@@ -167,7 +331,38 @@
         ]
       ]
     },
-    "id": "ravideshik2026can"
+    "id": "yang2026deepsurvey"
+  },
+  {
+    "type": "paper-conference",
+    "title": "LLM Evaluators Recognize and Favor Their Own Generations",
+    "container-title": "Advances in Neural Information Processing Systems 37",
+    "page": "68772-68802",
+    "DOI": "10.52202/079017-2197",
+    "URL": "http://dx.doi.org/10.52202/079017-2197",
+    "publisher": "Neural Information Processing Systems Foundation, Inc. (NeurIPS)",
+    "author": [
+      {
+        "family": "Panickssery",
+        "given": "Arjun"
+      },
+      {
+        "family": "Bowman",
+        "given": "Samuel"
+      },
+      {
+        "family": "Feng",
+        "given": "Shi"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2024
+        ]
+      ]
+    },
+    "id": "panickssery2024llm"
   },
   {
     "type": "paper-conference",
@@ -209,88 +404,292 @@
     "id": "chen2025beyond"
   },
   {
-    "type": "article",
-    "title": "The Judge is Not Impartial: Self-Preference in Medical LLM\nEvaluation",
-    "DOI": "10.21203/rs.3.rs-11022502/v1",
-    "URL": "http://dx.doi.org/10.21203/rs.3.rs-11022502/v1",
-    "publisher": "Springer Science and Business Media LLC",
+    "type": "article-journal",
+    "title": "Separation of Duty in Role Based Access",
+    "container-title": "DiVA (Digitala Vetenskapliga Arkivet)",
+    "URL": "https://openalex.org/W1125997174",
     "author": [
       {
-        "family": "Daneshjou",
-        "given": "Roxana"
+        "family": "Kugblenu",
+        "given": "Francis M."
       },
       {
-        "family": "Natarajan",
-        "given": "Shlok"
+        "family": "Asim",
+        "given": "Memon"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2007
+        ]
+      ]
+    },
+    "id": "kugblenu2007separation"
+  },
+  {
+    "type": "article",
+    "title": "OpenAlex: A fully-open index of scholarly works, authors, venues, institutions, and concepts",
+    "DOI": "10.48550/ARXIV.2205.01833",
+    "URL": "https://arxiv.org/abs/2205.01833",
+    "publisher": "arXiv",
+    "author": [
+      {
+        "family": "Priem",
+        "given": "Jason"
       },
       {
-        "family": "Ansari",
-        "given": "Zara"
+        "family": "Piwowar",
+        "given": "Heather"
       },
       {
-        "family": "Yip",
-        "given": "Vincent"
+        "family": "Orr",
+        "given": "Richard"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2022
+        ]
+      ]
+    },
+    "id": "priem2022openalex"
+  },
+  {
+    "type": "dataset",
+    "title": "OpenAlex Snapshot",
+    "DOI": "10.5281/ZENODO.13941457",
+    "URL": "https://zenodo.org/doi/10.5281/zenodo.13941457",
+    "publisher": "Zenodo",
+    "author": [
+      {
+        "family": "Jason",
+        "given": "Priem"
       },
       {
-        "family": "Lin",
-        "given": "Cally"
+        "family": "Heather",
+        "given": "Piwowar"
       },
       {
-        "family": "Udash",
-        "given": "Avi"
+        "family": "Barrett",
+        "given": "Justin"
       },
       {
-        "family": "Garvey",
-        "given": "Mia"
+        "family": "Demes",
+        "given": "Kyle"
       },
       {
-        "family": "Fanous",
-        "given": "Aaron"
+        "family": "McCafferty",
+        "given": "Nolan"
+      },
+      {
+        "family": "Meyer",
+        "given": "Casey"
+      },
+      {
+        "family": "Orr",
+        "given": "Richard"
+      },
+      {
+        "family": "Portenoy",
+        "given": "Jason"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2024,
+          10,
+          16
+        ]
+      ]
+    },
+    "id": "priem2024openalex"
+  },
+  {
+    "type": "paper-conference",
+    "title": "The HaLLMark Effect: Supporting Provenance and Transparent Use of Large Language Models in Writing with Interactive Visualization",
+    "container-title": "Proceedings of the CHI Conference on Human Factors in Computing Systems",
+    "page": "1-15",
+    "DOI": "10.1145/3613904.3641895",
+    "URL": "http://dx.doi.org/10.1145/3613904.3641895",
+    "publisher": "ACM",
+    "author": [
+      {
+        "family": "Hoque",
+        "given": "Md Naimul"
+      },
+      {
+        "family": "Mashiat",
+        "given": "Tasfia"
+      },
+      {
+        "family": "Ghai",
+        "given": "Bhavya"
+      },
+      {
+        "family": "Shelton",
+        "given": "Cecilia D."
+      },
+      {
+        "family": "Chevalier",
+        "given": "Fanny"
+      },
+      {
+        "family": "Kraus",
+        "given": "Kari"
+      },
+      {
+        "family": "Elmqvist",
+        "given": "Niklas"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2024,
+          5,
+          11
+        ]
+      ]
+    },
+    "id": "hoque2024hallmark"
+  },
+  {
+    "type": "paper-conference",
+    "title": "DraftMarks: Enhancing Transparency in Human-AI Co-Writing Through Interactive Skeuomorphic Process Traces",
+    "container-title": "Proceedings of the 2026 CHI Conference on Human Factors in Computing Systems",
+    "page": "1-22",
+    "DOI": "10.1145/3772318.3791109",
+    "URL": "http://dx.doi.org/10.1145/3772318.3791109",
+    "publisher": "ACM",
+    "author": [
+      {
+        "family": "Siddiqui",
+        "given": "Momin N."
+      },
+      {
+        "family": "Nasseri",
+        "given": "Nikki"
+      },
+      {
+        "family": "Coscia",
+        "given": "Adam J."
+      },
+      {
+        "family": "Pea",
+        "given": "Roy"
+      },
+      {
+        "family": "Subramonyam",
+        "given": "Hari"
       }
     ],
     "issued": {
       "date-parts": [
         [
           2026,
-          9,
-          17
+          4,
+          13
         ]
       ]
     },
-    "id": "daneshjou2026judge"
+    "id": "siddiqui2026draftmarks"
   },
   {
-    "type": "article",
-    "title": "PaperOrchestra: A Multi-Agent Framework for Automated AI Research Paper Writing",
-    "DOI": "10.48550/ARXIV.2604.05018",
-    "URL": "https://arxiv.org/abs/2604.05018",
-    "publisher": "arXiv",
+    "type": "paper-conference",
+    "title": "Beyond the Chat: Executable and Verifiable Text-Editing with LLMs",
+    "container-title": "Proceedings of the 37th Annual ACM Symposium on User Interface Software and Technology",
+    "page": "1-23",
+    "DOI": "10.1145/3654777.3676419",
+    "URL": "http://dx.doi.org/10.1145/3654777.3676419",
+    "publisher": "ACM",
     "author": [
       {
-        "family": "Song",
-        "given": "Yiwen"
+        "family": "Laban",
+        "given": "Philippe"
       },
       {
-        "family": "Song",
-        "given": "Yale"
+        "family": "Vig",
+        "given": "Jesse"
       },
       {
-        "family": "Pfister",
-        "given": "Tomas"
+        "family": "Hearst",
+        "given": "Marti"
       },
       {
-        "family": "Yoon",
-        "given": "Jinsung"
+        "family": "Xiong",
+        "given": "Caiming"
+      },
+      {
+        "family": "Wu",
+        "given": "Chien-Sheng"
       }
     ],
     "issued": {
       "date-parts": [
         [
-          2026
+          2024,
+          10,
+          11
         ]
       ]
     },
-    "id": "song2026paperorchest"
+    "id": "laban2024beyond"
+  },
+  {
+    "type": "article",
+    "title": "Replacing Judges with Juries: Evaluating LLM Generations with a Panel of Diverse Models",
+    "DOI": "10.48550/ARXIV.2404.18796",
+    "URL": "https://arxiv.org/abs/2404.18796",
+    "publisher": "arXiv",
+    "author": [
+      {
+        "family": "Verga",
+        "given": "Pat"
+      },
+      {
+        "family": "Hofstatter",
+        "given": "Sebastian"
+      },
+      {
+        "family": "Althammer",
+        "given": "Sophia"
+      },
+      {
+        "family": "Su",
+        "given": "Yixuan"
+      },
+      {
+        "family": "Piktus",
+        "given": "Aleksandra"
+      },
+      {
+        "family": "Arkhangorodsky",
+        "given": "Arkady"
+      },
+      {
+        "family": "Xu",
+        "given": "Minjie"
+      },
+      {
+        "family": "White",
+        "given": "Naomi"
+      },
+      {
+        "family": "Lewis",
+        "given": "Patrick"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2024
+        ]
+      ]
+    },
+    "id": "verga2024replacing"
   },
   {
     "type": "article",
@@ -334,45 +733,184 @@
     "id": "lu2024scientist"
   },
   {
-    "type": "article-journal",
-    "title": "Atypical Combinations and Scientific Impact",
-    "container-title": "Science",
-    "container-title-short": "Science",
-    "volume": "342",
-    "issue": "6157",
-    "page": "468-472",
-    "DOI": "10.1126/science.1240474",
-    "URL": "http://dx.doi.org/10.1126/science.1240474",
-    "publisher": "American Association for the Advancement of Science (AAAS)",
-    "ISSN": "0036-8075",
-    "language": "en",
+    "type": "article",
+    "title": "The AI Scientist-v2: Workshop-Level Automated Scientific Discovery via Agentic Tree Search",
+    "DOI": "10.48550/ARXIV.2504.08066",
+    "URL": "https://arxiv.org/abs/2504.08066",
+    "publisher": "arXiv",
     "author": [
       {
-        "family": "Uzzi",
-        "given": "Brian"
+        "family": "Yamada",
+        "given": "Yutaro"
       },
       {
-        "family": "Mukherjee",
-        "given": "Satyam"
+        "family": "Lange",
+        "given": "Robert Tjarko"
       },
       {
-        "family": "Stringer",
-        "given": "Michael"
+        "family": "Lu",
+        "given": "Cong"
       },
       {
-        "family": "Jones",
-        "given": "Ben"
+        "family": "Hu",
+        "given": "Shengran"
+      },
+      {
+        "family": "Lu",
+        "given": "Chris"
+      },
+      {
+        "family": "Foerster",
+        "given": "Jakob"
+      },
+      {
+        "family": "Clune",
+        "given": "Jeff"
+      },
+      {
+        "family": "Ha",
+        "given": "David"
       }
     ],
     "issued": {
       "date-parts": [
         [
-          2013,
-          10,
-          25
+          2025
         ]
       ]
     },
-    "id": "uzzi2013atypical"
+    "id": "yamada2025scientistv2"
+  },
+  {
+    "type": "article-journal",
+    "title": "Fabrication and errors in the bibliographic citations generated by ChatGPT",
+    "container-title": "Scientific Reports",
+    "container-title-short": "Sci Rep",
+    "volume": "13",
+    "issue": "1",
+    "DOI": "10.1038/s41598-023-41032-5",
+    "URL": "http://dx.doi.org/10.1038/s41598-023-41032-5",
+    "publisher": "Springer Science and Business Media LLC",
+    "ISSN": "2045-2322",
+    "language": "en",
+    "author": [
+      {
+        "family": "Walters",
+        "given": "William H."
+      },
+      {
+        "family": "Wilder",
+        "given": "Esther Isabelle"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2023,
+          9,
+          7
+        ]
+      ]
+    },
+    "id": "walters2023fabrication"
+  },
+  {
+    "type": "article-journal",
+    "title": "Detecting Citation Hallucinations in Large Language Model Outputs (Student Abstract)",
+    "container-title": "Proceedings of the AAAI Conference on Artificial Intelligence",
+    "container-title-short": "AAAI",
+    "volume": "40",
+    "issue": "48",
+    "page": "41325-41327",
+    "DOI": "10.1609/aaai.v40i48.42257",
+    "URL": "http://dx.doi.org/10.1609/aaai.v40i48.42257",
+    "publisher": "Association for the Advancement of Artificial Intelligence (AAAI)",
+    "ISSN": "2374-3468",
+    "author": [
+      {
+        "family": "Misra",
+        "given": "Nipun"
+      },
+      {
+        "family": "Udandarao",
+        "given": "Vikranth"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2026,
+          3,
+          14
+        ]
+      ]
+    },
+    "id": "misra2026detecting"
+  },
+  {
+    "type": "article-journal",
+    "title": "Exploring design decisions for mutation testing",
+    "container-title": "Illinois Digital Environment for Access to Learning and Scholarship (University of Illinois at Urbana-Champaign)",
+    "URL": "https://openalex.org/W3094413649",
+    "author": [
+      {
+        "family": "Hariri",
+        "given": "Farah"
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2018
+        ]
+      ]
+    },
+    "id": "hariri2018exploring"
+  },
+  {
+    "type": "paper-conference",
+    "title": "Analyzing the effectiveness of One-Op Mutation against the minimal set of mutants",
+    "container-title": "Proceedings of the IV Brazilian Symposium on Systematic and Automated Software Testing",
+    "page": "22-31",
+    "DOI": "10.1145/3356317.3356321",
+    "URL": "http://dx.doi.org/10.1145/3356317.3356321",
+    "publisher": "ACM",
+    "author": [
+      {
+        "family": "Andrade",
+        "given": "Stevão A."
+      },
+      {
+        "family": "Brito",
+        "given": "Claudinei",
+        "suffix": "Junior"
+      },
+      {
+        "family": "Júnior",
+        "given": "Misael"
+      },
+      {
+        "family": "Marciel",
+        "given": "Ana Claudia"
+      },
+      {
+        "family": "Abdalla",
+        "given": "Gabriel"
+      },
+      {
+        "family": "Delamaro",
+        "given": "Márcio E."
+      }
+    ],
+    "issued": {
+      "date-parts": [
+        [
+          2019,
+          9,
+          23
+        ]
+      ]
+    },
+    "id": "andrade2019analyzing"
   }
 ]

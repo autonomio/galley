@@ -45,6 +45,15 @@ function series(steps: number) {
 }
 
 describe('simulation engine', () => {
+  it('writes the shares of one run at one precision, so a breakdown never sets 7.3% beside 3.64%', () => {
+    const r = run({ ...base, id: 'P1', method: 'monte_carlo', draws: 50000, inputs: [{ name: 'u', dist: 'uniform(0, 1)' }], outputs: ['u'], events: [{ name: 'a', when: 'u < 0.073' }, { name: 'b', when: 'u < 0.0364' }, { name: 'rare', when: 'u < 0.0005' }] })
+    const values = placeholders(r)
+    expect(values['sim.P1.a.p']).toMatch(/^\d+\.\d%$/)
+    expect(values['sim.P1.b.p']).toMatch(/^\d+\.\d%$/)
+    // A share below 1% keeps the digits its own error supports.
+    expect(values['sim.P1.rare.p']).toMatch(/^0\.0\d+%$/)
+  })
+
   it('draws known distributions: means and quantiles fall within their Monte Carlo error', () => {
     for (const [name, [, mean]] of Object.entries(EXACT_MEANS)) within(known.outputs[name].mean, mean, known.outputs[name].mcse.mean)
     const n = known.outputs.n

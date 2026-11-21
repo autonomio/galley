@@ -124,6 +124,8 @@ async function scan(paper: Paper, behaviors: Behavior[], options: RunOptions, lo
   for (;;) {
     // What a person changed in the editor is state like any other: the next behavior sees it.
     sync()
+    // So is a change of model families in the project's settings: the next call goes to the seats dealt for them.
+    paper.refreshFamilies()
     let progressed = false
     for (const behavior of behaviors) {
       if (paper.config.off.includes(behavior.id)) continue

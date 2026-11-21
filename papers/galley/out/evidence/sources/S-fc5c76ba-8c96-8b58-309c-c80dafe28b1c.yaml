@@ -1,0 +1,8 @@
+id: "S-fc5c76ba-8c96-8b58-309c-c80dafe28b1c"
+kind: "publication"
+title: "Beyond the Chat: Executable and Verifiable Text-Editing with LLMs"
+uri: "https://doi.org/10.1145/3654777.3676419"
+date: "2024"
+locator: "abstract"
+excerpt: "To give the author more control when editing with an LLM, we present InkSync, an editing interface that suggests executable edits directly within the document being edited. Because LLMs are known to introduce factual errors, Inksync also supports a 3-stage approach to mitigate this risk: Warn authors when a suggested edit introduces new information, help authors Verify the new information’s accuracy through external search, and allow a third party to Audit with a-posteriori verification via a trace of all auto-generated content."
+access: "inspected"

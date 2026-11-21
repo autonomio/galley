@@ -1,0 +1,8 @@
+id: "S-5045e4d0-da65-20f6-0476-a890284acd75"
+kind: "reasoning"
+title: "Argument plan of the manuscript"
+uri: null
+date: "2026-11-19"
+locator: "C29"
+excerpt: "Prior multi-agent scholarly systems assign drafting, reviewing and verifying roles through prompts, and do not state a rule that the model doing the evaluation must come from a different model family than the model that produced the work."
+access: "inspected"

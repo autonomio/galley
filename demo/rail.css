@@ -1,0 +1,76 @@
+/* Every paper beside the page (rail.ts), in the editor's pane before the
+   text. Inside the editor, so it reads its tokens and follows its theme. */
+.pr { display: flex; flex: 1 1 auto; flex-direction: column; width: 292px; min-height: 0; transition: width var(--galley-dur-flow) var(--galley-ease-flow); }
+.pr-head { display: flex; flex: none; align-items: center; gap: var(--galley-sp-2); min-height: calc(var(--galley-sp-unit) * 11); padding: 0 var(--galley-sp-2) 0 var(--galley-sp-4); }
+.pr-title { color: var(--galley-text); font-size: var(--galley-fs-ui); font-weight: var(--galley-fw-strong); }
+.pr-count { flex: 1; min-width: 0; overflow: hidden; color: var(--galley-text-muted); font-size: var(--galley-fs-micro); text-overflow: ellipsis; white-space: nowrap; }
+.pr-list { display: grid; flex: 1 1 auto; align-content: start; gap: 2px; min-height: 0; margin: 0; padding: 0 var(--galley-sp-2) var(--galley-sp-6); overflow: auto; list-style: none; }
+
+/* A paper: the whole entry opens it. */
+.pr-entry { position: relative; display: block; padding: var(--galley-sp-2) var(--galley-sp-2) var(--galley-sp-2) var(--galley-sp-3); border-radius: var(--galley-r-card); color: inherit; text-decoration: none; transition: background var(--galley-dur-feedback) ease-out; }
+.pr-entry[href]:hover { background: var(--galley-row-hover); }
+.pr-entry:focus-visible { outline: var(--galley-line-focus) solid var(--galley-accent); outline-offset: calc(var(--galley-line-focus) * -1); }
+/* The open paper: marked, and its edge in the colour of the page it is beside. */
+.pr-item.is-current .pr-entry { background: var(--galley-accent-tint); }
+.pr-item.is-current .pr-entry::before { content: ""; position: absolute; top: var(--galley-sp-2); bottom: var(--galley-sp-2); left: 0; width: 2px; border-radius: 1px; background: var(--galley-accent); }
+
+.pr-body { display: grid; gap: 5px; min-width: 0; }
+.pr-name { display: grid; grid-template-columns: 7px minmax(0, 1fr); align-items: baseline; gap: var(--galley-sp-2); }
+.pr-name-text { display: -webkit-box; overflow: hidden; color: var(--galley-text-strong); font-size: var(--galley-fs-row); font-weight: var(--galley-fw-strong); line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.pr-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--galley-text-muted); translate: 0 -1px; }
+[data-state="running"] .pr-dot { background: var(--galley-done); animation: lv-live 2.4s ease-in-out infinite; }
+[data-state="ready"] .pr-dot { background: var(--galley-done); }
+[data-state="waiting"] .pr-dot { background: var(--galley-attention); }
+
+/* Everything under the name lines up after the dot. */
+.pr-track, .pr-meta, .pr-far, .pr-now, .pr-quiet { margin-left: 15px; }
+.pr-track { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; margin-top: 2px; }
+.pr-track i { height: 3px; border-radius: 2px; background: var(--galley-line); }
+.pr-track i[data-step="done"] { background: color-mix(in srgb, var(--galley-text-muted) 75%, transparent); }
+.pr-track i[data-step="now"] { background: var(--galley-done); }
+[data-state="waiting"] .pr-track i[data-step="now"] { background: var(--galley-attention); }
+[data-state="stopped"] .pr-track i[data-step="now"] { background: var(--galley-edge); }
+[data-state="ready"] .pr-track i { background: var(--galley-done); }
+.pr-meta { display: flex; justify-content: space-between; gap: var(--galley-sp-2); color: var(--galley-text-soft); font-size: var(--galley-fs-micro); }
+.pr-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-ago { flex: none; color: var(--galley-text-muted); font-variant-numeric: tabular-nums; }
+.pr-far { color: var(--galley-text-muted); font-size: var(--galley-fs-micro); }
+.pr-far:empty, .pr-quiet:empty, .pr-now:empty { display: none; }
+
+/* Who is at work: seats doing the same thing on one line, their faces together. */
+.pr-now { display: grid; gap: 4px; margin-top: 2px; }
+.pr-work { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 6px; font-size: var(--galley-fs-micro); line-height: 1.4; }
+.pr-faces { display: inline-flex; padding-left: 5px; }
+.pr-faces .lv-face { width: 18px; height: 18px; margin-left: -5px; font-size: 8px; box-shadow: inset 0 0 0 1.5px var(--c), 0 0 0 2px var(--galley-canvas); animation: lv-breathe-cut 2.4s ease-in-out infinite; }
+.pr-item.is-current .pr-faces .lv-face { box-shadow: inset 0 0 0 1.5px var(--c), 0 0 0 2px var(--galley-surface); }
+.pr-doing { display: -webkit-box; overflow: hidden; padding-top: 1px; color: var(--galley-text-soft); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.pr-doing b { color: var(--galley-text); font-weight: var(--galley-fw-strong); }
+.pr-work time { padding-top: 1px; color: var(--galley-text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pr-quiet { color: var(--galley-text-muted); font-size: var(--galley-fs-micro); }
+
+/* Folded: a ring a paper, in the colour of where it stands, breathing while it is written. */
+.pr-ring { display: none; place-items: center; width: 32px; height: 32px; margin: 0 auto; border-radius: 50%; color: var(--galley-text-soft); font: 600 11px/1 var(--galley-font-ui); letter-spacing: 0.02em; box-shadow: inset 0 0 0 2px var(--galley-edge); }
+[data-state="running"] .pr-ring { --c: var(--galley-done); box-shadow: inset 0 0 0 2px var(--c); animation: lv-breathe 2.4s ease-in-out infinite; }
+[data-state="ready"] .pr-ring { box-shadow: inset 0 0 0 2px var(--galley-done); color: var(--galley-done); }
+[data-state="waiting"] .pr-ring { box-shadow: inset 0 0 0 2px var(--galley-attention); }
+.pr.is-folded { width: 56px; }
+.pr.is-folded .pr-head { justify-content: center; padding: 0; }
+.pr.is-folded :is(.pr-title, .pr-count, .pr-body) { display: none; }
+.pr.is-folded .pr-list { padding: 0 var(--galley-sp-1); }
+.pr.is-folded .pr-entry { padding: var(--galley-sp-2) 0; }
+.pr.is-folded .pr-ring { display: grid; }
+.pr.is-folded .pr-item.is-current .pr-entry::before { left: 2px; }
+
+/* A narrow screen keeps the text's room: the rail is folded whatever was chosen. */
+@media (max-width: 1000px) {
+  .pr { width: 56px; }
+  .pr-head { justify-content: center; padding: 0; }
+  .pr :is(.pr-title, .pr-count, .pr-body, .pr-fold) { display: none; }
+  .pr-list { padding: var(--galley-sp-2) var(--galley-sp-1); }
+  .pr-entry { padding: var(--galley-sp-2) 0; }
+  .pr-ring { display: grid; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pr-dot, .pr-ring, .pr-faces .lv-face { animation: none !important; }
+  .pr { transition: none; }
+}

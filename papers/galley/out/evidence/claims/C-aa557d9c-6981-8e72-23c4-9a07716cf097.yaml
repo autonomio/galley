@@ -1,6 +1,0 @@
-id: "C-aa557d9c-6981-8e72-23c4-9a07716cf097"
-class: "derived_inference"
-statement: "From a text seed alone, galley produces a complete manuscript package: a PDF, a line-numbered review PDF, LaTeX, Word, the editor document, an evidence package and a sign-off sheet."
-uncertainty: "medium"
-evidence_ids: ["E-77c222df-9fee-effa-62a7-b32bdf112e7f"]
-state: "active"

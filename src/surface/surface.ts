@@ -20,6 +20,7 @@ import {
   tableDelimTextFor,
 } from '../markdown/syntax.js'
 import { tableCellSpans } from '../core/tables.js'
+import { lineHunks } from '../core/diff.js'
 import { HISTORY_BYTE_BUDGET, HISTORY_LIMIT, trimHistoryStacks, type HistoryEntry } from '../core/history.js'
 import { snapshotOf, locateLine, type TextSnapshot } from '../core/text.js'
 import {
@@ -89,6 +90,23 @@ export interface SurfaceHistory {
   import(state: { undo: HistoryEntry[], redo: HistoryEntry[] }): void
 }
 
+/** What `patchText` changed, for a host that shows the change as it happens. */
+export interface TextPatch {
+  /** False when the text was already this; nothing was touched. */
+  changed: boolean
+  /** Lines that are new, and where they are now. */
+  inserted: { line: HTMLElement, index: number }[]
+  /** Lines redrawn with new text, where they are now, and (when measured) how tall they were. */
+  revised: { line: HTMLElement, index: number, height: number }[]
+  /**
+   * Runs of lines that are gone: their elements as they were, where they stood
+   * and how much room they took (when measured), and the line now in their place.
+   */
+  removed: { lines: HTMLElement[], index: number, top: number, height: number, next: HTMLElement | null }[]
+  /** Where a line before the patch is now: its own new index, or for a line that is gone, the index of the line in its place. */
+  map(line: number): number
+}
+
 export interface Surface {
   readonly element: HTMLElement
   readonly history: SurfaceHistory
@@ -96,6 +114,13 @@ export interface Surface {
   getText(): string
   /** Replace the document. Not an edit: no change is reported, history is kept. */
   setText(text: string): void
+  /**
+   * Replace the document by changing only the lines that differ: unchanged
+   * lines keep their elements (and the caret, and what is drawn over them).
+   * Not an edit, like setText. `measure` records the room changed and removed
+   * lines took, for animating the change.
+   */
+  patchText(text: string, measure?: boolean): TextPatch
   lines(): HTMLElement[]
   snapshot(): TextSnapshot
   /** A DOM Range over [start, end) in snapshot coordinates. */
@@ -172,6 +197,92 @@ export function createSurface(docEl: HTMLElement, options: SurfaceOptions = {}):
     for (let i = 0; i < lines.length; i++) docEl.appendChild(buildLineEl(lines[i], kinds[i]))
     applyTableLayout(docEl)
     updateEmptyState()
+  }
+
+  // Text from elsewhere, as the smallest change to the page. A line that did
+  // not change keeps its element, and with it the caret, the marks drawn over
+  // it and the reader's place; a changed line is redrawn in place; only new
+  // lines are made. Rebuilding every line instead made the whole page flash
+  // on each arrival and lost the scroll anchor.
+  function patchText(text: string, measure = false): TextPatch {
+    const next = text === '' ? [''] : text.split('\n')
+    const old = Array.from(docEl.children) as HTMLElement[]
+    const hunks = lineHunks(old.map((line) => line.textContent || ''), next)
+    if (!hunks.length) return { changed: false, inserted: [], revised: [], removed: [], map: (line) => line }
+    const caret = document.activeElement === docEl ? caretSourcePosition() : null
+    const caretEl = caret ? old[caret.line] ?? null : null
+    const map = new Int32Array(old.length)
+    const els: (HTMLElement | null)[] = new Array(next.length).fill(null)
+    const revised: TextPatch['revised'] = []
+    const removed: TextPatch['removed'] = []
+    let i = 0
+    let j = 0
+    const keep = (until: number) => { while (i < until) { els[j] = old[i]; map[i++] = j++ } }
+    for (const h of hunks) {
+      keep(h.a)
+      // Lines changed one for one are redrawn in place; the rest are new or gone.
+      const common = Math.min(h.aEnd - h.a, h.bEnd - h.b)
+      for (let k = 0; k < common; k++) {
+        revised.push({ line: old[i], index: j, height: measure ? old[i].offsetHeight : 0 })
+        els[j] = old[i]
+        map[i++] = j++
+      }
+      if (i < h.aEnd) {
+        const lines = old.slice(i, h.aEnd)
+        let top = 0
+        let height = 0
+        if (measure) {
+          const last = lines[lines.length - 1]
+          const after = old[h.aEnd]
+          top = lines[0].offsetTop
+          height = (after ? after.offsetTop : last.offsetTop + last.offsetHeight) - top
+        }
+        removed.push({ lines, index: j, top, height, next: null })
+        while (i < h.aEnd) map[i++] = j
+      }
+      j = h.bEnd
+    }
+    keep(old.length)
+
+    const caretLine = caret ? Math.min(map[caret.line], next.length - 1) : -1
+    const kinds = classifyLines(next, caretLine)
+    const redrawn = new Set(revised.map((r) => r.line))
+    const inserted: TextPatch['inserted'] = []
+    for (let k = 0; k < next.length; k++) {
+      const reveal = k === caretLine
+      const line = els[k]
+      if (!line) {
+        const fresh = buildLineEl(next[k], kinds[k], reveal)
+        els[k] = fresh
+        inserted.push({ line: fresh, index: k })
+      } else if (redrawn.has(line)) {
+        adoptLine(line, buildLineEl(next[k], kinds[k], reveal))
+      } else if (!lineMatchesModel(line, kinds[k], reveal)) {
+        // A kept line whose kind changed with its neighbours (a fence opened above it).
+        rebuildLineInPlace(line, kinds[k], reveal)
+      }
+    }
+    for (const run of removed) for (const line of run.lines) line.remove()
+    for (let k = 0; k < next.length; k++) {
+      const at = docEl.children[k]
+      if (at !== els[k]) docEl.insertBefore(els[k]!, at ?? null)
+    }
+    while (docEl.children.length > next.length) docEl.lastElementChild!.remove()
+    for (const run of removed) run.next = els[run.index] ?? null
+    applyTableLayout(docEl)
+    updateEmptyState()
+    // A caret on a line that was redrawn or removed goes back to that line's place.
+    if (caret && caretEl && (redrawn.has(caretEl) || !caretEl.isConnected)) {
+      const line = docEl.children[caretLine] as HTMLElement | undefined
+      if (line) setCursorOffsetInLine(line, Math.min(caret.offset, (line.textContent || '').length))
+    }
+    return {
+      changed: true,
+      inserted,
+      revised,
+      removed,
+      map: (line) => (line >= 0 && line < map.length ? Math.min(map[line], next.length - 1) : Math.max(0, Math.min(line, next.length - 1))),
+    }
   }
 
   // textContent transparently strips the <br> filler from empty lines,
@@ -1311,6 +1422,7 @@ export function createSurface(docEl: HTMLElement, options: SurfaceOptions = {}):
     },
     getText: serializeDoc,
     setText: loadIntoEditor,
+    patchText,
     lines: () => Array.from(docEl.children) as HTMLElement[],
     snapshot,
     domRange,

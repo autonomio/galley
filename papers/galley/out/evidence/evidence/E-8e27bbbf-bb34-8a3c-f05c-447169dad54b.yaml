@@ -1,8 +1,8 @@
 id: "E-8e27bbbf-bb34-8a3c-f05c-447169dad54b"
 kind: "external"
-summary: "narrower: The passage states that writers use hedging devices to qualify their commitment and lessen the impact of their claims, but it does not mention matching claims to evidence."
-source_ids: ["S-edda4783-9113-d632-e290-29bfb9af2608"]
+summary: "narrower: The passage shows that citation-attributed claims in LLM-generated literature reviews frequently contain fabricated or erroneous claims when evaluated against their cited sources, supporting misattributed citations, but it does not establish fabricated citations themselves or address what the literature stresses about claim-level verification, traceable evidence, and human accountability."
+source_ids: ["S-920b89e8-71dc-a040-38c4-f79802eddeac"]
 independent: false
 limitations: ["Verified against the abstract; the full text was not inspected."]
 premise_claim_ids: []
-claim_ids: ["C-4a52c88f-f4b6-4854-f891-27f13c9d882d"]
+claim_ids: ["C-0baf7f3b-0d8d-5b6f-1f1c-5e019a23b548"]
