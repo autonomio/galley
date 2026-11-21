@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { personNames } from './text.js'
 import type { Work } from './types.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -126,7 +127,7 @@ export function workFromHit(hit: SearchHit): Work {
     id: hit.id,
     doi: hit.doi ? hit.doi.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '').toLowerCase() : null,
     title: hit.title,
-    authors: hit.authors.filter(Boolean),
+    authors: personNames(hit.authors.filter(Boolean)),
     year: hit.year,
     venue: hit.venue,
     abstract: hit.abstract,
@@ -226,7 +227,7 @@ export async function completeByTitle(work: Work, replace = false): Promise<bool
       .sort((a, b) => (b.doi ? 1 : 0) - (a.doi ? 1 : 0) || (b.cited_by_count ?? 0) - (a.cited_by_count ?? 0) || near(a) - near(b))[0]
     if (!same) return false
     work.doi = same.doi ? same.doi.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '').toLowerCase() : null
-    const authors = (same.authorships ?? []).map((a) => a.author?.display_name ?? '').filter(Boolean)
+    const authors = personNames((same.authorships ?? []).map((a) => a.author?.display_name ?? '').filter(Boolean))
     if (authors.length) work.authors = authors
     // A web document's issuer and date give way to the publication's own record.
     work.year = replace ? same.publication_year ?? work.year : work.year ?? same.publication_year ?? null
@@ -343,10 +344,16 @@ const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"'
 
 /** Registries sometimes ship HTML entities inside titles ("Scientometrics &amp; Informetrics"). */
 function decodeEntities(text: string): string {
+  // A registry can encode an entity twice ("I&amp;amp;CPS"): it is decoded until nothing is left to decode.
+  for (let pass = 0; pass < 3; pass++) {
+    const next = text
+      .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
+      .replace(/&#x([0-9a-f]+);/gi, (_, n: string) => String.fromCodePoint(parseInt(n, 16)))
+      .replace(/&([a-z]+);/gi, (whole, name: string) => ENTITIES[name.toLowerCase()] ?? whole)
+    if (next === text) break
+    text = next
+  }
   return text
-    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, n: string) => String.fromCodePoint(parseInt(n, 16)))
-    .replace(/&([a-z]+);/gi, (whole, name: string) => ENTITIES[name.toLowerCase()] ?? whole)
 }
 
 /** TeX a title carries: Greek letters, relations and operators by name, as the characters they print. */
@@ -498,7 +505,7 @@ export function cslFromWork(work: Work): Record<string, unknown> {
   return {
     type: work.kind ?? 'article-journal',
     title: work.title,
-    author: work.authors.map((name) => {
+    author: personNames(work.authors).map((name) => {
       const parts = name.trim().split(/\s+/)
       return parts.length > 1 ? { family: parts.pop(), given: parts.join(' ') } : { literal: name }
     }),

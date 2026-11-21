@@ -111,7 +111,7 @@ function disclosure(paper: Paper, record: Record_, table = 1): string {
   const fromWeb = web ? ` Where the scholarly index had no source for a claim, GPT-6.2 Sol searched the web for the primary document (the issuer's own rules, standards, specifications or reports); galley fetched and kept a copy of ${web === 1 ? 'the one document cited' : `each of the ${web} documents cited`}, and every citation of ${web === 1 ? 'it' : 'one'} was verified against its passage like any other.` : ''
   const sims = runsOf(paper)
   const simulated = sims.length ? ` The Monte Carlo simulation${sims.length > 1 ? 's' : ''} (${sims.map((r) => `${r.id}, ${methodWords(r.result.method)} with ${sizeOf(r.result)}, seed ${r.result.provenance.seed}`).join('; ')}) ran on ${theAuthors(paper, true)} machine with galley's simulation engine, from a specification ${FAMILY_NAMES[seats.author]} wrote; every simulated number in the text is filled in from that run at the precision its Monte Carlo error supports, and the evidence package holds each specification with its results, so every number can be reproduced.` : ''
-  const review = lit ? ` The systematic review ${paper.config.literatureReview === 'load-bearing' ? 'this paper reports' : 'reported in its own section'} was carried out with Canary: ${modelName(lit.models?.research)} planned the search of OpenAlex, screened the candidates, read the full texts and quoted the passages behind each finding, and ${modelName(lit.models?.audit)} audited every finding against those passages; the review's citations rest on them.` : ''
+  const review = lit ? ` The literature review ${paper.config.literatureReview === 'load-bearing' ? 'this paper reports' : 'reported in its own section'} was carried out with Canary: ${modelName(lit.models?.research)} planned the search of OpenAlex, screened the candidates, read the full texts and quoted the passages behind each finding, and ${modelName(lit.models?.audit)} audited every finding against those passages; the review's citations rest on them.` : ''
   // A paper built on a world model says so, and whether it searched anything else.
   const wm = paper.config.worldModel
   const sources = wm
@@ -407,6 +407,30 @@ export function titleCased(title: string): string {
   }).join('')
 }
 
+/** Prose never prints as code: a paragraph an edit left starting with spaces starts at the margin; a fenced block keeps its own. */
+export function unindent(text: string): string {
+  let fenced = false
+  const lines = text.split('\n')
+  return lines.map((line, i) => {
+    if (/^\s*(```|~~~)/.test(line)) { fenced = !fenced; return line }
+    if (fenced) return line
+    if (!line.trim()) return ''
+    const opens = i === 0 || !lines[i - 1].trim()
+    return opens && /^( {4,}|\t)/.test(line) && !/^\s*([-*+]|\d+[.)])\s/.test(line) ? line.trimStart() : line
+  }).join('\n')
+}
+
+/**
+ * A citation written by hand as a link to its reference ("[Lundstrom et al. 2018](#ref-lundstrom2018fast)") prints as
+ * the citation it names when the paper lists that work, and as its words when it does not: never as a link to a label
+ * the typeset paper does not have.
+ */
+export function handLinks(text: string, known: Set<string>): string {
+  return text
+    .replace(/\(\s*\[([^\]]+)\]\(#ref-([^)\s]+)\)\s*\)/g, (_m, words: string, key: string) => known.has(key) ? `[@${key}]` : `(${words})`)
+    .replace(/\[([^\]]+)\]\(#ref-([^)\s]+)\)/g, (_m, words: string, key: string) => known.has(key) ? `@${key}` : words)
+}
+
 export async function buildManuscript(paper: Paper): Promise<{ markdown: string; refs: Record<string, unknown>[]; record: Record_ }> {
   const s = paper.state
   const record = productionRecord(paper)
@@ -441,7 +465,7 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   for (const [i, section] of sections.entries()) {
     const filled = fillPlaceholders(numbered[i], record)
     unknown.push(...filled.unknown)
-    body.push(`# ${section.title}\n\n${splitWideEquations(conventions(filled.text))}`)
+    body.push(`# ${section.title}\n\n${splitWideEquations(conventions(unindent(filled.text)))}`)
     for (const fig of s.figures.filter((f) => f.sectionId === section.id && f.status === 'rendered' && f.file)) {
       // A caption can state a measured or simulated number, so it is filled like the text it sits in.
       body.push(`![${conventions(fillPlaceholders(fig.caption, record).text).replace(/\n/g, ' ')}](${fig.file}){#fig-${fig.id} width=95%}`)
@@ -476,7 +500,7 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   body.push('# References {.unnumbered}\n\n::: {#refs}\n:::')
   if (unknown.length) paper.note('typeset', `Unknown placeholders left as "[not recorded]": ${[...new Set(unknown)].join(', ')}`)
   const printed = printedQuotes(fitTables(body.join('\n\n')))
-  return { markdown: `${head}\n\n${escapeUnknownCitations(cited(printed), known)}\n`, refs, record }
+  return { markdown: `${head}\n\n${escapeUnknownCitations(handLinks(cited(printed), known), known)}\n`, refs, record }
 }
 
 // ---------------------------------------------------------------- editor document and notes

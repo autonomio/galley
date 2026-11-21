@@ -32,7 +32,7 @@ export const methodWords = (method: string) => METHOD_WORDS[method] ?? method
 export function simulationsBlock(paper: Paper): string {
   const runs = runsOf(paper)
   if (!runs.length) return ''
-  return `SIMULATIONS run on the authors' machine with galley's Monte Carlo engine. A simulated number appears in the text only as its placeholder, such as {{sim.S1.profit.p95}}, filled in when the paper is typeset; never write it as a figure. Wherever a result is used, say what the simulation assumes.
+  return `SIMULATIONS run on the authors' machine with galley's Monte Carlo engine. A simulated number appears in the text only as its placeholder, such as {{sim.S1.profit.p95}}, filled in when the paper is typeset; never write it as a figure. Wherever a result is used, say what the simulation assumes. The paper states each simulation's model as it is specified below (its inputs with their distributions and the basis of each, its formulas, its events), so a reader can repeat the run as code; what the specification states is stated as the model, never as something a record does or does not show.
 ${runs.map((run) => {
   const r = run.result
   const failed = r.provenance.checks.filter((c) => !c.ok)

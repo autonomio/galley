@@ -349,7 +349,9 @@ export function reviewAppendix(paper: Paper, cite: (workId: string) => string, f
   try { if (lit.bundle && existsSync(paper.path(lit.bundle))) bundle = JSON.parse(readFileSync(paper.path(lit.bundle), 'utf8')) } catch { /* the reasons stand as they were kept */ }
   const rows = [...included].sort((a, b) => order(a.role) - order(b.role)).map((i) => `| ${cite(i.workId)} | ${i.role} | ${cell(readableReason(i.reason, i.workId, bundle)) || '—'} |`)
   return [
-    `The systematic review reported in this paper was carried out with Canary, searched on ${lit.searchedOn}. This appendix gives its protocol, how its records were narrowed, every query it ran and every publication it included, so that it can be checked and repeated.`,
+    // What the review is, plainly: it screens the records that cover most of its question, so it is not a systematic
+    // review in the formal sense, however much the paper rests on it.
+    `The literature review reported in this paper searched OpenAlex on ${lit.searchedOn}. It is a targeted review, not a systematic review in the formal sense: it screened the records that covered most of its question rather than every record its searches found${lit.stopping ? ', and stopped by the rule given below' : ''}. This appendix gives its protocol, how its records were narrowed, every query it ran and every publication it included, so that it can be checked and repeated.`,
     `**Question.** ${lit.question}`,
     `**Source.** OpenAlex: titles, abstracts and indexed full text, limited to publications with an open-access full text.`,
     `**Eligibility.** Core studies: ${lit.protocol.eligibility.core || 'as the question defines them'} Supporting studies: ${lit.protocol.eligibility.supporting || 'studies that inform the question'} Excluded: ${lit.protocol.eligibility.exclusion || 'studies outside the question'}`,

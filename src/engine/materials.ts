@@ -363,7 +363,7 @@ export function describeData(paper: Paper): string {
     return `| Column | n | Missing | Mean | SD | Median | P5 | P95 | P99 | Min | Max |\n|:-------------------|------:|------:|------:|-----:|------:|-----:|-----:|-----:|-----:|-----:|\n${lines.join('\n')}\n\n: ${m.id}: ${m.name}, ${rows.length.toLocaleString('en-US')} rows${shown}.`
   }).filter(Boolean)
   if (!tables.length) return ''
-  return `Each dataset as it was analysed, described by galley from the data itself: for every numeric column, the number of values, the missing values, the mean, the standard deviation, the median, the 5th, 95th and 99th percentiles, the minimum and the maximum. The percentiles interpolate linearly between order statistics, so they can differ slightly from quantiles the text computes another way.\n\n${tables.join('\n\n')}`
+  return `Each dataset as it was analysed, described from the data itself: for every numeric column, the number of values, the missing values, the mean, the standard deviation, the median, the 5th, 95th and 99th percentiles, the minimum and the maximum. The percentiles interpolate linearly between order statistics, so they can differ slightly from quantiles the text computes another way.\n\n${tables.join('\n\n')}`
 }
 
 // Separators from 10,000 on, so a year reads as 2015, not 2,015.

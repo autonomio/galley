@@ -15,7 +15,7 @@ import { fillPlaceholders, productionRecord, type Record_ } from '../record.js'
 import { contentHash, writeSignoff } from '../render.js'
 import type { Behavior } from '../scheduler.js'
 import { arr, enm, int, nstr, obj, str } from '../schema.js'
-import { applyExact, squash } from '../text.js'
+import { applyExact, citedKeys, squash } from '../text.js'
 import type { ProofDefect } from '../types.js'
 import { reviewDone } from './close.js'
 import { activeClaims, live, manuscriptBlock, noteForAuthors, seatFamily, sectionText, setClaim } from './common.js'
@@ -320,7 +320,7 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
               behavior: 'proof', target: `${hash}:${sectionId}`, seat: 'author', family: author,
               prompt: `${HOUSE}
 
-The typeset paper shows these defects in section ${section.id} ${section.title}. Fix each with exact edits to the section's source text below: old is copied character for character from it, and {{placeholders}} stay as they are where they belong. Change nothing else.
+The typeset paper shows these defects in section ${section.id} ${section.title}. Fix each with exact edits to the section's source text below: old is copied character for character from it, and {{placeholders}} stay as they are where they belong. A citation is written only as [@key], with a key the paper already cites; never as a link or as the words it prints as. How a reference prints (its authors, year or title) comes from its record, not from the prose: do not change a citation to fix it. Change nothing else.
 
 ${found.map((d, i) => `${i + 1}. "${d.quote}": ${d.problem} Fix: ${d.fix}`).join('\n')}
 
@@ -336,7 +336,12 @@ ${text}
               schema: obj({ edits: arr(obj({ old: str(), new: str() })) }),
             })
             let next = text
+            // A key the paper does not cite, or a citation written by hand as a link, is not an edit to make: it prints
+            // as a raw key or a broken link.
+            const keys = new Set(Object.values(s.passages).flatMap((p) => citedKeys(p.text)))
             for (const edit of answer.edits ?? []) {
+              const written = String(edit.new ?? '')
+              if (/\]\(#ref-/.test(written) || citedKeys(written).some((k) => !keys.has(k))) continue
               const changed = applyExact(next, edit)
               if (changed !== null) next = changed
             }

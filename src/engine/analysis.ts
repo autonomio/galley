@@ -246,9 +246,13 @@ export function formatNumber(x: number): string {
 /** A result as the paper states it: a share with its count and n, a number with its unit, each with its interval when it has one. */
 export function formatResult(r: AnalysisResult): { value: string; ci: string; summary: string } {
   const share = r.unit === 'share'
-  const show = (x: number) => share ? `${formatNumber(x * 100)}%` : `${formatNumber(x)}${r.unit && r.unit !== 'share' ? ` ${r.unit}` : ''}`
+  // A unit prints as a unit: a qualifier the code gave it ("ms (label)": milliseconds, as the column is labelled) goes
+  // with the method, not after every number.
+  const unit = r.unit && !share ? r.unit.replace(/\s*\([^)]*\)\s*$/, '').trim() : ''
+  const qualified = unit && unit !== r.unit ? `; unit: ${r.unit}` : ''
+  const show = (x: number) => share ? `${formatNumber(x * 100)}%` : `${formatNumber(x)}${unit ? ` ${unit}` : ''}`
   const value = share && r.count !== undefined && r.n !== undefined ? `${show(r.value)} (${formatNumber(r.count)} of ${formatNumber(r.n)})` : show(r.value)
   const ci = r.ci_low !== undefined && r.ci_high !== undefined ? `${Math.round((r.ci_level ?? 0.95) * 100)}% CI ${show(r.ci_low)} to ${show(r.ci_high)}` : ''
-  const summary = `${r.name}: ${value}${ci ? ` (${ci})` : ''}${r.n !== undefined && !share ? `, n = ${formatNumber(r.n)}` : ''}; ${r.method}`
+  const summary = `${r.name}: ${value}${ci ? ` (${ci})` : ''}${r.n !== undefined && !share ? `, n = ${formatNumber(r.n)}` : ''}; ${r.method}${qualified}`
   return { value, ci, summary }
 }
