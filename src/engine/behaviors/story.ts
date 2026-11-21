@@ -411,7 +411,7 @@ export const storyLead: Behavior = {
       behavior: 'story-lead', what: 'stating the main findings first and titling the paper', parts: [{ id: 'title', head: 'Title', text: titleOf(paper) }, ...partsOf(paper, false)],
       editable: new Set([first.id]),
       task: `Your task: the beginning and the title.
-- The paper's main findings come first. Rewrite the opening of the introduction ([${first.id}]) so that its first paragraph states what the paper finds, plainly and specifically, with the key numbers ({{placeholders}} where the paper states them so), before any background or definition. The rest of the introduction then takes the reader from the problem to how the paper reaches these findings; what the new opening displaces moves to where it fits, said once.
+- The paper's main findings come first. Rewrite the opening of the introduction ([${first.id}]) so that its first paragraph states what the paper finds, plainly and specifically, with the key numbers ({{placeholders}} where the paper states them so), before any background or definition. The reader meets this paragraph before any definition, so it says the findings in words a reader in the field already knows: a term the paper defines later appears in it only with the few words that say what it means. The rest of the introduction then takes the reader from the problem to how the paper reaches these findings; what the new opening displaces moves to where it fits, said once.
 - A main finding is a result the paper establishes, in the words and with the strength and the conditions its results section gives it: not a promise, a method or a list of sections.
 - ${own ? 'The authors set the title: return it as title, unchanged.' : `title: a reader in the field${field ? ` (${field})` : ''} understands it without reading the paper. It says what the paper finds or provides, in words the field already uses; a term the paper itself coins appears in it only where the title's own words make it clear. At most 15 words. Return the current title if it already does this.`}`,
       schema: { title: str() },
@@ -678,6 +678,7 @@ You are reading a finished paper in your field from its title to its last sectio
 - unnecessary complication: a sentence or passage that makes the reader work harder than its content needs (stacked qualifications, nested definitions, labels where names would do, a detour from the line of the argument);
 - incoherence: a passage that does not follow from the one before it, a term or symbol used before it is explained, a point made twice in different words, an order that makes the reader wait for what they need;
 - tension: the paper pulling two ways (a finding stated more strongly in one place than in another, a title or abstract that promises what the body does not deliver, a figure and the text that disagree, a caveat outside the Limitations section, a sentence on how the paper itself was made).
+The paper opens with its main findings by design, in its abstract and in the first paragraph of its introduction: that order is not a problem to report. Where the opening uses a term before the paper defines it, the fix explains the term in a few words where it stands.
 For each, give where (the id in brackets of the part), quote (copied exactly from it), problem, and fix (what it should say instead). Report what a careful reader in the field would want changed, and only that; if the paper reads cleanly, return no problems.
 
 THE PAPER:
@@ -691,7 +692,7 @@ ${block(parts, texts, record)}`,
         await tell(paper, {
           behavior: 'story-read', what: `cleaning up what a reader found on reading ${n}`, parts,
           editable: new Set(parts.map((p) => p.id).filter((id) => id !== 'title' || !titleIsTheAuthors(paper))),
-          task: `A reader in the field read the paper through and found these places harder to follow than they need to be. Clean each one up with exact edits, keeping the research as it is; where a fix would change what the paper claims, finds or cites, leave the place as it is.
+          task: `A reader in the field read the paper through and found these places harder to follow than they need to be. Clean each one up with exact edits, keeping the research as it is; where a fix would change what the paper claims, finds or cites, leave the place as it is. The paper opens with its main findings by design, in the abstract and the first paragraph of the introduction: keep them first, and where the opening uses a term before the paper defines it, explain the term in a few words where it stands rather than move the findings later.
 ${problems.map((p: any, i: number) => `${i + 1}. [${p.where}] "${p.quote}": ${p.problem} Fix: ${p.fix}`).join('\n')}`,
         })
       },

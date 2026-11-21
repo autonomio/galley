@@ -220,7 +220,7 @@ ${STYLE}
 
 The manuscript below has been through review, and its sections changed. Rewrite its frame so it states exactly what the manuscript now states.
 - title: keep the current title ("${frame.title}") unless it no longer fits the text. A reader in the field understands it without reading the paper: it says what the paper finds or provides, in words the field already uses, and a term the paper itself coins appears in it only where the title's own words make it clear. At most 15 words.
-- abstract: 150 to 250 words, one paragraph, no citations. Its opening sentences state the paper's main findings, plainly and with their key numbers; then the problem they answer, how they are supported, and what they open. State only what the manuscript states, plainly: no hedges, limitations or caveats (those are the Limitations section's), and no remark on how the work was produced or reviewed. ${FRAME_NUMBERS}
+- abstract: 150 to 250 words, one paragraph, no citations. Its opening sentences state the paper's main findings, plainly and with their key numbers, in words a reader in the field knows before reading the paper; then the problem they answer, how they are supported, and what they open. The current abstract below is for reference only: where it does not open with the findings, its opening is rewritten. State only what the manuscript states, plainly: no hedges, limitations or caveats (those are the Limitations section's), and no remark on how the work was produced or reviewed. ${FRAME_NUMBERS}
 - keywords: 5 to 7.
 
 ${placeholderGuide()}
