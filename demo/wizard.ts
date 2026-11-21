@@ -6,6 +6,8 @@ import type { EditorAction } from '../src/index.js'
 interface Seat { family: string; name: string; model: string }
 interface Context {
   openalexKey: boolean
+  /** The model families galley can use, with the model behind each. */
+  families?: Seat[]
   seats: Record<'author' | 'checker' | 'challenger' | 'verifier', Seat>
   referees: string[]
   defaults: { venue: string; words: number; rounds: number; dial: string; citations: string; literatureReview?: boolean; simulation?: boolean }
@@ -17,6 +19,33 @@ function seedReference(text: string): HTMLElement {
 }
 
 interface Item { name: string; kind: 'dataset' | 'document' | 'link'; url?: string; file?: File; detail: string; private: boolean }
+/** A dataset as its producers know it: one or more files under one name, with where the data comes from. */
+interface DatasetItem {
+  name: string; files: { file: File; detail: string }[]; producedBy: 'authors' | 'others'; doi: string; version: string; describedIn: string; licence: string; private: boolean
+  /** A dataset given by its link: the published record it comes from, what the record says, and its files as listed there. */
+  record?: string; creators?: string; remote?: { name: string; size: number }[]; recordState?: 'reading' | 'read' | 'failed'
+  /** A database: its connection (a saved name, or the line and where ClickHouse was found) and which database, with its size. */
+  db?: { connection?: string; line?: string; via?: string; host?: string; container?: string; url?: string; user?: string; database: string; summary: string }
+}
+/** A ClickHouse found from one connection line, with its databases. */
+interface FoundDatabase { via: string; label: string; url?: string; user?: string; host?: string; container?: string; version: string; databases: { name: string; tables: number; rows: number; bytes: number }[] }
+const size = (bytes: number) => bytes >= 2 ** 30 ? `${(bytes / 2 ** 30).toFixed(1)} GiB` : `${Math.max(1, Math.round(bytes / 2 ** 20))} MiB`
+const rowsText = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(1)} billion rows` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} million rows` : `${n.toLocaleString('en-US')} rows`
+const FAMILY_ORDER = ['claude', 'gpt', 'gemini']
+type SeatName = 'author' | 'checker' | 'challenger' | 'verifier'
+
+/** The seats for the families that are on, as the engine deals them: the author keeps its family if on, else the first on writes; checking seats never go to the author's family. */
+function dealSeats(context: Context | null, on: string[]): Record<SeatName, Seat | undefined> {
+  const base = context?.seats
+  const families = on.length ? FAMILY_ORDER.filter((f) => on.includes(f)) : FAMILY_ORDER
+  const info = (family: string) => context?.families?.find((f) => f.family === family) ?? Object.values(base ?? {}).find((s) => s.family === family)
+  const author = base && families.includes(base.author.family) ? base.author.family : families[0]
+  const away = (f?: string) => f && f !== author && families.includes(f) ? f : families.find((x) => x !== author)!
+  return { author: info(author), checker: info(away(base?.checker.family)), challenger: info(away(base?.challenger.family)), verifier: info(away(base?.verifier.family)) }
+}
+
+/** A link to a published dataset galley can read: a Zenodo record or its DOI. */
+const DATASET_RECORD = /zenodo\.org\/(api\/)?(records?|deposit|uploads)\/\d+|10\.5281\/zenodo\.\d+/i
 
 const STEPS = ['Seed', 'Materials', 'Settings', 'Start'] as const
 const DATASET = /\.(csv|tsv|json|xlsx)$/i
@@ -70,9 +99,19 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   const words = text.split(/\s+/).filter(Boolean).length
   const paragraphs = text.split(/\n\s*\n/).filter((p) => p.trim()).length
   const items: Item[] = []
+  const datasets: DatasetItem[] = []
+  // Connecting a database: what one line found, and the connections saved on the machine running galley.
+  let found: FoundDatabase[] | null = null
+  let finding: 'idle' | 'finding' | 'failed' = 'idle'
+  let findError = ''
+  let foundLine = ''
+  let allDatabases = false
+  let saved: { name: string; via: string; host?: string; url?: string; container?: string; database: string }[] | null = null
+  // A world model the paper's sources come from: a Resolvent repository as a zip, read once on the machine running galley.
+  let worldModel: { file: string; state: 'reading' | 'read' | 'failed'; error?: string; token?: string; name?: string; claims?: number; evidence?: number; sources?: number; only: boolean } | null = null
   let step = 0
   let context: Context | null = null
-  const settings = { author: '', affiliation: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, reviewRole: 'supporting', simulation: false, simulationRole: 'supporting' }
+  const settings = { author: '', affiliation: '', funding: '', competingInterests: '', acknowledgements: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, reviewRole: 'supporting', simulation: false, simulationRole: 'supporting', webSources: true, families: [...FAMILY_ORDER] }
 
   const dialog = h('dialog', { class: 'gw', 'aria-labelledby': 'gw-title' })
   const trail = h('ol', { class: 'gw-trail' })
@@ -123,10 +162,12 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   function materialsStep(): (Node | null)[] {
     const picker = h('input', { type: 'file', multiple: true, class: 'gw-file', 'aria-label': 'Choose files', accept: '.csv,.tsv,.json,.xlsx,.md,.txt,.tex,.docx,.odt,.html,.pdf' })
     picker.addEventListener('change', () => add([...(picker.files ?? [])]))
+    const folder = h('input', { type: 'file', multiple: true, class: 'gw-file', 'aria-label': 'Choose a folder', webkitdirectory: true })
+    folder.addEventListener('change', () => add([...(folder.files ?? [])]))
     const drop = h('label', { class: 'gw-drop' },
       picker,
       h('span', { class: 'gw-drop-main', text: 'Drop files here, or choose files' }),
-      h('span', { class: 'gw-drop-sub', text: 'Datasets: CSV, TSV, JSON · Documents: Markdown, text, Word, PDF' }))
+      h('span', { class: 'gw-drop-sub', text: 'Data files added together form one dataset (CSV, TSV, JSON, Excel), with any README among them · Documents: Markdown, text, Word, PDF' }))
     drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('is-over') })
     drop.addEventListener('dragleave', () => drop.classList.remove('is-over'))
     drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('is-over'); add([...(e.dataTransfer?.files ?? [])]) })
@@ -135,6 +176,8 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       const value = url.value.trim()
       if (!/^https?:\/\/\S+\.\S+/i.test(value)) { url.setCustomValidity('A full address, starting with http:// or https://'); url.reportValidity(); return }
       url.setCustomValidity('')
+      // A link to a published dataset is a dataset: galley reads its record for how to cite it and downloads its files.
+      if (DATASET_RECORD.test(value)) { void addRecord(value); return }
       items.push({ name: value, kind: 'link', url: value, detail: 'Read once, when the paper starts', private: false })
       render()
     }
@@ -145,15 +188,18 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
         h('span', { class: 'gw-row-main' }, h('span', { class: 'gw-mono gw-row-name', text: item.name }), h('span', { class: 'gw-row-detail', text: item.detail })),
         item.kind === 'dataset' ? segmented([['Private', true], ['Shared', false]], item.private, (v) => { item.private = v; render() }, `Who may read ${item.name}`) : h('span', { class: 'gw-row-kind', text: item.kind }),
         h('button', { type: 'button', class: 'gw-x', 'aria-label': `Remove ${item.name}`, text: '×', onclick: () => { items.splice(i, 1); render() } }))))
-      : h('p', { class: 'gw-empty', text: 'No materials. The paper will rest on your seed and the literature.' })
-    const privateSets = items.filter((i) => i.kind === 'dataset' && i.private).length
-    const sharedSets = items.filter((i) => i.kind === 'dataset' && !i.private).length
-    const read = items.filter((i) => i.kind !== 'dataset').length
+      : datasets.length || worldModel ? null : h('p', { class: 'gw-empty', text: 'No materials. The paper will rest on your seed and the literature.' })
+    const privateSets = datasets.filter((d) => d.private).length
+    const sharedSets = datasets.filter((d) => !d.private).length
+    const read = items.length
     return [
       h('h2', { id: 'gw-title', class: 'gw-title', text: 'What the paper draws on' }),
       h('p', { class: 'gw-lead', text: 'Besides the literature, a paper can rest on your own material: data, notes, drafts, pages.' }),
       drop,
-      h('div', { class: 'gw-linkrow' }, url, h('button', { type: 'button', class: 'gw-btn', text: 'Add link', onclick: addLink })),
+      h('div', { class: 'gw-linkrow' }, url, h('button', { type: 'button', class: 'gw-btn', text: 'Add link', onclick: addLink }), h('label', { class: 'gw-btn gw-folder' }, folder, 'Choose a folder')),
+      databaseRow(),
+      worldModelRow(),
+      ...datasets.map(datasetCard),
       list,
       privateSets ? h('p', { class: 'gw-note' }, h('strong', { text: 'Private datasets stay on this machine. ' }), 'The models see only a summary of each column and the results galley computes here, and every number the paper states about your data comes from those results.') : null,
       sharedSets ? h('p', { class: 'gw-note', text: 'Shared datasets: the models also read their first 15 rows.' }) : null,
@@ -161,31 +207,218 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
     ]
   }
 
-  async function add(files: File[]): Promise<void> {
+  /** One dataset: its name, its files, and where the data comes from, which decides how the paper may describe it. */
+  function datasetCard(d: DatasetItem, index: number): HTMLElement {
+    const text = (key: 'name' | 'doi' | 'version' | 'describedIn' | 'licence', label: string, placeholder = label) => {
+      const el = h('input', { class: 'gw-input', value: d[key], placeholder, 'aria-label': `${label}, ${d.name}` })
+      el.addEventListener('input', () => { d[key] = el.value })
+      return el
+    }
+    const more = h('input', { type: 'file', multiple: true, class: 'gw-file', 'aria-label': `Add files to ${d.name}` })
+    more.addEventListener('change', async () => { await addTo(d, [...(more.files ?? [])]); render() })
+    const row = (label: string, control: Node) => h('div', { class: 'gw-dataset-row' }, h('span', { class: 'gw-label', text: label }), control)
+    return h('section', { class: 'gw-dataset', 'aria-label': `Dataset ${d.name}` },
+      h('div', { class: 'gw-dataset-head' },
+        h('span', { class: 'gw-kind gw-kind--dataset', 'aria-hidden': 'true' }), text('name', 'Dataset name'),
+        segmented([['Private', true], ['Shared', false]], d.private, (v) => { d.private = v; render() }, `Who may read ${d.name}`),
+        h('button', { type: 'button', class: 'gw-x', 'aria-label': `Remove ${d.name}`, text: '×', onclick: () => { datasets.splice(index, 1); render() } })),
+      ...(d.db ? [
+        h('p', { class: 'gw-help', text: `Database ${d.db.database}: ${d.db.summary}. Read-only: the analyses take only the extracts they need from it, as queries aggregated in the database, and every query goes into the evidence package.` }),
+      ] : d.record ? [
+        h('p', { class: 'gw-help', text: d.recordState === 'reading' ? `Reading ${d.record} …`
+          : d.recordState === 'failed' ? `The record at ${d.record} could not be read. Check the link; galley tries again when the paper starts.`
+            : `Published by ${d.creators || 'its creators'}${d.version ? `, version ${d.version}` : ''}${d.licence ? `, ${d.licence}` : ''}${d.doi ? `, DOI ${d.doi}` : ''}. The paper cites it by this record.` }),
+        d.remote?.length ? h('ul', { class: 'gw-list' }, ...d.remote.map((f) => h('li', { class: 'gw-row gw-row--file' },
+          h('span', { class: 'gw-row-main' }, h('span', { class: 'gw-mono gw-row-name', text: f.name }), h('span', { class: 'gw-row-detail', text: `${Math.max(1, Math.round(f.size / 1024)).toLocaleString('en-US')} kB · downloaded${/\.zip$/i.test(f.name) ? ' and unpacked' : ''} when the paper starts` }))))) : null,
+      ] : [
+        h('ul', { class: 'gw-list' }, ...d.files.map((f, i) => h('li', { class: 'gw-row gw-row--file' },
+          h('span', { class: 'gw-row-main' }, h('span', { class: 'gw-mono gw-row-name', text: f.file.name }), h('span', { class: 'gw-row-detail', text: f.detail })),
+          h('button', { type: 'button', class: 'gw-x', 'aria-label': `Remove ${f.file.name}`, text: '×', onclick: () => { d.files.splice(i, 1); if (!d.files.length) datasets.splice(index, 1); render() } })))),
+        h('label', { class: 'gw-btn gw-addfiles' }, more, 'Add files to this dataset'),
+      ]),
+      row(d.db ? 'Who keeps it' : 'Who produced it', segmented([['I or my group', 'authors'], ['Others', 'others']], d.producedBy, (v) => { d.producedBy = v as DatasetItem['producedBy']; render() }, `Who produced ${d.name}`)),
+      ...(d.db ? [] : [
+        row('Published as', text('doi', 'Published as', 'DOI or link, if published')),
+        row('Version', text('version', 'Version', 'Version, if any')),
+        row('First reported in', text('describedIn', 'First reported in', 'DOI or link of the paper that first reported it')),
+        row('Licence', text('licence', 'Licence', 'Licence, if any')),
+      ]),
+      h('p', { class: 'gw-help', text: d.producedBy === 'others' || d.doi || d.describedIn
+        ? 'The paper analyses this data and cites it where it describes it, never as measurements made for this paper.'
+        : 'Data you produced for this paper is your own work. If it was published before, give where, and the paper cites it.' }))
+  }
+
+  /**
+   * Connect a database with one line: user@server (reached over SSH with your keys) or a clickhouse:// address. galley
+   * finds the ClickHouse there and lists its databases; pick one and it becomes a dataset. A connection used before can
+   * be picked by its name.
+   */
+  function databaseRow(): HTMLElement {
+    if (saved === null) {
+      saved = []
+      void fetch('/api/galley-papers/_databases').then((r) => r.ok ? r.json() : []).then((list) => { saved = list; if (saved?.length) render() }).catch(() => {})
+    }
+    const line = h('input', { type: 'text', class: 'gw-input', value: foundLine, placeholder: 'user@server, or clickhouse://user:password@host:8123', 'aria-label': 'Database connection' })
+    const find = async () => {
+      foundLine = line.value.trim()
+      if (!foundLine) return
+      finding = 'finding'
+      found = null
+      allDatabases = false
+      render()
+      try {
+        // The line may carry a password: it goes in the body, never in a URL.
+        const response = await fetch('/api/galley-papers/_databases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ line: foundLine }) })
+        if (!response.ok) throw new Error(await response.text())
+        found = await response.json()
+        finding = 'idle'
+      } catch (error) {
+        finding = 'failed'
+        findError = (error as Error).message
+      }
+      render()
+    }
+    line.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); void find() } })
+    const use = (db: DatasetItem['db'], name: string) => {
+      datasets.push({ name, files: [], producedBy: 'authors', doi: '', version: '', describedIn: '', licence: '', private: true, db })
+      found = null
+      render()
+    }
+    // A server can hold many databases, most of them empty or small: the ten largest that hold data first, the rest on request.
+    const offered = (found ?? []).flatMap((f) => f.databases.map((d) => ({ f, d }))).sort((a, b) => b.d.bytes - a.d.bytes)
+    const first = offered.filter(({ d }) => d.rows > 0).slice(0, 10)
+    const shown = allDatabases ? offered : first
+    const options = shown.map(({ f, d }) => h('li', { class: 'gw-row gw-row--file' },
+      h('span', { class: 'gw-row-main' }, h('span', { class: 'gw-mono gw-row-name', text: d.name }), h('span', { class: 'gw-row-detail', text: `${d.tables} tables · ${rowsText(d.rows)} · ${size(d.bytes)} · ClickHouse ${f.version}, ${f.label}` })),
+      h('button', { type: 'button', class: 'gw-btn', text: 'Use', 'aria-label': `Use ${d.name}`, onclick: () => use({ line: foundLine, via: f.via, host: f.host, container: f.container, url: f.url, user: f.user, database: d.name, summary: `${d.tables} tables · ${rowsText(d.rows)} · ${size(d.bytes)} · ClickHouse ${f.version} · ${f.label}` }, d.name) })))
+    return h('div', { class: 'gw-field' },
+      h('div', { class: 'gw-label', text: 'Connect a database' }),
+      h('div', { class: 'gw-linkrow' }, line, h('button', { type: 'button', class: 'gw-btn', text: finding === 'finding' ? 'Connecting …' : 'Connect', onclick: () => void find(), ...(finding === 'finding' ? { disabled: true } : {}) })),
+      saved?.length ? h('div', { class: 'gw-stack' }, ...saved.map((c) => h('button', { type: 'button', class: 'gw-btn gw-saved', text: `Use ${c.name}`, onclick: () => use({ connection: c.name, database: c.database, summary: `saved connection: ${c.name}` }, c.database) }))) : null,
+      finding === 'failed' ? h('p', { class: 'gw-attention', text: `Not connected: ${findError}` }) : null,
+      found && !offered.length ? h('p', { class: 'gw-help', text: 'No ClickHouse that galley can query was found there.' }) : null,
+      options.length ? h('ul', { class: 'gw-list' }, ...options) : null,
+      offered.length > shown.length ? h('button', { type: 'button', class: 'gw-btn gw-saved', text: `Show all ${offered.length} databases`, onclick: () => { allDatabases = true; render() } }) : null,
+      h('p', { class: 'gw-help', text: 'Read-only: galley takes from it only the extracts the analyses need, as queries aggregated in the database. A server is reached over SSH with the keys of the machine that runs galley, which keeps the connection under a name for everyone who uses it; a password never reaches a paper or a model.' }))
+  }
+
+  /**
+   * A world model as the paper's sources: a Resolvent repository as a zip. It is read once on the machine running
+   * galley, and the card says what it holds. By default the paper's sources are only its sources.
+   */
+  function worldModelRow(): HTMLElement {
+    if (!worldModel) {
+      const picker = h('input', { type: 'file', class: 'gw-file', accept: '.zip,application/zip', 'aria-label': 'Choose a world model' })
+      picker.addEventListener('change', () => { const file = picker.files?.[0]; if (file) void readWorldModel(file) })
+      return h('div', { class: 'gw-field' },
+        h('div', { class: 'gw-label', text: 'A world model as the sources' }),
+        h('label', { class: 'gw-btn gw-addfiles' }, picker, 'Choose a world model (zip)'),
+        h('p', { class: 'gw-help', text: 'A Resolvent world model, its repository as a zip: claims, the evidence they rest on, and the sources behind it, each with its verbatim passage. The paper\'s sources then come from it.' }))
+    }
+    const wm = worldModel
+    return h('section', { class: 'gw-dataset', 'aria-label': 'World model' },
+      h('div', { class: 'gw-dataset-head' },
+        h('span', { class: 'gw-kind gw-kind--dataset', 'aria-hidden': 'true' }),
+        h('span', { class: 'gw-mono gw-row-name', text: wm.name ?? wm.file }),
+        h('button', { type: 'button', class: 'gw-x', 'aria-label': 'Remove the world model', text: '×', onclick: () => { worldModel = null; render() } })),
+      h('p', { class: wm.state === 'failed' ? 'gw-attention' : 'gw-help', text: wm.state === 'reading' ? `Reading ${wm.file} …`
+        : wm.state === 'failed' ? `Not read: ${wm.error}`
+          : `World model: ${n(wm.claims ?? 0)} claims, ${n(wm.evidence ?? 0)} evidence records, ${n(wm.sources ?? 0)} sources with their passages.` }),
+      h('div', { class: 'gw-dataset-row' }, h('span', { class: 'gw-label', text: 'Sources' }),
+        segmented([['Only this world model', true], ['Also the literature and the web', false]], wm.only, (v) => { wm.only = v; render() }, 'Where the sources come from')),
+      h('p', { class: 'gw-help', text: wm.only
+        ? 'Every source the paper cites comes from this world model: no literature search, no systematic review, no web sources. What it does not support, the paper states as its own argument or as open.'
+        : 'The world model is searched first, then the literature through Canary and, where neither has a source, the web.' }))
+  }
+
+  async function readWorldModel(file: File): Promise<void> {
+    worldModel = { file: file.name, state: 'reading', only: true }
+    render()
+    try {
+      const response = await fetch(`/api/galley-papers/_world-model?name=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { 'Content-Type': 'application/zip' }, body: file })
+      if (!response.ok) throw new Error(await response.text())
+      const read = await response.json() as { token: string; name: string; claims: number; evidence: number; sources: number }
+      if (worldModel?.file === file.name) worldModel = { ...worldModel, ...read, state: 'read' }
+    } catch (error) {
+      if (worldModel?.file === file.name) worldModel = { ...worldModel, state: 'failed', error: (error as Error).message }
+    }
+    render()
+  }
+
+  /** A dataset by its link: the card shows what the record says at once; the files are downloaded when the paper starts. */
+  async function addRecord(link: string): Promise<void> {
+    const d: DatasetItem = { name: link, files: [], producedBy: 'others', doi: '', version: '', describedIn: '', licence: '', private: false, record: link, recordState: 'reading' }
+    datasets.push(d)
+    render()
+    try {
+      const response = await fetch(`/api/galley-papers/_record?link=${encodeURIComponent(link)}`)
+      if (!response.ok) throw new Error(await response.text())
+      const r = await response.json() as { name: string; creators: string[]; version?: string; doi?: string; licence?: string; describedIn?: string; files: { name: string; size: number }[] }
+      Object.assign(d, { name: r.name, creators: r.creators.join(', '), version: r.version ?? '', doi: r.doi ?? '', licence: r.licence ?? '', describedIn: r.describedIn ?? '', remote: r.files, recordState: 'read' })
+    } catch {
+      d.recordState = 'failed'
+    }
+    render()
+  }
+
+  async function addTo(d: DatasetItem, files: File[]): Promise<void> {
     for (const file of files) {
       if (file.size > 50e6) { alert(`${file.name} is larger than 50 MB.`); continue }
-      const kind = DATASET.test(file.name) ? 'dataset' : 'document'
-      items.push({ name: file.name, kind, file, detail: await describe(file), private: kind === 'dataset' })
+      d.files.push({ file, detail: await describe(file) })
+    }
+  }
+
+  /** Files added together: data files, with any README among them, form one dataset; documents on their own stay documents. */
+  async function add(files: File[]): Promise<void> {
+    const usable = files.filter((f) => !f.name.startsWith('.'))
+    const data = usable.filter((f) => DATASET.test(f.name))
+    if (data.length) {
+      const relative = (f: File) => (f as File & { webkitRelativePath?: string }).webkitRelativePath ?? ''
+      const folderName = relative(usable[0]).split('/')[0]
+      const d: DatasetItem = { name: folderName || data[0].name.replace(/\.[^.]+$/, ''), files: [], producedBy: 'authors', doi: '', version: '', describedIn: '', licence: '', private: true }
+      await addTo(d, usable)
+      if (d.files.length) datasets.push(d)
+    } else {
+      for (const file of usable) {
+        if (file.size > 50e6) { alert(`${file.name} is larger than 50 MB.`); continue }
+        items.push({ name: file.name, kind: 'document', file, detail: await describe(file), private: false })
+      }
     }
     render()
   }
 
   // ---------------------------------------------------------------- 3. settings
   function settingsStep(): (Node | null)[] {
+    // A paper that rests only on its world model searches nothing else.
+    const onlyModel = !!worldModel?.only
     const field = (label: string, control: Node, help?: string) => h('div', { class: 'gw-field' }, h('div', { class: 'gw-label', text: label }), control, help ? h('p', { class: 'gw-help', text: help }) : null)
     const input = (key: 'author' | 'affiliation' | 'venue', placeholder: string, list?: string) => {
       const el = h('input', { class: 'gw-input', value: settings[key], placeholder, 'aria-label': placeholder, ...(list ? { list } : {}) })
       el.addEventListener('input', () => { settings[key] = el.value })
       return el
     }
-    const seats = context?.seats
+    const area = (key: 'funding' | 'competingInterests' | 'acknowledgements', placeholder: string) => {
+      const el = h('textarea', { class: 'gw-input gw-area', rows: 2, placeholder, 'aria-label': placeholder })
+      el.value = settings[key]
+      el.addEventListener('input', () => { settings[key] = el.value })
+      return el
+    }
+    const seats = dealSeats(context, settings.families)
     const seatRow = (seat: string, s?: Seat) => h('tr', {}, h('th', { text: seat }), h('td', { text: s?.name ?? '—' }), h('td', { class: 'gw-mono', text: s?.model ?? '' }))
+    const familyBox = (f: Seat) => {
+      const on = settings.families.includes(f.family)
+      const box = h('input', { type: 'checkbox', 'aria-label': f.name, ...(on ? { checked: true } : {}), ...(on && settings.families.length <= 2 ? { disabled: true } : {}) })
+      box.addEventListener('change', () => { settings.families = box.checked ? FAMILY_ORDER.filter((x) => x === f.family || settings.families.includes(x)) : settings.families.filter((x) => x !== f.family); render() })
+      return h('label', { class: 'gw-check' }, box, h('span', { text: f.name }), h('span', { class: 'gw-mono gw-help', text: f.model }))
+    }
+    const families = context?.families ?? FAMILY_ORDER.map((family) => Object.values(context?.seats ?? {}).find((s) => s.family === family)).filter((s): s is Seat => !!s)
     return [
       h('h2', { id: 'gw-title', class: 'gw-title', text: 'How the paper is made' }),
       field('Author', h('div', { class: 'gw-pair' }, input('author', 'Name'), input('affiliation', 'Affiliation')), 'Set in the byline when the paper is typeset; never sent to a model.'),
+      field('Declarations', h('div', { class: 'gw-stack' }, area('funding', 'Funding'), area('competingInterests', 'Competing interests'), area('acknowledgements', 'Acknowledgements')), 'Printed as you write them; never sent to a model. Left empty, they stay out of the paper, and the sign-off sheet asks for them.'),
       field('Venue', h('span', {}, input('venue', 'Venue', 'gw-venues'), h('datalist', { id: 'gw-venues' }, ...['preprint (arXiv)', 'preprint (bioRxiv)', 'preprint (medRxiv)', 'preprint (SSRN)', 'preprint (EdArXiv)', 'journal article'].map((v) => h('option', { value: v })))), 'Shapes the outline and how the referees read the paper.'),
       field('Length', segmented([3000, 5000, 7000, 9000].map((w) => [`${n(w)} words`, w] as [string, number]), settings.words, (v) => { settings.words = v; render() }, 'Length')),
-      field('Also include', h('div', { class: 'gw-choices' }, toggle('literatureReview', 'Systematic literature review', `Canary searches OpenAlex, screens the candidates, reads at least ${context?.review?.papers ?? 50} full papers and has every finding audited by a second model.`, 'A review section after the introduction, beside the paper\'s own contribution; it runs alongside the other steps.', 'The paper is the systematic review: its thesis and contribution are what the review establishes, and the plan waits for the review to finish.'), toggle('simulation', 'Monte Carlo simulation', 'The author designs the simulation the argument needs (plain, correlated or sequential Monte Carlo) and galley runs it on this machine; every simulated number in the paper is filled in from the run.', 'Its results support the paper\'s own contribution where they help.', 'The paper\'s thesis rests on what the simulation shows: its contribution claims are claims about the results, and the paper is built around the model.'))),
+      field('Also include', h('div', { class: 'gw-choices' }, onlyModel ? h('p', { class: 'gw-help', text: 'No systematic review: the paper\'s sources are only its world model\'s.' }) : toggle('literatureReview', 'Systematic literature review', `Canary searches OpenAlex, screens the candidates, reads at least ${context?.review?.papers ?? 50} full papers and has every finding audited by a second model.`, 'A review section after the introduction, beside the paper\'s own contribution; it runs alongside the other steps.', 'The paper is the systematic review: its thesis and contribution are what the review establishes, and the plan waits for the review to finish.'), toggle('simulation', 'Monte Carlo simulation', 'The author designs the simulation the argument needs (plain, correlated or sequential Monte Carlo) and galley runs it on this machine; every simulated number in the paper is filled in from the run.', 'Its results support the paper\'s own contribution where they help.', 'The paper\'s thesis rests on what the simulation shows: its contribution claims are claims about the results, and the paper is built around the model.'))),
       field('Review', segmented([['1 round', 1], ['2 rounds', 2]], settings.rounds, (v) => { settings.rounds = v; render() }, 'Referee rounds'), `Four referee seats a round: ${context?.referees.join(', ') ?? 'methods, field, citations, editor'}, from the families that did not write the text. About 50 min a round.`),
       field('Your part', choice('dial', [
         ['autonomous', 'Autonomous', 'Nothing waits for you. You review the finished paper.'],
@@ -197,8 +430,16 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
         ['mixed', 'You pick the load-bearing ones', 'Those claims wait for you to choose among sources a, b and c.'],
         ['choose', 'You pick every one', 'Every claim that needs a source waits for your choice.'],
       ])),
-      field('Seats', h('table', { class: 'gw-seats' }, h('tbody', {}, seatRow('author', seats?.author), seatRow('checker', seats?.checker), seatRow('challenger', seats?.challenger), seatRow('verifier', seats?.verifier))), 'No family judges its own work; a third family settles what an author and a referee cannot agree on.'),
-      field('Literature', h('p', { class: 'gw-facts' }, 'Canary over OpenAlex · ', context ? (context.openalexKey ? h('span', { text: 'key found: two searches per claim' }) : h('span', { class: 'gw-attention', text: 'no key: one search per claim, about 100 searches a day for everyone on this network' })) : 'checking…')),
+      field('Models', h('div', { class: 'gw-stack' }, ...families.map(familyBox)), 'Turn a family off and its seats pass to the others: with Claude off, GPT writes. At least two stay on, so one writes and another checks. You can change this later in the project\'s settings, and a running paper follows from its next step.'),
+      field('Seats', h('table', { class: 'gw-seats' }, h('tbody', {}, seatRow('author', seats.author), seatRow('checker', seats.checker), seatRow('challenger', seats.challenger), seatRow('verifier', seats.verifier))), settings.families.length >= 3 ? 'No family judges its own work; a third family settles what an author and a referee cannot agree on.' : 'No family judges its own work. With two families there is no third to settle a dispute, so what an author and a referee cannot agree on is stated as a limitation of the work.'),
+      field('Web sources', (() => {
+        const box = h('input', { type: 'checkbox', 'aria-label': 'Primary sources from the web', ...(settings.webSources && !onlyModel ? { checked: true } : {}), ...(onlyModel ? { disabled: true } : {}) })
+        box.addEventListener('change', () => { settings.webSources = box.checked; render() })
+        return h('label', { class: 'gw-check' }, box, h('span', { text: 'Primary sources from the web' }))
+      })(), onlyModel ? 'Off: the paper\'s sources are only its world model\'s.' : 'When the scholarly index has no source for a claim, GPT searches the web for the issuer\'s own document: rules, standards, specifications, datasheets, official reports. galley keeps a copy, and each passage is verified by another family like any citation.'),
+      field('Literature', onlyModel
+        ? h('p', { class: 'gw-facts', text: `The world model "${worldModel?.name ?? worldModel?.file}": its ${n(worldModel?.sources ?? 0)} sources are searched for every claim; no other literature.` })
+        : h('p', { class: 'gw-facts' }, worldModel ? 'The world model first, then Canary over OpenAlex · ' : 'Canary over OpenAlex · ', context ? (context.openalexKey ? h('span', { text: 'key found: two searches per claim' }) : h('span', { class: 'gw-attention', text: 'no key: one search per claim, about 100 searches a day for everyone on this network' })) : 'checking…')),
     ]
   }
 
@@ -229,32 +470,34 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
 
   // ---------------------------------------------------------------- 4. start
   function startStep(): (Node | null)[] {
-    const s = context?.seats
-    const m = (seat: keyof Context['seats']) => s?.[seat]?.model ?? seat
-    const datasets = items.filter((i) => i.kind === 'dataset')
+    const s = dealSeats(context, settings.families)
+    const m = (seat: SeatName) => s[seat]?.model ?? seat
     const searches = context?.openalexKey ? 'two' : 'one'
+    const onlyModel = !!worldModel?.only
     // A step that runs alongside the others shows its own time but adds little to the whole.
     const plan: [string, string, string, number, boolean?][] = [
       ['Read your seed', 'claims, concern, contribution and host field', m('author'), 1],
-      ...(items.length ? [['Read your materials', datasets.length ? 'profile datasets here; read documents and links' : 'read documents and links', 'this machine', 1] as [string, string, string, number]] : []),
-      ['Place the idea', '7 literature searches through Canary: closest work, bottleneck, consensus', m('checker'), 3],
+      ...(items.length || datasets.length ? [['Read your materials', datasets.length ? 'profile datasets here; read documents and links' : 'read documents and links', 'this machine', 1] as [string, string, string, number]] : []),
+      ['Place the idea', onlyModel ? '7 searches of the world model: closest work, bottleneck, consensus' : `7 literature searches${worldModel ? ' of the world model, then' : ''} through Canary: closest work, bottleneck, consensus`, m('checker'), 3],
       ['Challenge the idea', 'seven impact factors; three directions; one chosen', `${m('challenger')} · ${m('checker')}`, 10],
-      ...(settings.literatureReview ? [['Systematic review', `Canary: search plan, screening, at least ${context?.review?.papers ?? 50} full papers read, every finding audited; ${settings.reviewRole === 'load-bearing' ? 'the paper\'s main contribution, so the plan waits for it' : 'alongside the steps below'}`, `${context?.review?.research ?? 'gpt-6.1-sol'} · ${context?.review?.audit ?? 'gpt-6-astra'}`, 40, settings.reviewRole !== 'load-bearing'] as [string, string, string, number, boolean]] : []),
+      ...(settings.literatureReview && !onlyModel ? [['Systematic review', `Canary: search plan, screening, at least ${context?.review?.papers ?? 50} full papers read, every finding audited; ${settings.reviewRole === 'load-bearing' ? 'the paper\'s main contribution, so the plan waits for it' : 'alongside the steps below'}`, `${context?.review?.research ?? 'gpt-6.1-sol'} · ${context?.review?.audit ?? 'gpt-6-astra'}`, 40, settings.reviewRole !== 'load-bearing'] as [string, string, string, number, boolean]] : []),
       ...(datasets.length ? [['Measure your data', 'the analyses the claims need, computed on this machine', `${m('author')} · this machine`, 3] as [string, string, string, number]] : []),
       ...(settings.simulation ? [['Simulate', `the author writes the Monte Carlo model and the basis of every input; galley runs it on this machine${settings.simulationRole === 'load-bearing' ? '; the paper\'s main contribution rests on it' : ''}`, `${m('author')} · this machine`, 5] as [string, string, string, number]] : []),
       ['Plan and outline', 'thesis, claims, sections, figures', m('author'), 8],
-      ['Find and verify evidence', `${searches} search${searches === 'one' ? '' : 'es'} per claim; verbatim passages; another family's verdict; planted-defect calibration`, `${m('checker')} · ${m('verifier')}`, 20],
+      ['Find and verify evidence', `${onlyModel ? 'the world model searched for each claim' : `${worldModel ? 'the world model, then ' : ''}${searches} search${searches === 'one' ? '' : 'es'} per claim`}; verbatim passages; another family's verdict; planted-defect calibration`, `${m('checker')} · ${m('verifier')}`, 20],
       ['Draft', 'every section, checked against its claims', `${m('author')} · ${m('checker')}`, 25],
       ['Review', `${settings.rounds} round${settings.rounds === 1 ? '' : 's'} of four referees; each answer judged by the referee who raised it`, `${m('checker')} · ${m('verifier')}`, 50 * settings.rounds],
       ['Finish', 'ledger reconciled with the text; title and abstract; typeset', `${m('checker')} · ${m('author')}`, 10],
     ]
     const total = plan.reduce((a, p) => a + (p[4] ? 5 : p[3]), 0) + Math.round((settings.words - 7000) / 1000) * 3
     const leaves = [
-      [items.some((i) => i.kind !== 'dataset') ? 'Your seed, documents and links' : 'Your seed', 'go to the providers of the three model families (Anthropic, OpenAI, Google).'],
+      [items.length ? 'Your seed, documents and links' : 'Your seed', 'go to the providers of the three model families (Anthropic, OpenAI, Google).'],
       ...(datasets.some((d) => d.private) ? [['Private datasets', 'never leave this machine; the models see column summaries and computed results.']] : []),
       ...(datasets.some((d) => !d.private) ? [['Shared datasets', 'their summaries and first 15 rows go to the model providers.']] : []),
-      ['Search terms', 'go to OpenAlex through Canary.'],
-      ...(settings.literatureReview ? [['Review question', 'goes to Canary\'s research and audit models (OpenAI) and to OpenAlex.']] : []),
+      ...(worldModel ? [['World model', 'stays on this machine; its claims and passages closest to the paper go to the model providers.']] : []),
+      ...(onlyModel ? [] : [['Search terms', 'go to OpenAlex through Canary.']]),
+      ...(settings.webSources && !onlyModel ? [['Web searches', 'for primary sources: the claims\' own terms go to OpenAI\'s web search, and the documents are fetched from their publishers.']] : []),
+      ...(settings.literatureReview && !onlyModel ? [['Review question', 'goes to Canary\'s research and audit models (OpenAI) and to OpenAlex.']] : []),
       ['Your name', 'is never sent; it is set in the byline at typesetting.'],
     ]
     return [
@@ -272,13 +515,29 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
     next.disabled = true
     next.textContent = 'Starting…'
     try {
+      if (worldModel && worldModel.state !== 'read') throw new Error(worldModel.state === 'reading' ? 'The world model is still being read; start again in a moment.' : 'The world model could not be read; remove it or choose it again.')
       const materials = await Promise.all(items.map(async (item) => item.kind === 'link'
         ? { name: item.name, url: item.url }
         : { name: item.name, private: item.private, data: await base64(item.file!) }))
+      const sets = await Promise.all(datasets.map(async (d) => d.db
+        // A database: where it was found (or its saved connection's name) and which one; the server keeps the connection.
+        ? { database: d.db, name: d.name, producedBy: d.producedBy, private: d.private }
+        : d.record
+        // A dataset by its link: the engine reads the record and downloads its files; the person's answers go with it.
+        ? { record: d.record, name: d.recordState === 'read' ? d.name : '', producedBy: d.producedBy, describedIn: d.describedIn, private: d.private }
+        : {
+          name: d.name, producedBy: d.producedBy, doi: d.doi, version: d.version, describedIn: d.describedIn, licence: d.licence, private: d.private,
+          files: await Promise.all(d.files.map(async (f) => ({ name: f.file.name, data: await base64(f.file) }))),
+        }))
       const response = await fetch(`/api/galley-papers/${encodeURIComponent(slug)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, settings, materials }),
+        body: JSON.stringify({
+          text, materials, datasets: sets,
+          // With only its world model, the paper has no systematic review and no web sources.
+          settings: worldModel?.only ? { ...settings, literatureReview: false, webSources: false } : settings,
+          ...(worldModel?.token ? { worldModel: { token: worldModel.token, only: worldModel.only } } : {}),
+        }),
       })
       if (!response.ok) throw new Error(await response.text())
       const at = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
@@ -321,7 +580,7 @@ interface StatusData {
   cost: { calls: number; tokensInM: number; hours: number }
   typeset: boolean
   seed: string
-  settings: { literatureReview: boolean | string; simulation: boolean | string; rounds: number; words: number; venue: string; authors: string[]; materials: string[] }
+  settings: { literatureReview: boolean | string; simulation: boolean | string; rounds: number; words: number; venue: string; authors: string[]; materials: string[]; families?: string[]; seats?: Record<string, string> }
 }
 
 const clock = (iso: string | Date) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
@@ -336,8 +595,11 @@ function settingRows(d: StatusData): [string, string][] {
     ['Length', `${d.settings.words.toLocaleString('en-US')} words · ${d.settings.rounds} referee round${d.settings.rounds === 1 ? '' : 's'} · ${d.settings.venue}`],
     ['Authors', d.settings.authors.join('; ') || 'not set'],
     ['Materials', d.settings.materials.join('; ') || 'none'],
+    ['Models', `${(d.settings.families ?? FAMILY_ORDER).map((f) => FAMILY_LABEL[f] ?? f).join(', ')}${d.settings.seats ? ` · ${d.settings.seats.author} writes` : ''}`],
   ]
 }
+
+const FAMILY_LABEL: Record<string, string> = { claude: 'Claude Opus 5.5', gpt: 'GPT-6.2 Sol', gemini: 'Gemini 4 Carbon' }
 
 /** Where a paper stands, kept current while the window is open. The dialog is returned so a host can tell when it closes. */
 export function openPaperStatus(slug: string, open?: (manuscript: string) => void): HTMLDialogElement {
@@ -352,6 +614,25 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
   document.body.append(dialog)
   dialog.showModal()
   close.focus()
+
+  /** The project's model families, changed here: a running paper deals its seats again at its next step. */
+  const modelsControl = (d: StatusData) => {
+    const current = d.settings.families ?? FAMILY_ORDER
+    const note = h('p', { class: 'gw-help', text: 'Turn a family off and its seats pass to the others (with Claude off, GPT writes). A running paper follows from its next step.' })
+    const boxes = FAMILY_ORDER.map((family) => {
+      const on = current.includes(family)
+      const box = h('input', { type: 'checkbox', 'aria-label': FAMILY_LABEL[family], ...(on ? { checked: true } : {}), ...(on && current.length <= 2 ? { disabled: true } : {}) })
+      box.addEventListener('change', async () => {
+        const next = box.checked ? FAMILY_ORDER.filter((x) => x === family || current.includes(x)) : current.filter((x) => x !== family)
+        note.textContent = 'Saving …'
+        const response = await fetch(`/api/galley-papers/${encodeURIComponent(slug)}/models`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ families: next }) })
+        note.textContent = response.ok ? 'Saved. The paper follows from its next step.' : `Not saved: ${await response.text()}`
+        void load()
+      })
+      return h('label', { class: 'gw-check' }, box, h('span', { text: FAMILY_LABEL[family] }))
+    })
+    return h('div', { class: 'gw-field' }, h('div', { class: 'gw-label', text: 'Models' }), h('div', { class: 'gw-stack' }, ...boxes), note)
+  }
 
   const draw = (d: StatusData) => {
     // The window redraws every 10 s; what the person unfolded to read, and where they scrolled, stays put.
@@ -386,6 +667,7 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
       h('dl', { class: 'gw-figures' }, ...rows.flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])),
       h('details', { class: 'gw-seed', open: seedOpen }, h('summary', { text: 'Settings and seed' }),
         h('dl', { class: 'gw-figures' }, ...settingRows(d).flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })])),
+        modelsControl(d),
         h('blockquote', { class: 'gw-quote', text: d.seed || '(empty)' })),
     ].filter((x) => !!x) as HTMLElement[])
     body.scrollTop = scroll

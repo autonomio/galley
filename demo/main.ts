@@ -7,6 +7,7 @@ import './demo.css'
 import './wizard.css'
 import './files.css'
 import './living.css'
+import './rail.css'
 import welcome from './welcome.md?raw'
 import { createEditor, createHttpStore, createLocalStore, iconButton, icons, type EditorAction } from '../src/index.js'
 import { choicesAction } from './choices.js'
@@ -14,6 +15,7 @@ import { filesAction } from './files.js'
 import { livingPaper } from './living.js'
 import { writePaperAction } from './paper.js'
 import { proposalsAction } from './proposals.js'
+import { papersRail } from './rail.js'
 import { createRouter } from './route.js'
 
 const params = new URLSearchParams(location.search)
@@ -47,15 +49,29 @@ const editor = createEditor(document.getElementById('editor')!, {
   placeholder: 'Start writing…',
   // ?doc=<name> opens that document, so a paper can be linked to directly.
   open: router.route().doc ?? undefined,
-  // Grouped: the view; the document; the paper written from it, and its files; and, on its own, delete.
-  toolbar: ['writer', '|', 'new', 'import', 'copy', download, ...(local ? [] : ['|' as const, writePaperAction(router), choicesAction(router), proposalsAction(router), filesAction(router)]), '|', 'delete'],
+  // Grouped: the view and its comments; the document; the paper written from it, and its files; and, on its own, delete.
+  toolbar: ['writer', 'comments', '|', 'new', 'import', 'copy', download, ...(local ? [] : ['|' as const, writePaperAction(router), choicesAction(router), proposalsAction(router), filesAction(router)]), '|', 'delete'],
   storagePrefix: local ? 'galley-local' : 'galley',
   // A paper's document is written by its team while you work in it: who is at work, its notes and its history.
-  plugins: local ? [] : [livingPaper(store, router)],
+  // Every paper beside the page, whichever document is open: where each stands and who is at work on what.
+  plugins: local ? [] : [livingPaper(store, router), papersRail()],
 })
 router.view('writer', { set: (on, e) => e.setWriterMode(on) })
 editor.on('writer-mode', ({ on }) => router.shown('writer', on))
 router.attach(editor)
+
+// Comments show unless the link says comments=off. The switch writes it there
+// in place, and Back and Forward bring back what each step's link says.
+const commentsOff = () => new URLSearchParams(location.search).get('comments') === 'off'
+if (commentsOff()) editor.annotations.setVisible(false)
+editor.on('annotations-visible', ({ on }) => {
+  const next = new URLSearchParams(location.search)
+  if (on) next.delete('comments')
+  else next.set('comments', 'off')
+  const query = next.toString()
+  history.replaceState(history.state, '', `${location.pathname}${query ? `?${query}` : ''}${location.hash}`)
+})
+window.addEventListener('popstate', () => editor.annotations.setVisible(!commentsOff()))
 
 document.documentElement.dataset.theme = theme
 

@@ -107,6 +107,10 @@ export interface Work {
   url: string | null
   bibKey?: string
   csl?: Record<string, unknown>
+  /** Looked up once by its title, to complete a reference that had only its title, year and link. */
+  titleChecked?: boolean
+  /** What a reader of the typeset paper corrected in its citation record, as "set field" or "remove field". */
+  corrected?: string[]
 }
 
 export interface Candidate {
@@ -160,6 +164,10 @@ export interface Figure {
   status: 'planned' | 'rendered' | 'skipped'
   file?: string
   source?: string
+  /** A defect a reader found in the typeset figure, for the next drawing to fix. */
+  revise?: string
+  /** How many times a reader sent it back: each drawing again is a step of its own. */
+  redraws?: number
 }
 
 export interface Frame {
@@ -172,11 +180,13 @@ export interface Frame {
 
 export interface Disposition {
   at: string
-  kind: 'fixed' | 'rebutted' | 'limitation' | 'needs_evidence'
+  /** unanswered: an attempt that gave no answer; it still counts, so the finding moves on to adjudication. */
+  kind: 'fixed' | 'rebutted' | 'limitation' | 'needs_evidence' | 'unanswered'
   text: string
   edits: { old: string; new: string }[]
   family: Family
-  verification?: { outcome: 'verified' | 'disagrees' | 'uncertain'; reason: string; family: Family }
+  /** rechecked: judged a second time at full effort, after a first verdict that could not tell. */
+  verification?: { outcome: 'verified' | 'disagrees' | 'uncertain'; reason: string; family: Family; rechecked?: boolean }
 }
 
 export interface Finding {
@@ -201,7 +211,12 @@ export interface Finding {
   assignee: 'agents' | 'humans' | 'both'
   origin: 'agent' | 'human'
   dispositions: Disposition[]
-  adjudication?: { decision: string; family: Family; edits: { old: string; new: string }[] }
+  /**
+   * How a third family settled it. setAside: the referee's point was judged not to hold, and handledBy is the
+   * sentence of the text that answers it. fallback: adjudication could not settle it in the text, so the paper
+   * states it as a limitation.
+   */
+  adjudication?: { decision: string; family: Family; edits: { old: string; new: string }[]; setAside?: boolean; handledBy?: string; fallback?: boolean }
 }
 
 export interface Note {
@@ -210,6 +225,24 @@ export interface Note {
   text: string
   /** Shown on the sign-off sheet as something the person decides. */
   forHuman?: boolean
+}
+
+/**
+ * What an agent wants the authors to know about a passage, kept beside the text as a comment in the editor and never
+ * printed: a claim with no verified source, a limit of the work, a doubt, a caution. The paper states its work plainly;
+ * the caution stays where the authors see it.
+ */
+export interface AuthorNote {
+  id: string
+  sectionId: string | null
+  /** The words of the text it concerns, copied exactly; empty for a note on the section as a whole. */
+  quote: string
+  text: string
+  kind: 'unverified' | 'limitation' | 'caution'
+  seat: Seat
+  family: Family
+  behavior: string
+  at: string
 }
 
 export interface Calibration {
@@ -255,11 +288,60 @@ export interface LiteratureReview {
   searchedOn?: string
   models?: { research: string; audit: string }
   protocol?: { concepts: string[]; eligibility: { core: string; supporting: string; exclusion: string }; queries: string[] }
-  counts?: { discovered: number; screened: number; retrieved: number; reviewed: number; core: number; supporting: number; cited: number; queries: number; findings: number; audited: number; minutes: number }
+  counts?: { discovered: number; screened: number; retrieved: number; reviewed: number; core: number; supporting: number; cited: number; queries: number; findings: number; audited: number; minutes: number; excludedScreening?: number; excludedFullText?: number }
   gaps?: string[]
   contradictions?: string[]
+  /** Every publication the review read in full and included, cited or not, with its role and why it was included. */
+  included?: { workId: string; role: 'core' | 'supporting'; reason: string }[]
+  /** Why the search stopped where it did, as Canary recorded it. */
+  stopping?: string
+  /** What the review cannot claim: its source, the access it had, who screened and when it stopped. */
+  limits?: string[]
   /** The ledger claims the review contributed. */
   claimIds?: string[]
+}
+
+/** One planned analysis of the authors' data: what it asks, how, with what uncertainty, and how its assumptions are checked. */
+export interface PlannedAnalysis {
+  id: string
+  claims: string[]
+  question: string
+  method: string
+  uncertainty: string
+  assumptions: string[]
+  checks: string[]
+  datasets: string[]
+}
+
+export interface DataAnalysis {
+  field: string
+  conventions: string[]
+  preparation: string[]
+  plan: PlannedAnalysis[]
+  /** code: the analyses ran as code in the sandbox; operations: galley's built-in operations measured instead. */
+  mode: 'code' | 'operations'
+  reviewed?: { family: Family; notes: string[] }
+  runs?: Record<string, { ok: boolean; code: string; results: { name: string; value: number; unit?: string; n?: number; count?: number; ci_low?: number; ci_high?: number; ci_level?: number; method: string }[]; checks: { assumption: string; method: string; statistic?: number; p?: number; holds: boolean; note: string }[]; error?: string; attempts: number; ms: number }>
+  /** The shared preparation every analysis starts from: its code, and what it reported (each step with the rows it kept, and the shared definitions). */
+  prepare?: { ok: boolean; code: string; report?: { steps: { step: string; rows_before?: number; rows_after?: number; note: string }[]; definitions: string[] }; error?: string }
+  /** Planned analyses that did not run: the paper never describes them. */
+  notComputed?: { id: string; question: string; why: string }[]
+  /** What the analyses took from a database: each extract's SQL, run read-only by galley, and the table it made. */
+  extracts?: { id: string; database: string; purpose: string; sql: string; ok: boolean; rows?: number; material?: string; sha256?: string; error?: string; ms?: number }[]
+  /** The Python and package versions the analyses ran on. */
+  environment?: Record<string, string>
+}
+
+/** A printing defect found in the typeset paper: by the reader (a model reading the pages) or by the mechanical check. */
+export interface ProofDefect {
+  page: number | null
+  where: 'section text' | 'figure' | 'table' | 'equation' | 'references' | 'front matter' | 'appendix' | 'other'
+  quote: string
+  problem: string
+  fix: string
+  by: 'reader' | 'check'
+  /** The figure it was found in, when the check read that figure's own source. */
+  figureId?: string
 }
 
 export interface PaperState {
@@ -295,6 +377,8 @@ export interface PaperState {
   settled: Record<string, 'done' | 'skipped'>
   attempts: Record<string, number>
   notes: Note[]
+  /** Comments for the authors beside the text: the caution agents keep out of the paper. */
+  authorNotes?: AuthorNote[]
   choices?: Record<string, Choice>
   proposals?: Proposal[]
   /** The text galley last wrote to the editor, per section, to tell a person's edits from its own. */
@@ -303,6 +387,14 @@ export interface PaperState {
   editorWritten?: { doc: string; notes: string }
   /** Threads galley itself last wrote as resolved, so its own mark is never taken for a person's decision. */
   editorResolved?: string[]
+  /** The typeset review: how many readings, what the last one found, how many defects were fixed and what is left for a person. */
+  proof?: { rounds: number; hash: string; defects: ProofDefect[]; fixed: number; left: ProofDefect[] }
+  /** Works the text names, cited where they are named (placed), or listed without a place when the quote was not found. */
+  named?: { workId: string; quote: string; sectionId: string; placed: boolean }[]
+  /** Names of works the text gives that no source could be found for: on the sign-off sheet. */
+  unreferenced?: { quote: string; sectionId: string }[]
+  /** The analysis of the authors' data: the field's conventions, the preparation, the reviewed plan, and what each analysis's code printed. */
+  analysis?: DataAnalysis
   /** Replies a person wrote in the editor that are already findings. */
   repliesSeen?: string[]
   /** A title a person gave the paper in the editor; it stands over the system's. */

@@ -106,9 +106,15 @@ export function citable(result: SimulationResult): Citable[] {
     add(`${name}.p95`, s.p95, precise(s.p95, s.mcse.p95), `95th percentile of ${name}${at}`)
     add(`${name}.mcse`, s.mcse.mean, error(s.mcse.mean), `Monte Carlo standard error of the mean of ${name}`)
   }
-  for (const [name, e] of Object.entries(result.events)) {
+  // The shares of one run read at one precision: those between 1% and 99% are all written to the coarsest step any of
+  // them needs, so a breakdown never sets 7.3% beside 3.64%. Coarser than a number's own error is never wrong; finer is.
+  const events = Object.entries(result.events).map(([name, e]) => ({ name, e, shown: percent(e.p, e.mcse, e.hits, e.n) }))
+  const middle = (e: { p: number }, shown: Shown) => shown.step !== null && e.p >= 0.01 && e.p <= 0.99
+  const common = Math.max(0, ...events.filter(({ e, shown }) => middle(e, shown)).map(({ shown }) => shown.step!))
+  for (const { name, e, shown } of events) {
     const when = result.spec.events.find((x) => x.name === name)?.when ?? name
-    add(`${name}.p`, e.p, percent(e.p, e.mcse, e.hits, e.n), `probability of ${name} (${when})${at}`)
+    const even = common && middle(e, shown) && shown.step! < common ? { text: `${written(100 * e.p, Math.max(0, Math.round(-Math.log10(common))), false)}%`, step: common } : shown
+    add(`${name}.p`, e.p, even, `probability of ${name} (${when})${at}`)
     add(`${name}.mcse`, 100 * e.mcse, error(100 * e.mcse), `Monte Carlo standard error of the probability of ${name}, in percentage points`)
   }
   return out

@@ -1,4 +1,6 @@
 // The editor as a writer uses it: typing, gestures, notes, saving, conflicts.
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 
 declare global {
@@ -124,6 +126,28 @@ test('a note left empty is not kept', async ({ page }) => {
   await page.keyboard.press('Escape')
   await expect(page.locator('.galley-mark')).toHaveCount(0)
   await expect.poll(() => savedNotes(page, slug)).toEqual([])
+})
+
+test('notes whose passage is gone are one-line ticks inside the page, however long their paragraph', async ({ page }) => {
+  const slug = `gone-${Date.now()}`
+  const at = new Date().toISOString()
+  writeFileSync(join(process.env.GALLEY_E2E_DIR!, `${slug}.md`), `# Gone\n\n${'Street trees with wider pits live longer than trees in narrow ones. '.repeat(30)}\n`)
+  writeFileSync(join(process.env.GALLEY_E2E_DIR!, `${slug}.annotations.json`), JSON.stringify({ annotations: Array.from({ length: 40 }, (_, i) => ({
+    id: `gone-${i}`, range: { start_line: 2, start_offset: 0, end_line: 2, end_offset: 12 }, snippet: `A passage since rewritten ${i}`, comment: 'Which study?', created_at: at, updated_at: at,
+  })) }))
+  await page.goto(`/?doc=${slug}`)
+  await expect(page.locator('.galley-mark.is-orphan')).toHaveCount(40)
+  const { line, ticks, sideways } = await page.evaluate(() => {
+    const paragraph = [...document.querySelectorAll<HTMLElement>('.galley-line')].find((l) => l.textContent?.startsWith('Street trees'))!
+    const main = document.querySelector<HTMLElement>('.galley-main')!
+    return {
+      line: parseFloat(getComputedStyle(paragraph).lineHeight),
+      ticks: [...document.querySelectorAll<HTMLElement>('.galley-mark.is-orphan')].map((t) => t.getBoundingClientRect().height),
+      sideways: main.scrollWidth - main.clientWidth,
+    }
+  })
+  expect(ticks.every((h) => Math.abs(h - line) < 1)).toBe(true)
+  expect(sideways).toBe(0)
 })
 
 test('a change made elsewhere merges with yours; where you both changed a line, yours stands and you are told', async ({ page }) => {

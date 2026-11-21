@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { defaultConfig, lightSpecFor, specFor, type PaperConfig } from './config.js'
+import { applyFamilies, defaultConfig, familiesOn, lightSpecFor, specFor, type PaperConfig } from './config.js'
 import { callModel, ModelFailure, RateLimited, resetHintMs, type CallResult } from './models.js'
 import type { Schema } from './schema.js'
 import type { Family, Note, PaperState, Seat } from './types.js'
@@ -48,6 +48,10 @@ export interface AskOptions {
   effort?: string
   /** Settle a single referee finding on the lighter settings (LIGHT_MODELS). */
   light?: boolean
+  /** Image files to look at, such as typeset pages: GPT reads them; the prompt carries their text for the other families. */
+  images?: string[]
+  /** Let the model search the web; only GPT's calls can. */
+  web?: boolean
 }
 
 /** A model call or search in flight, for heartbeats and `galley status`. */
@@ -132,6 +136,17 @@ export class Paper {
 
   static open(dir: string): Paper {
     const state = JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8')) as PaperState
+    // An earlier engine marked a finding "noted" when its referee still disagreed. No finding is dropped now, so in a
+    // paper that is still being worked on such a finding is open again, for escalation, adjudication or a stated
+    // limitation to settle. A finding a person set aside stays theirs.
+    if (!state.outcome || state.outcome === 'ready_for_submission') {
+      for (const f of state.findings ?? []) if (f.status === 'noted' && f.assignee !== 'humans') f.status = 'open'
+    }
+    // An earlier engine sent a figure back to be drawn again under its first drawing's step, which was settled, so it
+    // was never drawn and the paper could not be typeset again. Such a figure is now a redraw of its own.
+    for (const fig of state.figures ?? []) {
+      if (fig.status === 'planned' && fig.revise && !fig.redraws && `figure:${fig.id}` in (state.settled ?? {})) fig.redraws = 1
+    }
     return new Paper(dir, state, Paper.readConfig(dir))
   }
 
@@ -139,7 +154,28 @@ export class Paper {
     const path = join(dir, 'paper.json')
     const overrides = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}
     const base = defaultConfig()
-    return { ...base, ...overrides, seats: { ...base.seats, ...(overrides.seats || {}) } }
+    // The seats follow the families the paper may use.
+    const config = applyFamilies({ ...base, ...overrides, seats: { ...base.seats, ...(overrides.seats || {}) } })
+    // A paper that rests only on its world model searches nothing else: no systematic review, no sources from the web.
+    if (config.worldModel && config.worldModel.only !== false) { config.literatureReview = false; config.webSources = false }
+    return config
+  }
+
+  /**
+   * A change of model families in paper.json (from the project's settings) takes effect at the next step of a running
+   * paper: the seats are dealt again for the families now on. Returns whether anything changed.
+   */
+  refreshFamilies(): boolean {
+    const path = this.path('paper.json')
+    if (!existsSync(path)) return false
+    let families: Family[] | undefined
+    try { families = JSON.parse(readFileSync(path, 'utf8')).families } catch { return false }
+    if (JSON.stringify(familiesOn({ families })) === JSON.stringify(familiesOn(this.config))) return false
+    const fresh = Paper.readConfig(this.dir)
+    this.config = { ...this.config, families: fresh.families, seats: fresh.seats, referees: fresh.referees }
+    this.journal({ event: 'families', families: familiesOn(this.config), seats: this.config.seats })
+    this.say(`Models now: ${familiesOn(this.config).join(', ')}; ${Object.entries(this.config.seats).map(([seat, f]) => `${seat} ${f}`).join(', ')}`)
+    return true
   }
 
   path(...parts: string[]): string {
@@ -180,7 +216,7 @@ export class Paper {
       let result: CallResult
       const done = this.begin({ behavior: options.behavior, target: options.target, what: `${spec.model} (${options.seat})` })
       try {
-        result = await callModel({ spec, prompt: options.prompt, schema: options.schema, cacheDir: this.path('calls', 'cache') })
+        result = await callModel({ spec, prompt: options.prompt, schema: options.schema, images: options.images, web: options.web, cacheDir: this.path('calls', 'cache') })
       } catch (error) {
         done()
         release(options.family)

@@ -3,12 +3,16 @@
 import type { Behavior } from '../scheduler.js'
 import { calibrate, finalFrame, ready, reconcile, reprofile, typeset } from './close.js'
 import { extract, outline, plan, position, reformulate, reviewIdea, selectDirection } from './front.js'
-import { adjudicate, closeRound, referee, respond, verifyDisposition } from './review.js'
+import { adjudicate, closeRound, handleFinding, referee, respond, verifyDisposition } from './review.js'
 import { findEvidence, reassess, verify } from './truth.js'
 import { draft, fidelity, figure, frame as firstFrame } from './write.js'
-import { analyzeData } from './data.js'
+import { analyzeData, extractData, planAnalysis, reviewAnalysisPlan } from './data.js'
 import { literatureReview } from './literature.js'
 import { simulateModel } from './simulate.js'
+import { proof } from './proof.js'
+import { citeNamed } from './named.js'
+import { copyedit } from './copyedit.js'
+import { findWebSources } from './web.js'
 
 // One behavior writes the frame: once when the draft is checked, and again from the reviewed text.
 const frame: Behavior = { ...firstFrame, ready: (paper) => [...firstFrame.ready(paper), ...finalFrame(paper)] }
@@ -20,16 +24,17 @@ export const LADDER: Behavior[] = [
   position, reviewIdea, reformulate, selectDirection,
   // When asked for: a systematic review of the literature, by Canary, in the background.
   literatureReview,
-  // With the authors' data: measure, then argue.
-  analyzeData,
+  // With the authors' data: plan the analysis to the field's standard, have a statistician review it, run it, then argue.
+  planAnalysis, reviewAnalysisPlan, extractData, analyzeData,
   // When asked for: the Monte Carlo simulation the argument needs, run on this machine.
   simulateModel,
   plan, outline,
   // Truth: every external claim gets a verified passage, or is hedged.
-  findEvidence, verify, reassess, calibrate,
+  findEvidence, verify, findWebSources, reassess, calibrate,
   draft, figure, fidelity, frame,
-  // Referees: other families review; the author answers; a third family settles.
-  referee, closeRound, respond, verifyDisposition, adjudicate,
-  // Close: the ledger is made to say what the reviewed text says, then the paper is profiled and typeset.
-  reconcile, reprofile, typeset, ready,
+  // Referees: other families review; the author answers; a third family settles; what it cannot settle becomes a limitation.
+  referee, closeRound, respond, verifyDisposition, adjudicate, handleFinding,
+  // Close: every work the text names is cited, the whole text is copyedited for consistency, the ledger is made to say
+  // what the reviewed text says, then the paper is profiled, typeset and read as printed.
+  citeNamed, copyedit, reconcile, reprofile, typeset, proof, ready,
 ]

@@ -6,6 +6,9 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import type { Paper } from './paper.js'
+import { query, resolveConnection, schema, type DatabaseSpec } from './databases.js'
+import { authorsNamed, citationKey } from './text.js'
+import type { Work } from './types.js'
 import { readWorkbook, sheetTable, toCsv } from './workbook.js'
 
 export type MaterialKind = 'dataset' | 'document' | 'link'
@@ -21,6 +24,125 @@ export interface Material {
   url?: string
   /** For a dataset: only its profile and computed results reach a model. */
   private: boolean
+  /** The dataset unit this file belongs to, when it came as part of one. */
+  dataset?: string
+}
+
+/**
+ * A dataset as its producers know it: one or more files (tables, sheets, its
+ * README) under one name, with where it comes from. Its provenance decides how
+ * the paper may describe it: data the authors produced is their own work; data
+ * others produced, or that was published before, is cited as its source says.
+ */
+export interface DatasetUnit {
+  id: string
+  name: string
+  /** Its files, as materials (a workbook gives one per data sheet). */
+  materials: string[]
+  producedBy: 'authors' | 'others'
+  version?: string
+  /** Where it is published: a DOI or a link. */
+  doi?: string
+  url?: string
+  /** The publication that first reported it: a DOI or a link. */
+  describedIn?: string
+  licence?: string
+  /** How its producers ask for it to be cited, as they wrote it. */
+  citation?: string
+  private: boolean
+  /**
+   * A database rather than files: the connection's name in the connections file (never its password), the database,
+   * and the snapshot of its schema the models plan from. Its materials are the extracts the analyses take from it.
+   */
+  connection?: string
+  database?: string
+  schemaFile?: string
+}
+
+/** A dataset as the start dialog or a manifest file gives it. */
+export interface DatasetManifest {
+  name: string
+  files: string[]
+  producedBy?: 'authors' | 'others'
+  version?: string
+  doi?: string
+  url?: string
+  describedIn?: string
+  licence?: string
+  citation?: string
+  private?: boolean
+}
+
+const doiIn = (text = '') => text.match(/10\.\d{4,9}\/[^\s"<>]+/)?.[0].replace(/[.,;)]+$/, '').toLowerCase()
+
+/** Datasets as units: each one's files are added as materials, and the unit keeps its provenance. */
+export async function addDatasets(dir: string, manifests: DatasetManifest[], offset = 0): Promise<{ materials: Material[]; datasets: DatasetUnit[] }> {
+  const materials: Material[] = []
+  const datasets: DatasetUnit[] = []
+  for (const [i, m] of manifests.entries()) {
+    const id = `D${i + 1}`
+    const added = await addMaterials(dir, m.files.map((source) => ({ source, shared: m.private === false })), offset + materials.length)
+    for (const item of added) item.dataset = id
+    materials.push(...added)
+    const doi = doiIn(m.doi) ?? undefined
+    datasets.push({
+      id, name: m.name.trim() || id, materials: added.map((a) => a.id), producedBy: m.producedBy === 'others' ? 'others' : 'authors',
+      ...(m.version?.trim() ? { version: m.version.trim() } : {}), ...(doi ? { doi } : {}),
+      ...(!doi && /^https?:\/\//i.test(m.doi ?? '') ? { url: m.doi!.trim() } : m.url?.trim() ? { url: m.url.trim() } : {}),
+      ...(m.describedIn?.trim() ? { describedIn: m.describedIn.trim() } : {}), ...(m.licence?.trim() ? { licence: m.licence.trim() } : {}),
+      ...(m.citation?.trim() ? { citation: m.citation.trim() } : {}), private: m.private !== false,
+    })
+  }
+  return { materials, datasets }
+}
+
+/** A database added to a paper: its connection saved by name, its schema kept as a snapshot for the models to plan from. */
+export async function addDatabase(dir: string, spec: DatabaseSpec, id: string): Promise<DatasetUnit> {
+  const connection = await resolveConnection(spec)
+  const tables = await schema(connection)
+  const version = (await query(connection, connection.database, 'SELECT version()', 'TSV')).trim()
+  mkdirSync(join(dir, 'materials'), { recursive: true })
+  const schemaFile = join('materials', `${id}-schema.json`)
+  writeFileSync(join(dir, schemaFile), JSON.stringify({ version, database: connection.database, tables }, null, 2))
+  return {
+    id, name: spec.name?.trim() || connection.database, materials: [], producedBy: spec.producedBy === 'authors' ? 'authors' : 'others',
+    private: spec.private !== false, connection: connection.name, database: connection.database, schemaFile,
+  }
+}
+
+/** Write the paper's materials and datasets back to its paper.json, as they grow (a database's extracts). */
+export function saveMaterials(paper: Paper): void {
+  const path = paper.path('paper.json')
+  const config = JSON.parse(readFileSync(path, 'utf8'))
+  config.materials = paper.config.materials
+  config.datasets = paper.config.datasets
+  writeFileSync(path, JSON.stringify(config, null, 2) + '\n')
+}
+
+/**
+ * The sources a dataset is cited by: the dataset itself when it is published, and
+ * the publication that first reported it. Kept as works, so the paper cites them
+ * like any other source and they appear in the references.
+ */
+export function datasetSources(paper: Paper, unit: DatasetUnit): { data?: string; article?: string } {
+  const works = paper.state.works
+  const out: { data?: string; article?: string } = {}
+  if (unit.doi || unit.url) {
+    const id = `dataset:${unit.id}`
+    works[id] ??= {
+      id, doi: unit.doi ?? null, title: unit.name, authors: [], year: null, venue: null, abstract: '', citedBy: null, url: unit.url ?? (unit.doi ? `https://doi.org/${unit.doi}` : null),
+      // A dataset with no record behind its DOI is still listed as the dataset it is.
+      csl: unit.doi ? undefined : { type: 'dataset', title: unit.name, ...(unit.version ? { version: unit.version } : {}), URL: unit.url },
+    } as Work
+    out.data = id
+  }
+  if (unit.describedIn) {
+    const id = `dataset:${unit.id}:article`
+    const doi = doiIn(unit.describedIn)
+    works[id] ??= { id, doi: doi ?? null, title: doi ? '' : unit.describedIn, authors: [], year: null, venue: null, abstract: '', citedBy: null, url: doi ? `https://doi.org/${doi}` : unit.describedIn } as Work
+    out.article = id
+  }
+  return out
 }
 
 const UA = process.env.GALLEY_USER_AGENT || 'scholarly-client/0.1'
@@ -57,10 +179,10 @@ async function linkText(url: string): Promise<string | null> {
 }
 
 /** Copy files into the paper's materials folder and read links; a dataset stays private unless it is named shared. */
-export async function addMaterials(dir: string, sources: { source: string; shared?: boolean; name?: string }[]): Promise<Material[]> {
+export async function addMaterials(dir: string, sources: { source: string; shared?: boolean; name?: string }[], offset = 0): Promise<Material[]> {
   mkdirSync(join(dir, 'materials'), { recursive: true })
   const out: Material[] = []
-  let count = 0
+  let count = offset
   for (const { source, shared, name } of sources) {
     const id = `M${++count}`
     const kind = kindOf(source)
@@ -196,6 +318,54 @@ export function profileDataset(rows: Row[]): DatasetProfile {
   return { rows: rows.length, columns }
 }
 
+/** A quantile by linear interpolation between order statistics (the common definition, type 7). */
+function quantileOf(sorted: number[], p: number): number {
+  const at = (sorted.length - 1) * p
+  const lo = Math.floor(at)
+  const hi = Math.ceil(at)
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (at - lo)
+}
+
+/**
+ * The data as it was analysed, described by galley from the data itself, never by a model: for each dataset, every
+ * numeric column's count, missing values, mean, standard deviation, median, 5th, 95th and 99th percentiles,
+ * minimum and maximum. The paper prints it as an appendix, so a reader can check every number against the data.
+ */
+export function describeData(paper: Paper): string {
+  const datasets = (paper.config.materials ?? []).filter((m) => m.kind === 'dataset')
+  if (!datasets.length) return ''
+  const f = (x: number) => Number.isFinite(x) ? fmt(x) : '—'
+  const tables = datasets.map((m) => {
+    const rows = datasetRows(paper, m)
+    const columns = rows.length ? Object.keys(rows[0]) : []
+    const lines: string[] = []
+    let numeric = 0
+    for (const name of columns) {
+      const values: number[] = []
+      let missing = 0
+      for (const r of rows) {
+        const v = r[name]
+        if (isMissing(v)) { missing++; continue }
+        const x = asNumber(v)
+        if (x === null) { values.length = 0; missing = -1; break }
+        values.push(x)
+      }
+      if (missing < 0 || values.length < 3) continue
+      // Past the fifteenth numeric column only the count goes on, so the caption can say how many are left out.
+      if (++numeric > 15) continue
+      const sorted = Float64Array.from(values).sort() as unknown as number[]
+      lines.push(`| ${name.replace(/\|/g, '/')} | ${values.length.toLocaleString('en-US')} | ${missing.toLocaleString('en-US')} | ${f(mean(values))} | ${f(sd(values))} | ${f(quantileOf(sorted, 0.5))} | ${f(quantileOf(sorted, 0.05))} | ${f(quantileOf(sorted, 0.95))} | ${f(quantileOf(sorted, 0.99))} | ${f(sorted[0])} | ${f(sorted[sorted.length - 1])} |`)
+    }
+    if (!lines.length) return ''
+    const shown = numeric > lines.length ? `; the first ${lines.length} of its ${numeric} numeric columns` : ''
+    // The dataset's name is the table's caption, so it is numbered and never left at the foot of a page without its table.
+    // The rule's dashes set the column widths: the column names get the room, each number a narrow column.
+    return `| Column | n | Missing | Mean | SD | Median | P5 | P95 | P99 | Min | Max |\n|:-------------------|------:|------:|------:|-----:|------:|-----:|-----:|-----:|-----:|-----:|\n${lines.join('\n')}\n\n: ${m.id}: ${m.name}, ${rows.length.toLocaleString('en-US')} rows${shown}.`
+  }).filter(Boolean)
+  if (!tables.length) return ''
+  return `Each dataset as it was analysed, described by galley from the data itself: for every numeric column, the number of values, the missing values, the mean, the standard deviation, the median, the 5th, 95th and 99th percentiles, the minimum and the maximum. The percentiles interpolate linearly between order statistics, so they can differ slightly from quantiles the text computes another way.\n\n${tables.join('\n\n')}`
+}
+
 // Separators from 10,000 on, so a year reads as 2015, not 2,015.
 const fmt = (n: number) => Math.abs(n) >= 10000 ? n.toLocaleString('en-US', { maximumFractionDigits: 1 }) : Math.abs(n) >= 1000 ? String(Math.round(n * 10) / 10) : Number(n.toPrecision(4)).toString()
 
@@ -216,11 +386,56 @@ export function datasetRows(paper: Paper, m: Material): Row[] {
 
 const upTo = (text: string, n: number) => { const w = text.split(/\s+/); return w.length > n ? `${w.slice(0, n).join(' ')} […]` : text.trim() }
 
-/** The materials as the seats read them: a private dataset only as its profile, never a row of it. */
-export function materialsBlock(paper: Paper): string {
+/** A work's citation key, as the rest of the paper makes it (keyFor), so a dataset is cited by the key the references list. */
+export function workKey(paper: Paper, workId: string): string {
+  const work = paper.state.works[workId]
+  if (!work.bibKey) {
+    const taken = new Set(Object.values(paper.state.works).map((w) => w.bibKey).filter(Boolean) as string[])
+    work.bibKey = citationKey(work, taken)
+  }
+  return work.bibKey
+}
+
+/** A database's schema as the models read it: its tables, largest first, with rows, size and columns; never a row of the data. */
+function databaseText(paper: Paper, unit: DatasetUnit, limit = 24_000): string {
+  if (!unit.schemaFile) return '  (its schema could not be read)'
+  const snapshot = JSON.parse(readFileSync(paper.path(unit.schemaFile), 'utf8')) as { version?: string; tables: { table: string; rows: number; bytes: number; columns: string[]; comment?: string }[] }
+  const total = snapshot.tables.reduce((a, t) => ({ rows: a.rows + t.rows, bytes: a.bytes + t.bytes }), { rows: 0, bytes: 0 })
+  const lines: string[] = []
+  let used = 0
+  for (const t of snapshot.tables) {
+    const line = `  ${t.table} (${t.rows.toLocaleString('en-US')} rows, ${(t.bytes / 2 ** 30).toFixed(2)} GiB)${t.comment ? ` -- ${t.comment}` : ''}: ${t.columns.join(', ')}`
+    // A database can hold hundreds of tables: columns for as many as fit, then the rest by name. The steps that plan
+    // the analysis and write the extracts read it whole.
+    if (used + line.length > limit) { lines.push(`  …and ${snapshot.tables.length - lines.length} more tables: ${snapshot.tables.slice(lines.length).map((x) => x.table).join(', ')}`); break }
+    lines.push(line)
+    used += line.length
+  }
+  return `  ClickHouse${snapshot.version ? ` ${snapshot.version}` : ''}, database "${unit.database}": ${snapshot.tables.length} tables, ${total.rows.toLocaleString('en-US')} rows, ${(total.bytes / 2 ** 30).toFixed(1)} GiB. Read-only: the analysis takes from it only the extracts it needs, each a SQL query galley runs (aggregated in the database, at most 1,000,000 rows), and no row of it reaches a model unless an extract is shared.\n  Tables, largest first:\n${lines.join('\n')}`
+}
+
+/** How the paper may describe a dataset, from where it comes. */
+function provenance(paper: Paper, unit: DatasetUnit): string {
+  const sources = datasetSources(paper, unit)
+  const cite = [
+    sources.data ? `cite the dataset as [@${workKey(paper, sources.data)}]` : '',
+    sources.article ? `cite the publication that first reported it as [@${workKey(paper, sources.article)}]` : '',
+  ].filter(Boolean).join(', and ')
+  const published = !!(unit.doi || unit.url || unit.describedIn)
+  const origin = unit.producedBy === 'others'
+    ? 'produced by others: the paper analyses it and describes it as their data, never as measurements the authors made'
+    : published
+      ? 'produced by the authors and published before: the paper describes it as their earlier data, never as measurements made for this paper'
+      : 'produced by the authors: their own work'
+  return `${origin}.${unit.licence ? ` Licence: ${unit.licence}.` : ''}${unit.citation ? ` Its producers ask that it be cited as: ${unit.citation}.` : ''}${cite ? ` Where the paper describes the data, ${cite}.` : ''}`
+}
+
+/** The materials as the seats read them: a private dataset only as its profile, never a row of it; a dataset unit with where it comes from. */
+export function materialsBlock(paper: Paper, options: { fullSchema?: boolean } = {}): string {
   const list = paper.config.materials ?? []
-  if (!list.length) return ''
-  const parts = list.map((m) => {
+  // A database with no extracts yet still shows its schema, so the analysis can be planned on it.
+  if (!list.length && !(paper.config.datasets ?? []).some((u) => u.connection)) return ''
+  const describe = (m: Material) => {
     if (m.kind === 'dataset') {
       const rows = datasetRows(paper, m)
       const profile = profileText(profileDataset(rows)).split('\n').map((l) => `  ${l}`).join('\n')
@@ -230,15 +445,43 @@ export function materialsBlock(paper: Paper): string {
     const text = m.text ? readFileSync(paper.path(m.text), 'utf8') : ''
     const label = m.kind === 'link' ? `link ${m.url}` : `document "${m.name}"`
     return `[${m.id}] ${label}${text ? `:\n"""\n${upTo(text, m.kind === 'link' ? 2000 : 2500)}\n"""` : ' (its text could not be read)'}`
-  })
-  return `THE AUTHORS' OWN MATERIALS, which the paper draws on besides the literature. What rests on them is the authors' own work.\n${parts.join('\n\n')}`
+  }
+  const units = paper.config.datasets ?? []
+  const parts = [
+    ...units.map((u) => u.connection
+      ? `[${u.id}] DATABASE "${u.name}", ${provenance(paper, u)}\n${databaseText(paper, u, options.fullSchema ? Infinity : undefined)}${list.some((m) => m.dataset === u.id) ? `\n  Its extracts so far:\n${list.filter((m) => m.dataset === u.id).map(describe).join('\n\n')}` : ''}`
+      : `[${u.id}] DATASET "${u.name}"${u.version ? `, version ${u.version}` : ''}, ${provenance(paper, u)} Its files:\n${list.filter((m) => m.dataset === u.id).map(describe).join('\n\n')}`),
+    ...list.filter((m) => !m.dataset).map(describe),
+  ]
+  return `THE MATERIALS the paper draws on besides the literature. Data the authors produced for this paper is their own work; a dataset produced by others, or published before, is described and cited as its provenance below says.\n${parts.join('\n\n')}`
+}
+
+/** The data availability statement, from each dataset's provenance: where it is, or that it is not public. */
+export function availabilityStatement(paper: Paper): string {
+  const units = paper.config.datasets ?? []
+  const authors = authorsNamed(paper.config.authors?.length ?? 0)
+  return units.map((u) => {
+    if (u.connection) return `The data come from the ${u.private ? 'private ' : ''}database "${u.name}" (ClickHouse), ${u.producedBy === 'others' ? 'kept by others' : `kept by ${authors}`}${u.private ? ', which is not publicly available' : ''}; the query that extracted each table the analyses used is in the evidence package, so anyone with access to the database can extract them again.`
+    const sources = datasetSources(paper, u)
+    const where = sources.data ? ` It is available at ${u.doi ? `https://doi.org/${u.doi}` : u.url} [@${workKey(paper, sources.data)}].` : u.private ? ' It is not publicly available.' : ''
+    const first = sources.article ? ` It was first reported in [@${workKey(paper, sources.article)}].` : ''
+    const who = u.producedBy === 'others' ? 'was produced by others' : `was produced by ${authors}`
+    return `The dataset "${u.name}"${u.version ? ` (version ${u.version})` : ''} ${who}.${where}${first}${u.licence ? ` License: ${u.licence}.` : ''}`
+  }).join(' ')
 }
 
 /** What galley measured in the authors' datasets, for every seat that writes or judges the paper. */
 export function measurementsBlock(paper: Paper): string {
   const ms = Object.values(paper.state.measurements ?? {})
   if (!ms.length) return ''
-  return `MEASUREMENTS computed on the authors' machine from their datasets. A number from the data appears in the text only as its placeholder, {{data.<id>}} (for example {{data.A1}}), which is filled in when the paper is typeset; never write it as a figure.\n${ms.map((m) => `${m.id}: ${m.summary}`).join('\n')}`
+  const a = paper.state.analysis
+  const checks = a?.runs ? Object.entries(a.runs).flatMap(([id, r]) => r.ok ? r.checks.map((c) => `${id}: ${c.assumption}: ${c.holds ? 'holds' : 'does not hold'} (${c.method}${c.p !== undefined ? `, p = ${c.p.toPrecision(2)}` : ''}). ${c.note}`) : []) : []
+  const how = a?.mode === 'code'
+    ? `\nHow they were computed: each analysis below ran as code on the authors' machine, as planned${a.reviewed ? ' and reviewed by a statistician' : ''}, for a paper in ${a.field || 'its field'}. The field's conventions: ${a.conventions.join(' ')}\n${a.prepare?.ok && a.prepare.report ? `The shared preparation every analysis started from, as it ran (the paper reports each exclusion with its count):\n${a.prepare.report.steps.map((st) => `- ${st.step}${st.rows_before !== undefined && st.rows_after !== undefined ? ` (${st.rows_before} rows to ${st.rows_after})` : ''}: ${st.note}`).join('\n')}\nShared definitions: ${a.prepare.report.definitions.join(' ')}` : `Preparation applied first: ${a.preparation.join(' ') || 'none'}`}\nThe analyses: ${a.plan.filter((p) => a.runs?.[p.id]?.ok).map((p) => `${p.id} ${p.question} (method: ${p.method}; uncertainty: ${p.uncertainty})`).join('; ')}`
+    : ''
+  return `MEASUREMENTS computed on the authors' machine from their datasets. A number from the data appears in the text only as its placeholder, {{data.<id>}} (for example {{data.A1}}), with its interval as {{data.<id>.ci}} where it has one and its n as {{data.<id>.n}}; they are filled in when the paper is typeset, so never write them as figures. The paper states each number with its n, and with its interval when it has one.${how}
+${ms.map((m) => `${m.id}: ${m.summary}${m.ci ? ` [interval: {{data.${m.id}.ci}}]` : ''}`).join('\n')}${checks.length ? `\nASSUMPTION CHECKS, which the paper reports where it uses the analysis, with what follows when one does not hold:\n${checks.join('\n')}` : ''}${a?.notComputed?.length ? `\nPLANNED BUT NOT COMPUTED. These did not run, so the paper never describes them, their methods or their results, and never says the paper reports them: ${a.notComputed.map((n) => `${n.id} (${n.question})`).join('; ')}.` : ''}
+The methods describe only the analyses above, with the methods, intervals and checks recorded here; never describe an analysis, an interval, a model fit or a check that is not listed.`
 }
 
 // ---------------------------------------------------------------- analyses
@@ -263,9 +506,15 @@ export interface AnalysisSpec {
 
 export interface Measurement {
   id: string
-  spec: AnalysisSpec
+  /** The built-in operation that computed it; a result of analysis code has none. */
+  spec?: AnalysisSpec
+  /** The planned analysis whose code printed it, and the name it printed it under. */
+  analysis?: string
+  name?: string
   /** The number a sentence cites, as text, filled in for {{data.<id>}}. */
   value: string
+  /** Its confidence interval as text ("95% CI 400 ms to 437 ms"), filled in for {{data.<id>.ci}}. */
+  ci?: string
   /** The full result in words, for the author and the evidence package. */
   summary: string
   n: number

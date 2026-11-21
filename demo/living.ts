@@ -36,7 +36,7 @@ interface Live {
   activity: Entry[]
 }
 type State = 'running' | 'waiting' | 'paused' | 'ready'
-type Arrival = 'height' | 'fade' | 'none'
+export type Arrival = 'height' | 'fade' | 'none'
 
 const POLL_MS = 2500
 const STAGES: Record<string, string> = { seed: 'Seed', aim: 'Aim', substance: 'Materials', plan: 'Plan', evidence: 'Evidence', draft: 'Draft', review: 'Review', finish: 'Finish' }
@@ -44,7 +44,7 @@ const INITIALS: Record<string, string> = { author: 'A', checker: 'C', challenger
 // How far apart faces stack in the margin when several work on one passage.
 const STACK_PX = 26
 
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
+export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 const elapsed = (seconds: number) => (seconds < 60 ? `${seconds} s` : `${Math.round(seconds / 60)} min`)
 const read = (key: string) => { try { return localStorage.getItem(key) } catch { return null } }
@@ -57,17 +57,23 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = ''): HTML
   return node
 }
 
-/** Set text only when it changed, so an unchanged poll touches nothing. */
-function setText(node: HTMLElement, text: string): void {
-  if (node.textContent !== text) node.textContent = text
+/**
+ * Set text only when it changed, so an unchanged poll touches nothing; and change it in place, so a line that ticks
+ * (how long ago the paper last changed) keeps its node and redraws nothing around it.
+ */
+export function setText(node: HTMLElement, text: string): void {
+  if (node.textContent === text) return
+  const only = node.childNodes.length === 1 && node.firstChild!.nodeType === Node.TEXT_NODE ? node.firstChild as Text : null
+  if (only) only.data = text
+  else node.textContent = text
 }
 
-function faceHTML(seat: string, family: string | null): string {
+export function faceHTML(seat: string, family: string | null): string {
   return `<span class="lv-face" data-family="${esc(family ?? '')}">${esc(INITIALS[seat] ?? seat.charAt(0).toUpperCase())}</span>`
 }
 
 /** Bring the face inside `host` up to date without replacing it, so its breathing never restarts. */
-function setFace(host: HTMLElement, seat: string, family: string | null, busy: boolean): void {
+export function setFace(host: HTMLElement, seat: string, family: string | null, busy: boolean): void {
   let face = host.querySelector<HTMLElement>('.lv-face')
   if (!face) { host.insertAdjacentHTML('afterbegin', faceHTML(seat, family)); face = host.querySelector<HTMLElement>('.lv-face')! }
   if (face.dataset.family !== (family ?? '')) face.dataset.family = family ?? ''
@@ -107,7 +113,7 @@ function depart(node: HTMLElement, how: Arrival): void {
  * is still there is updated in place, a new item gets a new element, and the
  * element of an item that is gone leaves. `how` is how arrivals and departures move.
  */
-function keyed<T>(parent: HTMLElement, items: T[], key: (item: T) => string, make: (item: T) => HTMLElement, update: (node: HTMLElement, item: T) => void, how: Arrival): void {
+export function keyed<T>(parent: HTMLElement, items: T[], key: (item: T) => string, make: (item: T) => HTMLElement, update: (node: HTMLElement, item: T) => void, how: Arrival): void {
   const existing = new Map<string, HTMLElement>()
   for (const child of Array.from(parent.children) as HTMLElement[]) {
     if (child.dataset.key !== undefined && !child.classList.contains('is-leaving')) existing.set(child.dataset.key, child)

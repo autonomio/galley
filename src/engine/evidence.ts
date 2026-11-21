@@ -179,6 +179,40 @@ export function budgetLine(budget: { remaining: number; limit: number; resetSeco
 }
 
 /** The registry's CSL-JSON record for a DOI (Crossref and DataCite alike), or null. */
+export const titleWords = (title: string) => title.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+
+/**
+ * A work known only by its title and year (a reference that would print as a title, a year and a link) completed from
+ * OpenAlex: its DOI, authors and venue, taken only from a record whose title is the same word for word and whose year
+ * is within one. One search; the work keeps what it had when nothing matches or the index cannot answer.
+ */
+export async function completeByTitle(work: Work, replace = false): Promise<boolean> {
+  const words = titleWords(work.title)
+  if (words.length < 3 || work.doi) return false
+  try {
+    const key = openalexKey()
+    const response = await fetch(`https://api.openalex.org/works?search=${encodeURIComponent(work.title)}&per_page=5&select=doi,display_name,publication_year,authorships,primary_location${key ? `&api_key=${encodeURIComponent(key)}` : ''}`, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(30_000) })
+    if (!response.ok) return false
+    const { results = [] } = await response.json() as { results?: { doi?: string; display_name?: string; publication_year?: number; authorships?: { author?: { display_name?: string } }[]; primary_location?: { source?: { display_name?: string } } }[] }
+    // The same title, and of those the one nearest the year the work gives. A document found on the web (`replace`)
+    // may carry the date it was posted or read rather than published, so its year only ranks the matches.
+    const near = (r: { publication_year?: number }) => (work.year && r.publication_year ? Math.abs(r.publication_year - work.year) : 0)
+    const same = results
+      .filter((r) => titleWords(r.display_name ?? '').join(' ') === words.join(' ') && (replace || near(r) <= 1))
+      .sort((a, b) => near(a) - near(b) || (b.doi ? 1 : 0) - (a.doi ? 1 : 0))[0]
+    if (!same) return false
+    work.doi = same.doi ? same.doi.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '').toLowerCase() : null
+    const authors = (same.authorships ?? []).map((a) => a.author?.display_name ?? '').filter(Boolean)
+    if (authors.length) work.authors = authors
+    // A web document's issuer and date give way to the publication's own record.
+    work.year = replace ? same.publication_year ?? work.year : work.year ?? same.publication_year ?? null
+    work.venue = replace ? same.primary_location?.source?.display_name ?? work.venue : work.venue ?? same.primary_location?.source?.display_name ?? null
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function cslForDoi(doi: string): Promise<Record<string, unknown> | null> {
   const url = `https://doi.org/${encodeURIComponent(doi).replace(/%2F/g, '/')}`
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -186,7 +220,9 @@ export async function cslForDoi(doi: string): Promise<Record<string, unknown> | 
       const response = await fetch(url, { headers: { Accept: 'application/vnd.citationstyles.csl+json', 'User-Agent': UA }, redirect: 'follow', signal: AbortSignal.timeout(30_000) })
       if (response.status === 404) return null
       if (!response.ok) { await new Promise((r) => setTimeout(r, 1500 * (attempt + 1))); continue }
-      return (await response.json()) as Record<string, unknown>
+      const csl = (await response.json()) as Record<string, unknown>
+      await fromRegistry(doi, csl)
+      return csl
     } catch {
       await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)))
     }
@@ -194,10 +230,79 @@ export async function cslForDoi(doi: string): Promise<Record<string, unknown> | 
   return null
 }
 
+/** The JSON a registry's own API returns for a record, or null. */
+async function registryJson(url: string): Promise<any | null> {
+  try {
+    const response = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': UA }, signal: AbortSignal.timeout(30_000) })
+    return response.ok ? await response.json() : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * What a DOI's citation record folds away, taken from the record of the registry that issued it: the book a chapter is
+ * in beside the series it belongs to, and for a paper in proceedings, the proceedings' own title, its series and
+ * number, and its type. A record the registry cannot give is left as it came.
+ */
+export async function fromRegistry(doi: string, csl: Record<string, unknown>): Promise<void> {
+  const id = encodeURIComponent(doi).replace(/%2F/g, '/')
+  if (csl.source === 'Crossref') {
+    const record = (await registryJson(`https://api.crossref.org/works/${id}`))?.message
+    if (record) refineFromCrossref(csl, record)
+  } else {
+    const record = (await registryJson(`https://api.datacite.org/dois/${id}`))?.data?.attributes
+    if (record) refineFromDatacite(csl, record)
+  }
+}
+
+/** A chapter's Crossref record names the series first and the book second; the citation record keeps only the series. */
+export function refineFromCrossref(csl: Record<string, unknown>, record: any): void {
+  const titles = (Array.isArray(record?.['container-title']) ? record['container-title'] : []).filter((t: unknown) => typeof t === 'string' && t.trim())
+  if (titles.length < 2 || !/chapter|proceedings-article|book-section|book-part|reference-entry|book-track/.test(String(record.type))) return
+  csl['container-title'] = titles[titles.length - 1]
+  csl['collection-title'] = titles[0]
+  if (record.volume) {
+    csl['collection-number'] = String(record.volume)
+    delete csl.volume
+  }
+}
+
+const DATACITE_TYPES: Record<string, string> = { ConferencePaper: 'paper-conference', JournalArticle: 'article-journal', Preprint: 'article', BookChapter: 'chapter', Book: 'book', ConferenceProceeding: 'book', Report: 'report', Dissertation: 'thesis', Dataset: 'dataset', Software: 'software', Standard: 'standard' }
+
+/** A DataCite record says what a work is and what it was published in, with the series apart from the volume. */
+export function refineFromDatacite(csl: Record<string, unknown>, record: any): void {
+  const type = DATACITE_TYPES[String(record?.types?.resourceTypeGeneral)]
+  if (type) csl.type = type
+  for (const item of Array.isArray(record?.relatedItems) ? record.relatedItems : []) {
+    if (item?.relationType !== 'IsPublishedIn') continue
+    const titles: any[] = Array.isArray(item.titles) ? item.titles : []
+    const main = titles.find((t) => t && !t.titleType)?.title
+    const sub = titles.find((t) => t?.titleType === 'Subtitle')?.title
+    if (['ConferenceProceeding', 'Book', 'Journal'].includes(item.relatedItemType)) {
+      // A proceedings volume can carry its series and number as its title ("LIPIcs, Volume 102, CCC 2018") and its own
+      // name as the subtitle.
+      const name = sub && /\bvol(?:ume)?\.?\s*\d/i.test(String(main ?? '')) ? sub : [main, sub].filter(Boolean).join(': ')
+      if (name) csl['container-title'] = name
+      if (item.firstPage) csl.page = item.lastPage ? `${item.firstPage}-${item.lastPage}` : String(item.firstPage)
+      if (item.relatedItemType === 'Journal' && item.volume) csl.volume = String(item.volume)
+      if (item.relatedItemType === 'Journal' && item.issue) csl.issue = String(item.issue)
+    } else if (['Collection', 'BookSeries', 'Series'].includes(item.relatedItemType) && main) {
+      csl['collection-title'] = main
+      if (item.volume) csl['collection-number'] = String(item.volume)
+    }
+  }
+  // The series number is the series': it is not also the volume of the proceedings.
+  if (csl['collection-number'] && String(csl.volume ?? '') === String(csl['collection-number'])) delete csl.volume
+  // A paper's number within the proceedings or book it is in locates it there, as its pages do; the reference names
+  // the volume, as citation styles cite a chapter.
+  if (csl.type === 'paper-conference' || csl.type === 'chapter') delete csl.number
+}
+
 /** Registries sometimes list an affiliation as an author ("Department of …, … University"). */
 const ORGANIZATION = /\b(department|university|universit[äéà]t?|institute|institut|school|faculty|laborator(y|ies)|centre|center|college|hospital|academy|ministry|council|association|society|consortium)\b/i
 
-const CSL_STRINGS = ['type', 'title', 'container-title', 'container-title-short', 'collection-title', 'event-title', 'volume', 'issue', 'page', 'number', 'DOI', 'URL', 'publisher', 'publisher-place', 'ISSN', 'ISBN', 'genre', 'language']
+const CSL_STRINGS = ['type', 'title', 'container-title', 'container-title-short', 'collection-title', 'collection-number', 'event-title', 'volume', 'issue', 'page', 'number', 'DOI', 'URL', 'publisher', 'publisher-place', 'ISSN', 'ISBN', 'genre', 'language']
 const CSL_NAMES = ['author', 'editor']
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
@@ -218,6 +323,12 @@ export function cleanCsl(raw: Record<string, unknown>): Record<string, unknown> 
     const text = Array.isArray(value) ? value.find((v) => typeof v === 'string' && v.trim()) : value
     if (typeof text === 'string' && text.trim()) out[key] = decodeEntities(text.replace(/<[^>]+>/g, '')).trim()
     else if (typeof text === 'number') out[key] = String(text)
+  }
+  // A title with a subtitle prints whole ("Pebbles, Graphs, and a Pinch of Combinatorics: Towards Tight I/O Lower Bounds").
+  const subtitle = Array.isArray(raw.subtitle) ? raw.subtitle.find((v) => typeof v === 'string' && v.trim()) : raw.subtitle
+  if (typeof subtitle === 'string' && subtitle.trim() && typeof out.title === 'string') {
+    const sub = decodeEntities(subtitle.replace(/<[^>]+>/g, '')).trim()
+    if (!out.title.toLowerCase().includes(sub.toLowerCase())) out.title = `${out.title}${/[?!:.]$/.test(out.title) ? ' ' : ': '}${sub}`
   }
   for (const key of CSL_NAMES) {
     const value = raw[key]
@@ -244,6 +355,18 @@ export function cleanCsl(raw: Record<string, unknown>): Record<string, unknown> 
   // Registries name types their own way; citation styles expect CSL's names.
   const types: Record<string, string> = { 'journal-article': 'article-journal', 'proceedings-article': 'paper-conference', 'book-chapter': 'chapter', 'posted-content': 'article', dissertation: 'thesis', 'reference-entry': 'entry', 'monograph': 'book', 'edited-book': 'book' }
   out.type = types[String(out.type)] ?? (out.type || 'article-journal')
+  // A paper in proceedings, a chapter or a book is dated by its year: the day of the conference is not part of it.
+  const parts = (out.issued as { 'date-parts': number[][] } | undefined)?.['date-parts']?.[0]
+  if (['paper-conference', 'chapter', 'book'].includes(String(out.type)) && parts && parts.length > 1) out.issued = { 'date-parts': [[parts[0]]] }
+  // A preprint server is where a preprint was posted, not a journal it appeared in.
+  if (/^10\.48550\//i.test(String(out.DOI ?? '')) || /^arxiv\b/i.test(String(out['container-title'] ?? '')) || /^arxiv$/i.test(String(out.publisher ?? ''))) {
+    out.type = 'article'
+    out.publisher = 'arXiv'
+    delete out['container-title']
+  }
+  // A container title that already states the volume ("LIPIcs, Volume 102, CCC 2018") prints it once.
+  const stated = String(out['container-title'] ?? '').match(/\bvol(?:ume)?\.?\s*(\d+)\b/i)
+  if (stated && stated[1] === String(out.volume ?? '')) delete out.volume
   return out
 }
 

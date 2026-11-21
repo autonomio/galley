@@ -13,11 +13,12 @@
 //   galley ladder                    the behaviors, in ladder order
 //   galley doctor                    check that every model, tool and source answers
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { basename, resolve } from 'node:path'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, dirname, join, resolve } from 'node:path'
 import { LADDER } from './behaviors/index.js'
 import { answerChoice } from './behaviors/truth.js'
-import { defaultConfig, FAMILY_MODELS, FAMILY_NAMES } from './config.js'
+import { applyFamilies, defaultConfig, FAMILIES, familiesOn, FAMILY_MODELS, FAMILY_NAMES } from './config.js'
 import { budgetLine, canaryPython, canarySearch, openalexBudget, openalexKeyed, SEARCH_CREDITS } from './evidence.js'
 import { callModel, codexBin, resetHintMs } from './models.js'
 import { Paper } from './paper.js'
@@ -25,7 +26,10 @@ import { editorDir, productionRecord, syncEditor, typeset } from './render.js'
 import { runPaper, Stalled } from './scheduler.js'
 import { obj, bool } from './schema.js'
 import { DOES } from './self.js'
-import { addMaterials } from './materials.js'
+import { addDatabase, addDatasets, addMaterials, type DatasetManifest } from './materials.js'
+import { discover, parseConnectionLine, publicConnection, readConnections, type DatabaseSpec } from './databases.js'
+import { datasetFromRecord, isDatasetRecord, readRecord } from './records.js'
+import { keepWorldModel, loadWorldModelFile, worldModelName, worldModelSummary } from './worldmodel.js'
 import { reviewDone } from './behaviors/close.js'
 import { REVIEW_SETTINGS } from './literature.js'
 import type { Family } from './types.js'
@@ -49,6 +53,23 @@ function option(value: string | undefined): true | 'load-bearing' | undefined {
   return /^(yes|true|on|systematic)$/i.test(value) ? true : undefined
 }
 
+/** Model families as a list (claude,gpt,gemini): at least two, so one writes and another checks. */
+function modelsFlag(value: string): Family[] {
+  const families = [...new Set(value.split(/[,\s]+/).map((v) => v.trim().toLowerCase()).filter(Boolean))] as Family[]
+  const unknown = families.filter((f) => !FAMILIES.includes(f))
+  if (unknown.length) throw new Error(`unknown model families: ${unknown.join(', ')} (choose from ${FAMILIES.join(', ')})`)
+  if (families.length < 2) throw new Error('choose at least two model families: one writes, another checks')
+  return families
+}
+
+/** A database manifest, read once: one that carries a password is removed as soon as it is read; the password goes to the connections file only. */
+function readDatabaseManifest(path: string): DatabaseSpec {
+  const spec = JSON.parse(readFileSync(path, 'utf8')) as DatabaseSpec
+  const lined = spec.line ? parseConnectionLine(spec.line) : null
+  if (spec.password || (lined?.via === 'http' && lined.password)) rmSync(path, { force: true })
+  return spec
+}
+
 function positional(): string[] {
   const out: string[] = []
   for (let i = 0; i < args.length; i++) {
@@ -67,11 +88,12 @@ function slugFromSeed(seed: string, file: string): string {
 /** What each behavior is doing, in words a person reads in the status view. */
 const DOING: Record<string, string> = {
   extract: 'Reading the seed', position: 'Searching the literature for prior art', 'review-idea': 'Reviewing the idea on seven factors', 'literature-review': 'Systematic review of the literature (Canary)', simulate: 'Designing and running the simulation',
-  reformulate: 'Writing three directions', 'select-direction': 'Choosing a direction', analyze: 'Measuring your data', plan: 'Planning the argument',
+  reformulate: 'Writing three directions', 'select-direction': 'Choosing a direction', 'analysis-plan': 'Planning the analysis of your data', 'analysis-review': 'A statistician reviewing the analysis plan', 'extract-data': 'Extracting from the database', analyze: 'Running the analyses of your data', plan: 'Planning the argument',
   outline: 'Outlining', 'find-evidence': 'Finding evidence', verify: 'Verifying citations', reassess: 'Reassessing the thesis', calibrate: 'Calibrating the verifier',
   draft: 'Drafting', figure: 'Drawing figures', fidelity: 'Checking sections against their claims', frame: 'Writing the title and abstract',
   referee: 'Referee review', 'close-round': 'Closing the round', respond: 'Answering the referees', 'verify-disposition': 'Referees judging the answers',
-  adjudicate: 'Settling disputes', reconcile: 'Reconciling the ledger with the text', reprofile: 'Profiling the finished paper', typeset: 'Typesetting',
+  adjudicate: 'Settling disputes', 'handle-finding': 'Stating an unsettled finding as a limitation', reconcile: 'Reconciling the ledger with the text', reprofile: 'Profiling the finished paper', typeset: 'Typesetting',
+  proof: 'Reading the typeset paper', 'web-sources': 'Finding primary sources on the web',
 }
 
 /** Where a paper stands, as structured data for a host to show. */
@@ -141,6 +163,9 @@ function statusData(paper: Paper): Record<string, unknown> {
       rounds: paper.config.rounds, words: paper.config.words, venue: paper.config.venue,
       authors: paper.config.authors.map((a) => a.affiliation ? `${a.name}, ${a.affiliation}` : a.name),
       materials: (paper.config.materials ?? []).map((m) => `${m.name}${m.kind === 'dataset' ? (m.private ? ' (private dataset)' : ' (shared dataset)') : m.kind === 'link' ? ' (link)' : ''}`),
+      // The model families the paper may use, and who sits where for them; a change takes effect at the next step.
+      families: familiesOn(paper.config),
+      seats: Object.fromEntries(Object.entries(paper.config.seats).map(([seat, family]) => [seat, FAMILY_NAMES[family]])),
     },
   }
 }
@@ -244,13 +269,51 @@ async function main(): Promise<void> {
       const author = flag('author')
       // The authors' own materials: datasets stay private unless named shared.
       const sources = [...flags('material').map((source) => ({ source })), ...flags('shared-material').map((source) => ({ source, shared: true }))]
-      const materials = sources.length ? await addMaterials(dir, sources) : []
-      for (const m of materials) console.log(`Material ${m.id}: ${m.kind} ${m.url ?? m.name}${m.kind === 'dataset' ? (m.private ? ' (private)' : ' (shared)') : m.text ? '' : ' (its text could not be read)'}`)
+      const loose = sources.length ? await addMaterials(dir, sources) : []
+      // A dataset as a unit: a manifest names its files (relative to the manifest) and says where the data comes from.
+      // A dataset is given by its link (a Zenodo record or its DOI), or by a manifest that names its files or its record.
+      const manifests: DatasetManifest[] = []
+      for (const value of flags('dataset')) {
+        const inbox = () => mkdtempSync(join(tmpdir(), 'galley-record-'))
+        if (isDatasetRecord(value)) { manifests.push(await datasetFromRecord(value, inbox())); continue }
+        const manifest = JSON.parse(readFileSync(value, 'utf8')) as DatasetManifest & { record?: string }
+        if (manifest.record) {
+          const { record, files: _files, ...given } = manifest
+          manifests.push(await datasetFromRecord(record, inbox(), Object.fromEntries(Object.entries(given).filter(([, v]) => v !== undefined && v !== ''))))
+          continue
+        }
+        manifests.push({ ...manifest, files: (manifest.files ?? []).map((file) => resolve(dirname(resolve(value)), file)) })
+      }
+      const units = manifests.length ? await addDatasets(dir, manifests, loose.length) : { materials: [], datasets: [] }
+      // A database: a saved connection's name, user@server#database or clickhouse://…#database, or a manifest naming one.
+      for (const value of flags('database')) {
+        const saved = readConnections().find((c) => c.name === value)
+        const spec: DatabaseSpec = saved ? { connection: saved.name, database: saved.database }
+          : /#[\w-]+$/.test(value) ? { line: value.replace(/#[\w-]+$/, ''), database: value.match(/#([\w-]+)$/)![1] }
+            : readDatabaseManifest(value)
+        units.datasets.push(await addDatabase(dir, spec, `D${units.datasets.length + 1}`))
+      }
+      // A world model the sources come from: a Resolvent repository as a zip or a folder, or the file galley read it into.
+      // Only its sources, unless --other-sources yes.
+      const worldModelPath = flag('world-model')
+      const onlySources = !/^(yes|on|true)$/i.test(flag('other-sources') ?? '')
+      const worldModel = worldModelPath ? keepWorldModel(dir, await loadWorldModelFile(resolve(worldModelPath)), onlySources) : undefined
+      if (worldModel) console.log(`World model: "${worldModel.name}", ${worldModel.claims} claims, ${worldModel.sources} sources; ${worldModel.only ? 'its sources only' : 'its sources first, then the literature and the web'}`)
+      if (worldModel?.only && option(flag('literature-review')) !== undefined) console.log('No systematic review: the paper rests only on its world model (give --other-sources yes to add one).')
+      const materials = [...loose, ...units.materials]
+      for (const m of materials) console.log(`Material ${m.id}: ${m.kind} ${m.url ?? m.name}${m.dataset ? ` in ${m.dataset}` : ''}${m.kind === 'dataset' ? (m.private ? ' (private)' : ' (shared)') : m.text ? '' : ' (its text could not be read)'}`)
+      for (const u of units.datasets) console.log(`Dataset ${u.id}: ${u.name}, produced by ${u.producedBy}${u.doi ? `, DOI ${u.doi}` : u.url ? `, ${u.url}` : ''}${u.describedIn ? `, first reported in ${u.describedIn}` : ''}`)
       Paper.create(dir, seed, {
         ...(materials.length ? { materials } : {}),
+        ...(units.datasets.length ? { datasets: units.datasets } : {}),
         ...(flag('rounds') ? { rounds: Math.max(1, Number(flag('rounds'))) } : {}),
         ...(author ? { authors: [{ name: author, ...(flag('affiliation') ? { affiliation: flag('affiliation') } : {}) }] } : {}),
         ...(flag('venue') ? { venue: flag('venue')! } : {}),
+        ...(flag('funding') || flag('competing-interests') || flag('acknowledgements') ? { declarations: {
+          ...(flag('funding') ? { funding: flag('funding')! } : {}),
+          ...(flag('competing-interests') ? { competing_interests: flag('competing-interests')! } : {}),
+          ...(flag('acknowledgements') ? { acknowledgements: flag('acknowledgements')! } : {}),
+        } } : {}),
         ...(flag('words') ? { words: Number(flag('words')) } : {}),
         ...(flag('editor') ? { editorDir: resolve(flag('editor')!) } : {}),
         ...(flag('editor-doc') ? { editorDoc: flag('editor-doc')! } : {}),
@@ -258,6 +321,9 @@ async function main(): Promise<void> {
         ...(flag('dial') ? { dial: flag('dial') as 'autonomous' | 'assisted' | 'propose' } : {}),
         ...(option(flag('literature-review')) !== undefined ? { literatureReview: option(flag('literature-review')) } : {}),
         ...(option(flag('simulation')) !== undefined ? { simulation: option(flag('simulation')) } : {}),
+        ...(/^(no|off|false)$/i.test(flag('web-sources') ?? '') ? { webSources: false } : {}),
+        ...(flag('models') ? { families: modelsFlag(flag('models')!) } : {}),
+        ...(worldModel ? { worldModel } : {}),
       })
       console.log(`Paper created in ${dir}`)
       if (command === 'write') await run(dir)
@@ -329,16 +395,55 @@ async function main(): Promise<void> {
       console.log(`The manuscript and its notes are in ${editor}. Open them in the editor with:\n\n  GALLEY_DIR=${editor} npm run dev\n\nthen visit http://localhost:5174. While the paper is being written, your edits, notes and replies are taken in within seconds; otherwise on the next "galley run ${dir}".`)
       return
     }
+    case 'db': {
+      // With a line (user@server, or a clickhouse:// address): every ClickHouse found there, with its databases. Without: the saved connections, passwords left out.
+      // "-" reads the line from stdin, so a line that carries a password never shows in a process listing.
+      const [given] = positional()
+      const line = given === '-' ? readFileSync(0, 'utf8').trim() : given
+      console.log(JSON.stringify(line ? await discover(line) : readConnections().map(publicConnection)))
+      return
+    }
+    case 'world-model': {
+      // What a world model holds (a Resolvent repository as a zip or a folder), for a host to show before the paper starts.
+      // With --out, its records are kept in that file, which --world-model then takes as it is.
+      const [path] = positional()
+      if (!path) throw new Error('usage: galley world-model <zip or folder> [--out <file.json>]')
+      const model = await loadWorldModelFile(resolve(path), flag('name') ? worldModelName(flag('name')!) : undefined)
+      if (flag('out')) writeFileSync(resolve(flag('out')!), JSON.stringify(model))
+      console.log(JSON.stringify(worldModelSummary(model)))
+      return
+    }
+    case 'record': {
+      // What a dataset's published record says about it (a Zenodo record or its DOI), for a host to show before the paper starts.
+      const [link] = positional()
+      if (!link) throw new Error('usage: galley record <link>')
+      console.log(JSON.stringify(await readRecord(link)))
+      return
+    }
     case 'context': {
       // What a host shows before a paper starts: who sits where, the defaults, and whether literature search has a key.
-      const config = defaultConfig()
+      // With --models, the seats as they are dealt for those families.
+      const config = applyFamilies({ ...defaultConfig(), ...(flag('models') ? { families: modelsFlag(flag('models')!) } : {}) })
       console.log(JSON.stringify({
         openalexKey: openalexKeyed(),
+        families: familiesOn(config).map((family) => ({ family, name: FAMILY_NAMES[family], model: FAMILY_MODELS[family].model })),
         seats: Object.fromEntries(Object.entries(config.seats).map(([seat, family]) => [seat, { family, name: FAMILY_NAMES[family], model: FAMILY_MODELS[family].model }])),
         referees: config.referees.map((r) => r.seat),
         defaults: { venue: config.venue, words: config.words, rounds: config.rounds, dial: config.dial, citations: config.citations, literatureReview: false, simulation: false },
         review: REVIEW_SETTINGS,
       }))
+      return
+    }
+    case 'models': {
+      // Which model families a paper may use: written to its paper.json; a running paper deals its seats again at its next step.
+      const [dir, list] = positional()
+      if (!dir || !list) throw new Error('usage: galley models <dir> claude,gpt,gemini')
+      const path = resolve(dir, 'paper.json')
+      const config = JSON.parse(readFileSync(path, 'utf8'))
+      config.families = modelsFlag(list)
+      writeFileSync(path, JSON.stringify(config, null, 2) + '\n')
+      const dealt = Paper.readConfig(resolve(dir))
+      console.log(JSON.stringify({ families: familiesOn(dealt), seats: dealt.seats, referees: dealt.referees.map((r) => ({ seat: r.seat, family: r.family })) }))
       return
     }
     case 'ladder':

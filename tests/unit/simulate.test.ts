@@ -68,7 +68,8 @@ describe('the claim ledger as published', () => {
   it('fills the numbers its claims carry, as the body does', async () => {
     const { buildManuscript } = await import('../../src/engine/render.js')
     dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
-    const paper = Paper.create(join(dir, 'p'), 'seed')
+    // The ledger is printed only when asked for: by default a claim's standing stays beside the text.
+    const paper = Paper.create(join(dir, 'p'), 'seed', { ledgerAppendix: true })
     const s = paper.state
     s.measurements = { A1: { id: 'A1', spec: { id: 'A1', dataset: 'M1', op: 'quantile', column: 'Delay ms', column2: null, by: null, value: '0.99', where: null }, value: '422.2', summary: '99th percentile of Delay ms: 422.2, n = 147', n: 147 } }
     s.claims = [{ id: 'C1', text: 'The 99th-percentile switchover latency is {{data.A1}} ms.', kind: 'contribution', seedQuote: '', origin: 'system', need: 'internal', loadBearing: true, dependsOn: [], status: 'internal', history: [] }]
@@ -77,9 +78,10 @@ describe('the claim ledger as published', () => {
     s.frame = { title: 'Latency', abstract: 'a', keywords: [], limitations: '', opens: '' }
     s.figures = [{ id: 'fig1', caption: 'Switchover delay; the 99th percentile is {{data.A1}} ms.', spec: '', sectionId: 'S1', status: 'rendered', file: 'figures/fig1.png' }]
     const { markdown } = await buildManuscript(paper)
-    expect(markdown).toContain('the 99th percentile is 422.2 ms.](figures/fig1.png)')
+    // A number keeps its unit on the same line: they are joined by a no-break space.
+    expect(markdown).toContain('the 99th percentile is 422.2 ms.](figures/fig1.png)')
     const ledger = markdown.slice(markdown.indexOf('# Appendix A'))
-    expect(ledger).toContain('The 99th-percentile switchover latency is 422.2 ms.')
+    expect(ledger).toContain('The 99th-percentile switchover latency is 422.2 ms.')
     expect(markdown).not.toContain('{{data.')
   })
 })

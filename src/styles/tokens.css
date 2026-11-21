@@ -116,6 +116,8 @@
   --galley-size-button: calc(var(--galley-sp-unit) * 6.5);
   --galley-size-floating: 24px;     /* the selection buttons; selection.ts lays them out at this size */
   --galley-w-side: calc(var(--galley-sp-unit) * 84);   /* a pane beside the page (slot 'side') */
+  --galley-w-margin: calc(var(--galley-sp-unit) * 64); /* the comments column beside the text (margin.ts) */
+  --galley-sp-margin: var(--galley-sp-10);             /* between the text and that column */
   --galley-line-hair: 1px;
   --galley-line-focus: 2px;
   --galley-r-card: calc(4px * var(--galley-ctl-radius));
