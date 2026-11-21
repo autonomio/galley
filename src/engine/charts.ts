@@ -51,10 +51,20 @@ function measured(paper: Paper, id: string): { value: number; low: number; high:
   return { value: result.value, low: result.ci_low, high: result.ci_high, level: result.ci_level, method: result.method }
 }
 
+/** What a panel's series are told apart by, as the paper names it; it heads the panels or the legend. */
+export const groupOf = (panel: ChartPanel) => (panel.group ?? '').replace(/[^\p{L}\p{N} ()-]/gu, '').trim() || 'Run'
+
+/** The columns a line chart's course prints as: its mean and, for a single course, the two ends of its band. */
+const LINE = { mean: 'Mean', lower: '5th percentile', upper: '95th percentile' }
+
+/** Series colours that stay legible on white and apart from one another, in the order the series come. */
+const SERIES_COLORS = ['primary', 'secondary', '#7D5595']
+
 /** The rows a panel draws, and what each column holds, or why it cannot be drawn. */
 export function panelRows(paper: Paper, panel: ChartPanel): { rows: Row[]; describe: Record<string, string> } | { problem: string } {
   const runs = new Map(runsOf(paper).map((run) => [run.id, run]))
   const label = (i: number) => panel.labels[i] || panel.data[i]
+  const group = groupOf(panel)
   const rows: Row[] = []
   if (panel.kind === 'hist') {
     if (!panel.data.length || panel.data.length > 3) return { problem: 'a histogram draws one to three quantities' }
@@ -67,20 +77,22 @@ export function panelRows(paper: Paper, panel: ChartPanel): { rows: Row[]; descr
       const finite = draws.filter(Number.isFinite)
       // The same spec and seed give the run's own draws; a different count would mean they are not the run reported.
       if (finite.length !== run.result.outputs[name].n) return { problem: `${ref}'s draws do not reproduce the run` }
-      for (const value of finite) rows.push({ row: rows.length + 1, series: label(i), value })
+      for (const value of finite) rows.push({ row: rows.length + 1, [group]: label(i), value })
     }
-    return { rows, describe: { value: `each of the ${(rows.length / panel.data.length).toLocaleString('en-US')} Monte Carlo draws of the run`, series: 'the run the draws come from' } }
+    return { rows, describe: { value: `each of the ${(rows.length / panel.data.length).toLocaleString('en-US')} Monte Carlo draws of the run`, [group]: 'the run the draws come from' } }
   }
   if (panel.kind === 'line') {
     if (!panel.data.length || panel.data.length > 3) return { problem: 'a line chart draws one to three courses' }
+    const one = panel.data.length === 1
     for (const [i, ref] of panel.data.entries()) {
       const [kind, id, name] = ref.split(':')
       const steps = runs.get(id)?.result.series.steps
       const band = steps?.bands[name]
       if (kind !== 'steps' || !steps || !band) return { problem: `${ref} is not a simulated course of this paper` }
-      steps.t.forEach((t, j) => rows.push({ row: rows.length + 1, series: label(i), x: t, y: band.mean[j], lower: band.p5[j], upper: band.p95[j] }))
+      // One course prints with its band; several print as their means.
+      steps.t.forEach((t, j) => rows.push(one ? { row: rows.length + 1, x: t, [LINE.mean]: band.mean[j], [LINE.lower]: band.p5[j], [LINE.upper]: band.p95[j] } : { row: rows.length + 1, [group]: label(i), x: t, [LINE.mean]: band.mean[j] }))
     }
-    return { rows, describe: { y: 'the mean over the run\'s weighted samples', lower: 'the 5th percentile over the samples', upper: 'the 95th percentile over the samples', series: 'the run' } }
+    return { rows, describe: { x: 'the step of the run', [LINE.mean]: 'the mean over the run\'s weighted samples', ...(one ? { [LINE.lower]: 'the 5th percentile over the samples', [LINE.upper]: 'the 95th percentile over the samples' } : { [group]: 'the run' }) } }
   }
   if (panel.data.length < 2 || panel.data.length > 12) return { problem: 'an interval chart draws two to twelve estimates' }
   const methods = new Set<string>()
@@ -111,11 +123,51 @@ export function toCsv(rows: Row[]): string {
 /** What the installed Astetik draws: its kinds and the options each accepts. */
 export interface AstetikCatalog { kinds: Map<string, Set<string>>; panels: boolean }
 
+/** The Astetik release galley draws with: a machine without one installs exactly this one. */
+export const ASTETIK_VERSION = '2.0.10'
+/** Astetik's own environment, apart from the analysis environment so neither changes the other's packages. */
+const ASTETIK_ENV = join(homedir(), '.galley', 'astetik')
+
+const whichOf = (names: string[]): string | null => {
+  for (const name of names) {
+    if (name.startsWith('/')) { if (existsSync(name)) return name; continue }
+    try { const found = execFileSync('which', [name]).toString().trim(); if (found) return found } catch { /* not on PATH */ }
+  }
+  return null
+}
+
+/** Astetik ready to run: the one installed, or this release installed once in its own environment. Null when it cannot be had. */
+export async function ensureAstetik(log: (line: string) => void = () => {}): Promise<string | null> {
+  const found = astetikCommand()
+  if (found || process.env.GALLEY_ASTETIK) return found
+  const venv = join(ASTETIK_ENV, '.venv')
+  const python = join(venv, 'bin', 'python')
+  const uv = whichOf(['uv', join(homedir(), '.local', 'bin', 'uv'), join(homedir(), '.cargo', 'bin', 'uv'), '/opt/homebrew/bin/uv'])
+  const step = async (cmd: string, args: string[]) => { const done = await run(cmd, args, {}, 900_000); if (!done.ok) throw new Error(done.stderr) }
+  try {
+    mkdirSync(ASTETIK_ENV, { recursive: true })
+    log(`Installing Astetik ${ASTETIK_VERSION} in ${ASTETIK_ENV}; this happens once …`)
+    if (uv) {
+      await step(uv, ['venv', venv, '--python', '3.12', '--quiet'])
+      await step(uv, ['pip', 'install', '--python', python, '--quiet', `astetik==${ASTETIK_VERSION}`])
+    } else {
+      const system = whichOf(['python3'])
+      if (!system) return null
+      await step(system, ['-m', 'venv', venv])
+      await step(python, ['-m', 'pip', 'install', '--quiet', `astetik==${ASTETIK_VERSION}`])
+    }
+  } catch (error) {
+    log(`Astetik could not be installed: ${(error as Error).message.slice(0, 300)}`)
+    return null
+  }
+  return astetikCommand()
+}
+
 /** The Astetik command galley runs, or null when none is installed. */
 export function astetikCommand(): string | null {
   const given = process.env.GALLEY_ASTETIK
   if (given) return existsSync(given) ? given : null
-  const local = join(homedir(), '.galley', 'analysis', '.venv', 'bin', 'astetik')
+  const local = join(ASTETIK_ENV, '.venv', 'bin', 'astetik')
   if (existsSync(local)) return local
   try { return execFileSync('which', ['astetik']).toString().trim() || null } catch { return null }
 }
@@ -139,25 +191,45 @@ export const drawable = (catalog: AstetikCatalog) => CHART_KINDS.filter((k) => c
 /** One panel's Astetik specification, with the options the installed Astetik accepts. */
 export function panelSpec(panel: ChartPanel, describe: Record<string, string>, options: Set<string>): Record<string, unknown> {
   const several = panel.data.length > 1
+  const group = groupOf(panel)
+  const unit = panel.unit || '1'
   const opts: Record<string, unknown> = {}
   if (panel.marks.length && options.has('marks')) opts.marks = panel.marks.slice(0, 2)
-  const base = { schema_version: '1.0', kind: panel.kind, legend: several, labels: { x: panel.x, y: panel.y }, missing: 'error', descriptions: describe }
-  if (panel.kind === 'hist') return { ...base, x: 'value', ...(several ? { hue: 'series' } : {}), key: ['row'], units: { value: panel.unit || '1' }, options: opts }
+  const base = { schema_version: '1.0', kind: panel.kind, labels: { x: panel.x, y: panel.y }, missing: 'error', descriptions: describe }
+  if (panel.kind === 'hist') {
+    // The same quantity in several runs prints as panels side by side on one scale, not overlaid.
+    if (several && options.has('col_wrap')) opts.col_wrap = panel.data.length
+    return { ...base, x: 'value', ...(several ? { col: group } : {}), key: ['row'], legend: false, units: { value: unit }, options: opts }
+  }
   if (panel.kind === 'line') {
-    if (options.has('band')) opts.band = { lower: 'lower', upper: 'upper' }
-    return { ...base, x: 'x', y: 'y', ...(several ? { hue: 'series' } : {}), key: ['row'], units: { x: panel.xUnit || '1', y: panel.unit || '1', lower: panel.unit || '1', upper: panel.unit || '1' }, options: opts }
+    const x = panel.xUnit || '1'
+    if (several) return { ...base, x: 'x', y: LINE.mean, hue: group, key: ['row'], legend: true, units: { x, [LINE.mean]: unit }, options: opts }
+    // A course with its band: shaded where Astetik draws a band, its two ends as lines where it does not yet.
+    if (options.has('band')) return { ...base, x: 'x', y: LINE.mean, key: ['row'], legend: false, units: { x, [LINE.mean]: unit, [LINE.lower]: unit, [LINE.upper]: unit }, options: { ...opts, band: { lower: LINE.lower, upper: LINE.upper } } }
+    return { ...base, x: 'x', y: [LINE.mean, LINE.lower, LINE.upper], key: ['row'], legend: true, units: { x, [LINE.mean]: unit, [LINE.lower]: unit, [LINE.upper]: unit }, options: opts }
   }
   if (options.has('lower')) Object.assign(opts, { lower: 'lower', upper: 'upper' })
-  return { ...base, x: 'estimate', y: 'label', key: ['label'], legend: false, units: { estimate: panel.unit || '1', lower: panel.unit || '1', upper: panel.unit || '1' }, options: opts }
+  return { ...base, x: 'estimate', y: 'label', key: ['label'], legend: false, units: { estimate: unit, lower: unit, upper: unit }, options: opts }
 }
 
 /** The paper's design: its typeface where galley has the font file, and its text width. */
-export function chartManifest(): Record<string, unknown> {
+export function chartManifest(panel?: ChartPanel, options: Set<string> = new Set()): Record<string, unknown> {
   const font = process.env.GALLEY_CHART_FONT
+  const categories: Record<string, string> = {}
+  // Each series a legend tells apart has its own colour; the two ends of a band keep apart from the mean and from each other.
+  if (panel?.kind === 'line' && panel.data.length > 1) panel.data.forEach((ref, i) => { categories[panel.labels[i] || ref] = SERIES_COLORS[i % SERIES_COLORS.length] })
+  else if (panel?.kind === 'line' && !options.has('band')) Object.assign(categories, { [LINE.mean]: 'primary', [LINE.lower]: '#6E7F96', [LINE.upper]: '#8C6E4A' })
+  const facets = panel?.kind === 'hist' && panel.data.length > 1 ? panel.data.length : 1
   return {
     schema_version: '1.0',
-    ...(font && existsSync(font) ? { typography: { font: 'New Computer Modern', font_path: font, fontsize: 8, labelsize: 8, ticksize: 7, legendsize: 7 } } : { typography: { fontsize: 8, labelsize: 8, ticksize: 7, legendsize: 7 } }),
-    paper: { preset: 'single', width_mm: 140, aspect: 1.6, dpi: 600, min_fontsize: 7 },
+    // The page is white, so the figure is.
+    colors: { paper: '#FFFFFF', neutral: '#FFFFFF' },
+    ...(Object.keys(categories).length ? { categories } : {}),
+    // A serif with Greek and mathematics, close to the page's own type and installed with Matplotlib; or the paper's
+    // own typeface where a copy of it is given.
+    typography: { ...(font && existsSync(font) ? { font: 'New Computer Modern', font_path: font } : { font: 'STIXGeneral' }), fontsize: 8, labelsize: 8, ticksize: 7, legendsize: 7 },
+    // The paper's text width; one panel wide and low, panels side by side nearer square.
+    paper: { preset: 'single', width_mm: 140, aspect: facets === 1 ? 2.2 : facets === 2 ? 1.6 : 1.1, dpi: 600, min_fontsize: 7 },
   }
 }
 
@@ -170,14 +242,39 @@ function figureFile(dir: string): string | null {
 }
 
 /**
+ * What Astetik's declared failure says, in words the author can act on: the report is the last JSON object of what it
+ * wrote (Matplotlib's warnings come before it), and a failed publication check names the labels it clipped, the
+ * characters a font lacks or the ticks that collide.
+ */
+export function declaredFailure(stderr: string): string {
+  const at = stderr.lastIndexOf('{"code"')
+  if (at < 0) return stderr.trim().split('\n').filter((l) => !/Warning|cast\(|^\s*$/.test(l)).slice(-3).join(' ').slice(0, 400) || 'Astetik could not draw it'
+  let report: any
+  try { report = JSON.parse(stderr.slice(at)) } catch { return stderr.slice(at, at + 400) }
+  const failed: string[] = []
+  const walk = (o: any) => {
+    if (Array.isArray(o)) { o.forEach(walk); return }
+    if (!o || typeof o !== 'object') return
+    if (o.passed === false && typeof o.check === 'string') {
+      const issues = (o.issues ?? []) as any[]
+      const said = issues.map((i) => i.text ? `"${i.text}"${i.missing ? ` lacks ${i.missing.map((m: any) => m.character).join(' ')}` : ''}` : JSON.stringify(i).slice(0, 120)).join('; ')
+      failed.push(`${o.check.replace(/_/g, ' ')}${said ? `: ${said}` : ''}`)
+    }
+    Object.values(o).forEach(walk)
+  }
+  walk(report.details)
+  return `${report.message ?? report.code}${failed.length ? ` (${failed.join('; ')})` : report.details?.reason ? ` (${report.details.reason})` : ''}`.slice(0, 700)
+}
+
+/**
  * Draws a chart figure through Astetik into the paper's build: its data from the records, its specification, its
  * design, then the verified bundle's drawing copied in as the figure's file. Nothing is changed on failure.
  */
 export async function drawChart(paper: Paper, fig: Figure, attempt: string): Promise<{ ok: true; file: string; bundle: string; source: string } | { ok: false; problem: string }> {
   const plan = fig.chart
   if (!plan?.panels.length) return { ok: false, problem: 'the chart has no panels' }
-  const cmd = astetikCommand()
-  if (!cmd) return { ok: false, problem: 'Astetik is not installed (set GALLEY_ASTETIK, or install it in the analysis environment)' }
+  const cmd = await ensureAstetik((line) => paper.say?.(line))
+  if (!cmd) return { ok: false, problem: 'Astetik is not installed and could not be installed (set GALLEY_ASTETIK to an astetik command)' }
   const catalog = await astetikCatalog(cmd)
   if (!catalog) return { ok: false, problem: 'Astetik did not report its catalogue' }
   const missing = plan.panels.map((p) => p.kind).filter((k) => !catalog.kinds.has(k))
@@ -198,16 +295,12 @@ export async function drawChart(paper: Paper, fig: Figure, attempt: string): Pro
   const spec = single ? { ...specs[0], paper: true } : { schema_version: '1.0', paper: true, layout: { rows: specs.length > 2 ? 2 : 1, cols: specs.length > 1 ? 2 : 1 }, panel_labels: true, panels: specs }
   if (single) delete (spec as Record<string, unknown>).data
   writeFileSync(join(dir, 'spec.json'), JSON.stringify(spec, null, 1))
-  writeFileSync(join(dir, 'manifest.json'), JSON.stringify(chartManifest(), null, 1))
+  writeFileSync(join(dir, 'manifest.json'), JSON.stringify(chartManifest(single ? plan.panels[0] : undefined, single ? catalog.kinds.get(plan.panels[0].kind) : undefined), null, 1))
   const out = join(dir, 'bundle')
   const args = ['render', ...(single ? ['--data', join(dir, 'panel-1.csv')] : []), '--spec', join(dir, 'spec.json'), '--manifest', join(dir, 'manifest.json'), '--output', out]
   // Matplotlib keeps its cache beside the chart, so a render writes nowhere else.
   const done = await run(cmd, args, { MPLCONFIGDIR: join(dir, '.mpl') })
-  if (!done.ok) {
-    let problem = done.stderr.trim()
-    try { const e = JSON.parse(problem); problem = `${e.code}: ${e.message}${e.details ? ` (${JSON.stringify(e.details).slice(0, 300)})` : ''}` } catch { /* not a declared failure */ }
-    return { ok: false, problem: problem.slice(0, 600) || 'Astetik could not draw it' }
-  }
+  if (!done.ok) return { ok: false, problem: declaredFailure(done.stderr) }
   let result: any = {}
   try { result = JSON.parse(done.stdout) } catch { return { ok: false, problem: 'Astetik did not report its result' } }
   if (result.verification?.passed !== true) return { ok: false, problem: `the drawing did not pass Astetik's checks: ${JSON.stringify(result.verification ?? {}).slice(0, 400)}` }
