@@ -193,6 +193,8 @@ export interface ChartPanel {
   unit: string
   /** The unit of a line chart's horizontal axis (time, a setting). */
   xUnit?: string
+  /** What the series differ by, as the paper names it ("Run", "Setting"): it heads the panels or the legend. */
+  group?: string
   /** Thin reference lines at values the text states. */
   marks: { axis: 'x' | 'y'; value: number; label: string }[]
 }

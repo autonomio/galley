@@ -14,7 +14,7 @@ import { arr, bool, enm, num, obj, str, type Schema } from '../schema.js'
 import { compile, parse } from '../simulation/expression.js'
 import { applyExact, citedKeys, contentWords, overlap, words, type Edit } from '../text.js'
 import type { ChartPanel, ChartPlan, Figure, Section } from '../types.js'
-import { astetikCatalog, astetikCommand, chartCatalog, drawable, drawChart } from '../charts.js'
+import { astetikCatalog, chartCatalog, drawable, drawChart, ensureAstetik } from '../charts.js'
 import { reviewDone } from './close.js'
 import { live, placeholderLegend, seatFamily, sectionText } from './common.js'
 import { selfTalk } from './proof.js'
@@ -495,13 +495,14 @@ const panelSchema = obj({
   x: str('the horizontal axis label'), y: str('the vertical axis label'),
   unit: str('the unit of the measured quantity as the paper writes it; "1" for a pure number'),
   x_unit: str('for a line chart, the unit of its horizontal axis; otherwise empty'),
+  group: str('what the runs in the panel differ by, as the paper names it; empty for a single run'),
   marks: arr(obj({ axis: enm(['x', 'y']), value: num(), label: str() })),
 })
 
 function panelsOf(raw: any[]): ChartPanel[] {
   return (raw ?? []).slice(0, 4).map((p: any) => ({
     kind: p.kind, data: (p.data ?? []).map(String), labels: (p.labels ?? []).map(String), x: String(p.x ?? ''), y: String(p.y ?? ''),
-    unit: String(p.unit ?? '1') || '1', ...(p.x_unit ? { xUnit: String(p.x_unit) } : {}),
+    unit: String(p.unit ?? '1') || '1', ...(p.x_unit ? { xUnit: String(p.x_unit) } : {}), ...(p.group ? { group: String(p.group) } : {}),
     marks: (p.marks ?? []).filter((m: any) => Number.isFinite(m?.value)).slice(0, 2).map((m: any) => ({ axis: m.axis === 'y' ? 'y' : 'x', value: Number(m.value), label: String(m.label ?? '') })),
   }))
 }
@@ -509,22 +510,28 @@ function panelsOf(raw: any[]): ChartPanel[] {
 /** A chart's panels are drawable here when every reference is data of this paper that its kind can draw, and every mark is a value the text states. */
 function chartProblems(paper: Paper, panels: ChartPanel[], kinds: ChartPanel['kind'][], text: string): string[] {
   const catalog = new Map(chartCatalog(paper).map((d) => [d.ref, d]))
+  const runs = new Map(Object.values(paper.state.simulations ?? {}).map((run) => [run.id, run]))
   const problems: string[] = []
   if (!panels.length) problems.push('it has no panel')
   for (const panel of panels) {
     if (!kinds.includes(panel.kind)) problems.push(`${panel.kind} is not a kind galley draws here`)
     for (const ref of panel.data) if (!catalog.get(ref)?.kinds.includes(panel.kind)) problems.push(`${ref} is not data a ${panel.kind} panel of this paper can draw`)
     for (const mark of panel.marks) if (!new RegExp(`(^|[^\\d.])${String(mark.value).replace('.', '\\.')}([^\\d]|$)`).test(text)) problems.push(`the mark at ${mark.value} is not a value the text states`)
+    if (panel.kind === 'hist') {
+      // Runs on one scale must spread comparably: one that barely varies prints as a single bar beside the others.
+      const spreads = panel.data.map((ref) => { const [, id, name] = ref.split(':'); const s = runs.get(id)?.result.outputs[name]; return s ? s.p95 - s.p5 : NaN }).filter(Number.isFinite)
+      if (spreads.length && (Math.max(...spreads) <= 0 || Math.min(...spreads) / Math.max(...spreads) < 0.05)) problems.push('its runs do not spread comparably on one scale (one prints as a single bar)')
+    }
   }
   return problems
 }
 
 
 /** What the author is asked when the charts are planned: the parts that gain from one, drawn only from data the paper holds. */
-function chartsPrompt(paper: Paper, kinds: ChartPanel['kind'][], data: ReturnType<typeof chartCatalog>, parts: Part[], record: Record_): string {
+function chartsPrompt(paper: Paper, kinds: ChartPanel['kind'][], data: ReturnType<typeof chartCatalog>, parts: Part[], record: Record_, panels = false, marks = false): string {
   const about: Record<ChartPanel['kind'], string> = {
-    hist: 'hist (the distribution of a simulated quantity over its draws; one to three, overlaid, of the same quantity in different runs)',
-    line: 'line (a course over time with its band; one to three)',
+    hist: 'hist (the distribution of a simulated quantity over its draws; the same quantity in two or three runs prints as panels side by side on one scale)',
+    line: 'line (a course over time: one course prints with its 5th to 95th percentile band, two or three courses as their means)',
     interval: 'interval (estimates with their intervals side by side, one row each; two to twelve)',
   }
   const figures = printedOrder(paper)
@@ -536,10 +543,12 @@ ${STORY}
 
 Your task: the charts. Find the parts of the paper that gain most from a chart: where the text asks the reader to hold several numbers in mind, to compare estimates, or to picture a distribution or a course over time that it states in words. A chart shows what the text states; it adds no result.
 - At most ${MAX_CHARTS} data charts in the paper, counting those it has. A chart may replace an existing figure that charts data (give its id as replaces: it keeps its number and its place); drawings of a structure stay as they are.
-- Each chart has one to four panels, each of one kind: ${kinds.map((k) => about[k]).join('; ')}. Several panels make a grid, for views of one result that belong side by side.
+- ${panels ? 'Each chart has one to four panels, each of one kind' : 'Each chart is one panel of one kind'}: ${kinds.map((k) => about[k]).join('; ')}.${panels ? ' Several panels make a grid, for views of one result that belong side by side.' : ''} group: what the runs in a panel differ by, as the paper names it (a setting, a scenario); it heads the panels or the legend.
 - A panel draws only the data listed below, by its reference: never a number typed in.
+- Chart what differs. Runs in one histogram share one scale, so they are compared only when their draws spread comparably; a quantity that barely varies within a run prints as a single bar, and is stated in the text instead.
+- labels: at most three words each; group: one or two words. They print as panel titles and legends, in a third of the page's width.
 - labels: what each reference is called in the chart (a run's setting, a group), in the paper's words, never an internal id. x and y: the axis labels, named as the paper names the quantities. unit: the unit of the measured quantity as the paper writes it.
-- marks: at most two reference lines a panel needs (a threshold, a floor), each at a value the text states, with a short label.
+${marks ? '- marks: at most two reference lines a panel needs (a threshold, a floor), each at a value the text states, with a short label.' : '- marks: none; reference lines cannot be drawn yet, so neither the chart nor its caption has one.'}
 - caption: what the chart shows and how to read it, at most 50 words, in the paper's terms; a number in it is written as its {{placeholder}}.
 - section: the id of the section it belongs in. mention: an exact edit in that section that refers the reader to the chart where the text discusses what it shows, writing the chart as [[chart-1]], [[chart-2]], … in the order you list the charts; it prints as its figure number. A chart that replaces a figure needs no mention.
 If no part of the paper gains from a chart, return no charts.
@@ -581,7 +590,8 @@ export const storyCharts: Behavior = {
       })
     }
     return [...targets, ...stepTarget(paper, 4, 'the charts', async () => {
-      const cmd = astetikCommand()
+      // Astetik is installed once, in its own environment, where it is missing.
+      const cmd = await ensureAstetik((line) => paper.say(line))
       const astetik = cmd ? await astetikCatalog(cmd) : null
       const kinds = astetik ? drawable(astetik) : []
       const data = chartCatalog(paper)
@@ -591,9 +601,11 @@ export const storyCharts: Behavior = {
       }
       const parts = partsOf(paper, false)
       const record = productionRecord(paper)
+      // A reference line is offered only where Astetik draws one, so no caption describes a line the chart lacks.
+      const canMark = [...astetik!.kinds.values()].some((options) => options.has('marks'))
       const reply = await paper.ask<any>({
         behavior: 'story-charts', target: 'plan', seat: 'author', family: seatFamily(paper, 'author'),
-        prompt: chartsPrompt(paper, kinds, data, parts, record),
+        prompt: chartsPrompt(paper, kinds, data, parts, record, astetik!.panels, canMark),
         schema: obj({ charts: arr(obj({ section: str(), replaces: str(), purpose: str(), caption: str(), panels: arr(panelSchema), mention: obj({ old: str(), new: str() }) })) }),
       })
       const text = fillPlaceholders(parts.map((p) => p.text).join('\n'), record).text
@@ -601,7 +613,7 @@ export const storyCharts: Behavior = {
       const taken = new Set(s.figures.map((f) => f.id))
       const drawn: { fig: Figure; token: string; mention: Edit; added: boolean }[] = []
       for (const [i, raw] of (reply.charts ?? []).slice(0, MAX_CHARTS).entries()) {
-        const panels = panelsOf(raw.panels)
+        const panels = panelsOf(raw.panels).map((p) => canMark ? p : { ...p, marks: [] })
         const replaced = s.figures.find((f) => f.id === String(raw.replaces ?? '').trim() && f.status === 'rendered' && f.file)
         const section = replaced ? undefined : bodySections(paper).find((sec) => sec.id === String(raw.section ?? '').replace(/[[\]]/g, '').trim())
         const token = `[[chart-${i + 1}]]`
@@ -620,8 +632,23 @@ export const storyCharts: Behavior = {
         const rest = parts.filter((p) => p.id !== id).map((p) => p.text).join('\n\n')
         const captionLost = researchLost(new Map([[id, replaced?.caption ?? ''], ['rest', rest]]), new Map([[id, fig.caption], ['rest', rest]]), record).get(id)
         if (captionLost?.length) { paper.note('story-charts', `A chart was left out: its caption ${captionLost.join('; ').replace(/^it /, '')}.`); continue }
-        const result = await drawChart(paper, fig, 'draw1')
-        if (!result.ok) { paper.note('story-charts', `A chart was left out: ${result.problem}.`); continue }
+        let result = await drawChart(paper, fig, 'draw1')
+        if (!result.ok) {
+          // What Astetik's checks found goes back to the author once: the chart's labels, units or grouping change, its data do not.
+          const revised = await paper.ask<any>({
+            behavior: 'story-charts', target: `revise-${id}`, seat: 'author', family: seatFamily(paper, 'author'),
+            prompt: `${HOUSE}\n\nThe chart below could not be drawn: ${result.problem}\nRevise its design so that it can be: shorter labels, panel or axis titles, another unit or grouping. Its data stay the same references${canMark ? '' : ', and it has no reference lines'}. caption: the caption as it should print, at most 50 words, its numbers as {{placeholders}}.\n\nTHE CHART:\n${JSON.stringify({ caption: fig.caption, panels })}`,
+            schema: obj({ caption: str(), panels: arr(panelSchema) }),
+          })
+          const again = panelsOf(revised.panels).map((p, j) => ({ ...p, kind: panels[j]?.kind ?? p.kind, data: panels[j]?.data ?? p.data }))
+          const caption = String(revised.caption ?? '').trim() || fig.caption
+          const lostNow = researchLost(new Map([[id, replaced?.caption ?? ''], ['rest', rest]]), new Map([[id, caption], ['rest', rest]]), record).get(id)
+          if (lostNow?.length || chartProblems(paper, again, kinds, text).length) { paper.note('story-charts', `A chart was left out: ${result.problem}.`); continue }
+          plan.panels = again
+          Object.assign(fig, { caption, chart: plan })
+          result = await drawChart(paper, fig, 'draw2')
+          if (!result.ok) { paper.note('story-charts', `A chart was left out: ${result.problem}.`); continue }
+        }
         Object.assign(fig, { status: 'rendered', file: result.file, source: result.source, chart: { ...plan, bundle: result.bundle } })
         drawn.push({ fig, token, mention, added: !replaced })
       }

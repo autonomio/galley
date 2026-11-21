@@ -1,9 +1,23 @@
-# Charts through Astetik: the interface galley needs (draft, to confirm)
+# Charts through Astetik
 
 Galley draws its data charts with [Astetik](https://github.com/autonomio/astetik) 2.x, through its existing
 contract: a declared JSON specification, one design manifest, supplied data, and the `astetik render` command that
 writes a verified evidence bundle. This page is what galley sends, what it reads back, and what Astetik needs to add
 for the three chart kinds galley uses.
+
+## What works today (Astetik 2.0.10)
+
+- Galley pins Astetik 2.0.10 and installs it once in its own environment (`~/.galley/astetik`), apart from the
+  analysis environment; `GALLEY_ASTETIK` points at another `astetik` command instead.
+- `hist`: a simulated quantity over its draws, regenerated from the run's spec and seed; the same quantity in two or
+  three runs prints as panels side by side on one scale (`col` facets).
+- `line`: a course over time; one course prints its mean with its 5th and 95th percentiles as lines, several print
+  their means.
+- On a white page, at the paper's 140 mm text width, every label at least 7 pt; a chart is placed only when the
+  bundle's `verification.passed` is true, and its PNG is what the paper prints.
+- Galley reads Astetik's catalogue on every run and offers a kind or option only when it is listed there: `interval`,
+  a `band` option on `line`, the `marks` option and `panels` are offered as soon as Astetik lists them, sent in the
+  shape drafted below. If Astetik's own shape differs from the draft, galley's side is a small change.
 
 ## The rule behind it
 
