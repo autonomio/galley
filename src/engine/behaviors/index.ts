@@ -13,6 +13,7 @@ import { proof } from './proof.js'
 import { citeNamed } from './named.js'
 import { copyedit } from './copyedit.js'
 import { findWebSources } from './web.js'
+import { storyCaveats, storyCharts, storyExample, storyLead, storyRead, storyRegister } from './story.js'
 
 // One behavior writes the frame: once when the draft is checked, and again from the reviewed text.
 const frame: Behavior = { ...firstFrame, ready: (paper) => [...firstFrame.ready(paper), ...finalFrame(paper)] }
@@ -34,7 +35,9 @@ export const LADDER: Behavior[] = [
   draft, figure, fidelity, frame,
   // Referees: other families review; the author answers; a third family settles; what it cannot settle becomes a limitation.
   referee, closeRound, respond, verifyDisposition, adjudicate, handleFinding,
-  // Close: every work the text names is cited, the whole text is copyedited for consistency, the ledger is made to say
-  // what the reviewed text says, then the paper is profiled, typeset and read as printed.
-  citeNamed, copyedit, reconcile, reprofile, typeset, proof, ready,
+  // Close: every work the text names is cited; the reviewed research is told (its caveats in one Limitations section, its
+  // findings first, a worked example, one register, its charts); the whole text is copyedited for consistency and the
+  // ledger made to say what it says; after the final frame the paper is read through three times; then it is profiled,
+  // typeset and read as printed.
+  citeNamed, storyCaveats, storyLead, storyExample, storyRegister, storyCharts, copyedit, reconcile, storyRead, reprofile, typeset, proof, ready,
 ]

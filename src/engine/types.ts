@@ -144,6 +144,8 @@ export interface Section {
   claimIds: string[]
   words: number
   figureIds: string[]
+  /** limitations: the paper's one statement of the limits of its work, written when the paper is told and printed after the conclusion. */
+  role?: 'limitations'
 }
 
 export interface Revision {
@@ -172,6 +174,37 @@ export interface Figure {
   revise?: string
   /** How many times a reader sent it back: each drawing again is a step of its own. */
   redraws?: number
+  /** chart: drawn by Astetik from the paper's own records; otherwise a drawing in Typst. */
+  kind?: 'drawing' | 'chart'
+  chart?: ChartPlan
+}
+
+/** One panel of a chart: its kind, and the data it draws by reference to the paper's own records, never as typed numbers. */
+export interface ChartPanel {
+  kind: 'hist' | 'line' | 'interval'
+  /** sim:<run>:<output> (the run's draws, or one estimate with its interval), steps:<run>:<output> (a band over time), data:<measurement id>. */
+  data: string[]
+  /** What each reference is called in the legend or as its row, in the same order. */
+  labels: string[]
+  /** The axis labels, as the paper names the quantities. */
+  x: string
+  y: string
+  /** The unit of the measured quantity, as the paper writes it ("1" for none). */
+  unit: string
+  /** The unit of a line chart's horizontal axis (time, a setting). */
+  xUnit?: string
+  /** Thin reference lines at values the text states. */
+  marks: { axis: 'x' | 'y'; value: number; label: string }[]
+}
+
+/** A chart galley draws through Astetik: what the reader should see, and the panels that show it. */
+export interface ChartPlan {
+  purpose: string
+  panels: ChartPanel[]
+  /** The figure it replaces, whose number it keeps. */
+  replaces?: string
+  /** The Astetik evidence bundle of its current drawing, in the paper's build folder. */
+  bundle?: string
 }
 
 export interface Frame {

@@ -10,6 +10,7 @@ import { activeClaims, claim, live, manuscriptBlock, seatFamily, setClaim } from
 import { isNarrowing } from './truth.js'
 import { toReview } from './front.js'
 import { resolved } from './review.js'
+import { storyReadDone } from './story.js'
 import { FRAME_NUMBERS } from './write.js'
 
 const FACTORS = ['input_not_output', 'shared_bottleneck', 'conventional_body_one_graft', 'surprising_and_certain', 'opens_more_than_closes', 'cheap_to_adopt', 'early'] as const
@@ -174,7 +175,8 @@ ${manuscriptBlock(paper, false, false)}`,
 
 export const reprofile: Behavior = {
   id: 'reprofile', stage: 'close', improver: true, title: 'Re-profile impact',
-  ready: (paper) => !live(paper) || paper.state.profileAfter || !reviewDone(paper) ? [] : [{
+  // The finished paper is the told one, read through: it is profiled once that is done.
+  ready: (paper) => !live(paper) || paper.state.profileAfter || !reviewDone(paper) || !storyReadDone(paper) ? [] : [{
     key: 'reprofile:final', label: 'the finished paper against the standard',
     run: async () => {
       const s = paper.state
@@ -217,8 +219,8 @@ export function finalFrame(paper: Paper): Target[] {
 ${STYLE}
 
 The manuscript below has been through review, and its sections changed. Rewrite its frame so it states exactly what the manuscript now states.
-- title: keep the current title ("${frame.title}") unless it no longer fits the text; at most 15 words.
-- abstract: 150 to 250 words, one paragraph, no citations: the problem, what the paper contributes, how the contribution is supported, and what it opens. State only what the manuscript states, plainly: no hedges, limitations or caveats, and no remark on how the work was produced or reviewed. ${FRAME_NUMBERS}
+- title: keep the current title ("${frame.title}") unless it no longer fits the text. A reader in the field understands it without reading the paper: it says what the paper finds or provides, in words the field already uses, and a term the paper itself coins appears in it only where the title's own words make it clear. At most 15 words.
+- abstract: 150 to 250 words, one paragraph, no citations. Its opening sentences state the paper's main findings, plainly and with their key numbers; then the problem they answer, how they are supported, and what they open. State only what the manuscript states, plainly: no hedges, limitations or caveats (those are the Limitations section's), and no remark on how the work was produced or reviewed. ${FRAME_NUMBERS}
 - keywords: 5 to 7.
 
 ${placeholderGuide()}

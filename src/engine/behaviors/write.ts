@@ -106,7 +106,7 @@ export const fidelity: Behavior = {
     const s = paper.state
     if (!live(paper) || !s.outline) return []
     return s.outline.sections
-      .filter((section) => s.passages[section.id] && !s.passages[section.id].revisions.some((r) => r.reason.startsWith('fidelity')) && s.passages[section.id].checked === 'unchecked')
+      .filter((section) => section.role !== 'limitations' && s.passages[section.id] && !s.passages[section.id].revisions.some((r) => r.reason.startsWith('fidelity')) && s.passages[section.id].checked === 'unchecked')
       .map((section): Target => ({
         key: `fidelity:${section.id}`, label: `${section.id} against its claims`,
         run: async () => {
@@ -157,7 +157,8 @@ export const figure: Behavior = {
   ready: (paper) => {
     const s = paper.state
     if (!live(paper) || !s.outline) return []
-    return s.figures.filter((f) => f.status === 'planned').map((fig): Target => ({
+    // A chart is drawn by Astetik in the story step; this draws the rest.
+    return s.figures.filter((f) => f.status === 'planned' && f.kind !== 'chart').map((fig): Target => ({
       // A figure a reader sent back is drawn again as a step of its own: the first drawing's step is long settled.
       key: fig.redraws ? `figure:${fig.id}:redraw${fig.redraws}` : `figure:${fig.id}`, label: fig.id,
       run: async () => {

@@ -465,7 +465,8 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   for (const [i, section] of sections.entries()) {
     const filled = fillPlaceholders(numbered[i], record)
     unknown.push(...filled.unknown)
-    body.push(`# ${section.title}\n\n${splitWideEquations(conventions(unindent(filled.text)))}`)
+    // The Limitations section prints after the conclusion without a number, so no section's number moves.
+    body.push(`# ${section.title}${section.role === 'limitations' ? ' {.unnumbered}' : ''}\n\n${splitWideEquations(conventions(unindent(filled.text)))}`)
     for (const fig of s.figures.filter((f) => f.sectionId === section.id && f.status === 'rendered' && f.file)) {
       // A caption can state a measured or simulated number, so it is filled like the text it sits in.
       body.push(`![${conventions(fillPlaceholders(fig.caption, record).text).replace(/\n/g, ' ')}](${fig.file}){#fig-${fig.id} width=95%}`)

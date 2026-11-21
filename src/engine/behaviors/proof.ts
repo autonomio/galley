@@ -19,6 +19,7 @@ import { applyExact, citedKeys, squash } from '../text.js'
 import type { ProofDefect } from '../types.js'
 import { reviewDone } from './close.js'
 import { activeClaims, live, manuscriptBlock, noteForAuthors, seatFamily, sectionText, setClaim } from './common.js'
+import { storyReadDone } from './story.js'
 import { isNarrowing } from './truth.js'
 import { setPassage } from './write.js'
 
@@ -205,6 +206,8 @@ export const proof: Behavior = {
     const s = paper.state
     if (!live(paper) || s.outcome || paper.config.off.includes('proof')) return []
     if (!reviewDone(paper) || !paper.isSettled('frame:final')) return []
+    // The told paper is read through before it is proofread as printed.
+    if (!storyReadDone(paper)) return []
     const hash = contentHash(paper)
     if (!paper.isSettled(`typeset:${hash}`)) return []
     const reading = (s.proof?.rounds ?? 0) + 1
@@ -285,7 +288,8 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
             const fig = d.fixIn === 'figure' || d.where === 'figure' ? figureOf(paper, d, shown) : null
             // A figure is drawn again on any reading that can still fix things: the reading after it, the recording one at
             // the latest, reads the new drawing.
-            if (d.fixIn === 'figure' && fig) {
+            const chartOff = s.figures.find((f) => f.id === fig)?.kind === 'chart' && (paper.config.off.includes('story-charts') || paper.config.off.includes('story'))
+            if (d.fixIn === 'figure' && fig && !chartOff) {
               // The figure is drawn again with the defect named.
               const figure = s.figures.find((f) => f.id === fig)!
               figure.revise = [figure.revise, `${d.problem} ${d.fix}`.trim()].filter(Boolean).join(' ')

@@ -131,3 +131,25 @@ export function simulate(raw: unknown): Outcome {
   }
   return { ok: true, result }
 }
+
+
+/**
+ * The draws of a run's outputs, made again from its spec: one spec and seed give the same draws every time, so a
+ * chart of them shows exactly the run the paper reports. Only plain draws come back; the weighted samples of a
+ * sequential run are not observations to count, and give null, as does a spec that no longer runs.
+ */
+export function drawsOf(raw: unknown, names: string[]): Record<string, number[]> | null {
+  const ready = prepare(raw)
+  if (!ready.ok) return null
+  const { spec, model, method, plan } = ready.prepared
+  const seed = spec.seed ?? DEFAULT_SEED
+  const ctx: RunContext = { seed, stream: (...labels) => stream(seed, ...labels) }
+  const draws = method.run(plan, model, ctx)
+  if (draws.replicates.some((r) => r.weights)) return null
+  const out: Record<string, number[]> = {}
+  for (const name of names) {
+    if (!draws.replicates.every((r) => r.columns.has(name))) return null
+    out[name] = draws.replicates.flatMap((r) => Array.from(r.columns.get(name)!))
+  }
+  return out
+}
