@@ -191,6 +191,8 @@ interface Told {
   extra?: (reply: any, texts: Map<string, string>, record: Record_) => string[]
   /** What the author needs besides the paper (notes, the recorded numbers). */
   context?: string
+  /** A part the rest of the step depends on: when it cannot stand, nothing of the step is kept. */
+  anchor?: string
 }
 
 /**
@@ -214,65 +216,84 @@ ${legend ? `\n${legend}\n` : ''}${step.context ? `\n${step.context}\n` : ''}
 THE PAPER:
 ${block(step.parts, before, null)}`
   const schema = obj({ edits: arr(obj({ in: str(), old: str(), new: str() })), ...(step.schema ?? {}) })
-  const attempt = (reply: any) => {
+  const attempt = (answer: any) => {
     const texts = new Map(before)
-    const { failed } = applyEdits(texts, reply.edits ?? [], step.editable)
-    const problems = step.extra?.(reply, texts, record) ?? []
-    return { texts, failed, problems }
+    applyEdits(texts, answer.edits ?? [], step.editable)
+    return { texts, problems: step.extra?.(answer, texts, record) ?? [] }
   }
   let reply = await paper.ask<any>({ behavior: step.behavior, target: 'tell', seat: 'author', family: author, prompt, schema })
   let result = attempt(reply)
-  if (result.problems.length) {
+  // What must be put right goes back to the author once, with the rest of its answer kept.
+  let repaired = false
+  const repair = async (problems: string[]) => {
+    repaired = true
     reply = await paper.ask<any>({
       behavior: step.behavior, target: 'repair', seat: 'author', family: author, schema,
-      prompt: `${prompt}\n\nYOUR ANSWER:\n${JSON.stringify(reply).slice(0, 30_000)}\n\nIt cannot stand as it is:\n${result.problems.map((p) => `- ${p}`).join('\n')}\nReturn the complete answer again, edits included, with these put right.`,
+      prompt: `${prompt}\n\nYOUR ANSWER:\n${JSON.stringify(reply).slice(0, 30_000)}\n\nIt cannot stand as it is:\n${problems.map((p) => `- ${p}`).join('\n')}\nReturn the complete answer again, edits included, with these put right; keep what was not questioned.`,
     })
-    result = attempt(reply)
+    return attempt(reply)
+  }
+  if (result.problems.length) {
+    result = await repair(result.problems)
     if (result.problems.length) {
       paper.note(step.behavior, `Left as it was: ${result.problems.slice(0, 4).join('; ')}.`)
       return { changed: [], undone: [] }
     }
   }
-  const { texts } = result
-  const undone: string[] = []
-  // Code first: what the research rests on stays in the paper.
-  for (const [id, lost] of researchLost(before, texts, record)) {
-    texts.set(id, before.get(id) ?? '')
-    undone.push(`${id}: ${lost.join('; ')}`)
+  const changedIn = (texts: Map<string, string>) => [...texts.keys()].filter((id) => texts.get(id) !== (before.get(id) ?? ''))
+  // Code first, then a reader from another family: what either finds would change the research is not kept.
+  const judge = async (texts: Map<string, string>) => {
+    const undone = new Map<string, string>()
+    for (const [id, lost] of researchLost(before, texts, record)) undone.set(id, lost.join('; '))
+    const changed = changedIn(texts).filter((id) => !undone.has(id))
+    for (const [id, what] of await objections(paper, step, before, texts, changed, record)) undone.set(id, what)
+    return undone
   }
-  let changed = [...texts.keys()].filter((id) => texts.get(id) !== (before.get(id) ?? ''))
-  // Then a reader from another family: each changed part against what it was.
-  if (changed.length) {
-    const checker = seatFamily(paper, 'checker')
-    const verdict = await paper.ask<any>({
-      behavior: step.behavior, target: 'check', seat: 'checker', family: checker,
-      prompt: `${HOUSE}
+  let texts = result.texts
+  let undone = await judge(texts)
+  if (undone.size && !repaired) {
+    const again = await repair([...undone].map(([id, what]) => `[${id}] this would change the research: ${what}`))
+    if (!again.problems.length) { texts = again.texts; undone = await judge(texts) }
+  }
+  const proposed = changedIn(texts)
+  for (const id of undone.keys()) texts.set(id, before.get(id) ?? '')
+  // Parts that stand together (caveats moved and the section that now states them) stand or fall as one.
+  if (step.anchor && proposed.includes(step.anchor) && undone.has(step.anchor)) {
+    for (const id of texts.keys()) texts.set(id, before.get(id) ?? '')
+  }
+  const changed = changedIn(texts)
+  commit(paper, texts, before, step.behavior)
+  paper.journal({ event: 'story', step: step.behavior, changed, undone: undone.size })
+  if (undone.size) paper.note(step.behavior, `${changed.length ? 'Changes' : 'The whole step was'} left out because ${changed.length ? 'they' : 'its parts'} would have changed the research: ${[...undone].slice(0, 6).map(([id, what]) => `${id}: ${what.slice(0, 300)}`).join(' | ')}`)
+  paper.save()
+  return { changed, undone: [...undone.keys()] }
+}
+
+/** A reader from a family other than the author's: each changed part against what it was, and what changes the research. */
+async function objections(paper: Paper, step: Told, before: Map<string, string>, texts: Map<string, string>, changed: string[], record: Record_): Promise<Map<string, string>> {
+  const found = new Map<string, string>()
+  if (!changed.length) return found
+  const verdict = await paper.ask<any>({
+    behavior: step.behavior, target: 'check', seat: 'checker', family: seatFamily(paper, 'checker'),
+    prompt: `${HOUSE}
 
 A storytelling step (${step.what}) rewrote parts of a finished, reviewed manuscript. It may change how the paper tells its research, never the research. Compare each changed part with what it was, against the paper as it now reads:
-- kept: every claim the part held is still in the paper with the same strength and the same conditions; every number, citation, definition, proposition and table it held is still in the paper; it adds no claim, result, number or source the research did not already hold. A condition or caveat moved to the Limitations section, a scope stated once where the paper defines it instead of in every sentence, a number the paper holds now shown with its working in a worked example, and a passage moved elsewhere in the paper, are kept.
-- changed: something the research holds was lost, strengthened, weakened or added; say exactly what.
+- kept: every claim the part held is still in the paper with the same strength and the same conditions; every number, citation, definition, proposition and table it held is still in the paper; it adds no claim, result, number or source the research did not already hold, and says nothing of the research that the paper does not support. A condition or caveat moved to the Limitations section, a scope stated once where the paper defines it instead of in every sentence, a number the paper holds now shown with its working in a worked example, and a passage moved elsewhere in the paper, are kept.
+- changed: something the research holds was lost, strengthened, weakened, misstated or added; say exactly what.
 For each changed part give id, verdict, and what (empty when kept).
 
 CHANGED PARTS:
-${changed.map((id) => `[${id}] BEFORE:\n${fillPlaceholders(before.get(id) ?? '(not in the paper before)', record).text}\n\n[${id}] AFTER:\n${fillPlaceholders(texts.get(id)!, record).text}`).join('\n\n')}
+${changed.map((id) => `[${id}] BEFORE:\n${before.get(id) ? fillPlaceholders(before.get(id)!, record).text : '(not in the paper before)'}\n\n[${id}] AFTER:\n${fillPlaceholders(texts.get(id)!, record).text}`).join('\n\n')}
 
 THE REST OF THE PAPER:
 ${block(step.parts.filter((p) => !changed.includes(p.id)), texts, record)}`,
-      schema: obj({ parts: arr(obj({ id: str(), verdict: enm(['kept', 'changed']), what: str() })) }),
-    })
-    for (const part of verdict.parts ?? []) {
-      const id = String(part.id ?? '').replace(/[[\]]/g, '').trim()
-      if (part.verdict !== 'changed' || !changed.includes(id)) continue
-      texts.set(id, before.get(id) ?? '')
-      undone.push(`${id}: ${String(part.what ?? '').slice(0, 300)}`)
-    }
-    changed = changed.filter((id) => texts.get(id) !== (before.get(id) ?? ''))
+    schema: obj({ parts: arr(obj({ id: str(), verdict: enm(['kept', 'changed']), what: str() })) }),
+  })
+  for (const part of verdict.parts ?? []) {
+    const id = String(part.id ?? '').replace(/[[\]]/g, '').trim()
+    if (part.verdict === 'changed' && changed.includes(id)) found.set(id, String(part.what ?? '').trim() || 'judged to change the research')
   }
-  commit(paper, texts, before, step.behavior)
-  paper.journal({ event: 'story', step: step.behavior, changed, undone: undone.length })
-  if (undone.length) paper.note(step.behavior, `Changes left out because they would have changed the research: ${undone.slice(0, 6).join(' | ')}`)
-  paper.save()
-  return { changed, undone }
+  return found
 }
 
 /** Writes what a story step kept into the paper: sections, captions, the title, the abstract, the Limitations section. */
@@ -313,7 +334,7 @@ export const storyCaveats: Behavior = {
     if (!parts.some((p) => p.id === id)) parts.push({ id, head: '# Limitations (not yet written)', text: '' })
     const limits = (s.authorNotes ?? []).filter((n) => n.kind === 'limitation').map((n) => `- ${n.text}`)
     await tell(paper, {
-      behavior: 'story-caveats', what: 'gathering the caveats into the Limitations section', parts,
+      behavior: 'story-caveats', what: 'gathering the caveats into the Limitations section', parts, anchor: id,
       editable: new Set(parts.map((p) => p.id).filter((p) => p !== id)),
       task: `Your task: the caveats. The paper states the limits of its work in one place, its Limitations section, and nowhere else.
 - A caveat says what the work does not show or how far its results may not reach: an assumption that may not hold in practice, a case or condition left untested, a comparison not made, a sample or setting that limits how far a result generalizes, a step taken on judgment. Find every caveat in the sections and figure captions, remove it from where it stands, and state it in the Limitations section.

@@ -114,6 +114,21 @@ describe('telling the research', () => {
     expect(paper.state.notes.at(-1)?.text).toContain('would have changed the research')
   })
 
+  it('keeps no caveat moved when the Limitations section that would state it cannot stand', async () => {
+    const paper = reviewed()
+    let asked = 0
+    paper.ask = (async (options: { seat: string }) => {
+      if (options.seat === 'checker') return { parts: [{ id: 'S2', verdict: 'kept', what: '' }, { id: 'SL', verdict: 'changed', what: 'it says the calibration covers one method; it covers two' }] }
+      asked++
+      return { edits: [{ in: 'S2', old: ' The cost model is not validated against measured training runs, so these are modeled costs.', new: '' }], limitations: 'The calibration covers one method.' }
+    }) as Paper['ask']
+    await storyCaveats.ready(paper)[0].run()
+    // The objection went back to the author once; still standing, it undoes the whole step.
+    expect(asked).toBe(2)
+    expect(paper.state.passages.S2.text).toContain('so these are modeled costs')
+    expect(paper.state.outline!.sections.map((sec) => sec.id)).toEqual(['S1', 'S2', 'S3'])
+  })
+
   it('leaves the text as it was when a worked number stays wrong', async () => {
     const paper = reviewed()
     for (const step of STORY_STEPS.slice(0, 2)) paper.settle(step.key, 'done')
