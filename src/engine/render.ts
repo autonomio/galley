@@ -249,6 +249,35 @@ const TALL_TABLE_CM = 17
  * narrow and the one that explains them gets the room. A table too tall for a page is let break across pages, its
  * header repeated, instead of floating whole (raw Typst around it; the other formats ignore it).
  */
+/**
+ * How a table's width is shared among its columns, given the printed length of each column's longest cell: each column
+ * gets the room that cell needs on one line, at about 95 characters of 9pt text across the page. When they do not all
+ * fit, the columns that need less than an even share keep what they need and the others share the rest evenly, so no
+ * column is squeezed to a sliver beside one that stands half empty.
+ */
+export function columnShares(widths: number[]): number[] {
+  const LINE = 95
+  const need = widths.map((w) => w + 3)
+  const room = need.map(() => 0)
+  let open = need.map((_, c) => c)
+  let left = LINE
+  while (open.length) {
+    const even = left / open.length
+    const fits = open.filter((c) => need[c] <= even)
+    if (!fits.length) {
+      for (const c of open) room[c] = even
+      break
+    }
+    for (const c of fits) {
+      room[c] = need[c]
+      left -= need[c]
+    }
+    open = open.filter((c) => need[c] > even)
+  }
+  const used = room.reduce((a, b) => a + b, 0)
+  return room.map((r) => Math.max(0.08, r / used))
+}
+
 export function fitTables(markdown: string): string {
   const row = /^\|.*\|\s*$/
   const separator = /^\|(?:\s*:?-+:?\s*\|)+\s*$/
@@ -262,14 +291,7 @@ export function fitTables(markdown: string): string {
     const rows = [lines[i], ...lines.slice(i + 2, end)].map(cells)
     const aligns = cells(lines[i + 1]).map((a) => a.trim())
     const widths = aligns.map((_, c) => Math.max(4, ...rows.map((r) => printedLength(r[c] ?? ''))))
-    const total = widths.reduce((a, b) => a + b, 0)
-    // A column whose longest cell fits on one line in at most two fifths of the width gets the room for that line (at
-    // about 95 characters of 9pt text across the page); the other columns share the rest in proportion to what they hold.
-    const line = widths.map((w) => (w + 3) / 95)
-    const short = line.map((need, c) => need <= 0.4 && need > widths[c] / total)
-    const kept = line.reduce((sum, need, c) => sum + (short[c] ? need : 0), 0)
-    const rest = widths.reduce((sum, w, c) => sum + (short[c] ? 0 : w), 0)
-    const shares = widths.map((w, c) => Math.max(0.08, short[c] ? line[c] : rest && kept < 1 ? (w / rest) * (1 - kept) : w / total))
+    const shares = columnShares(widths)
     const dashes = shares.map((share) => Math.max(3, Math.round(share * 60)))
     const rule = `|${aligns.map((a, c) => `${a.startsWith(':') ? ':' : ''}${'-'.repeat(dashes[c])}${a.endsWith(':') ? ':' : ''}`).join('|')}|`
     // Its height: each row as many lines as its fullest cell wraps to, at about 95 characters of 9pt text a line.
@@ -407,6 +429,9 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
       body.push(`![${conventions(fillPlaceholders(fig.caption, record).text).replace(/\n/g, ' ')}](${fig.file}){#fig-${fig.id} width=95%}`)
     }
   }
+  // Every figure and table of the body is printed before the back matter begins, and the back matter's own stand where
+  // they are written: none drifts into the next part, nor into the references.
+  body.push('```{=typst}\n#place.flush()\n#show figure: set figure(placement: none)\n```')
   const decl = paper.config.declarations ?? {}
   // The ledger quotes claims as they stand, placeholders included, so it is filled like every other part of the text.
   const appendices: [string, string][] = []

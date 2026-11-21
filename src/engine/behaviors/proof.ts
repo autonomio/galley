@@ -23,7 +23,7 @@ import { isNarrowing } from './truth.js'
 import { setPassage } from './write.js'
 
 /** Readings of the typeset paper that may still send defects back to be fixed; a later reading only records. */
-export const PROOF_ROUNDS = 3
+export const PROOF_ROUNDS = 4
 /** Pages looked at as images: enough for a full paper, bounded for one request. */
 const MAX_PAGES = 40
 
@@ -133,9 +133,8 @@ function printedFigures(paper: Paper) {
 }
 
 /** The figure a defect names: by its own id from the check, "Figure 3" by its printed number, or by words of its caption. */
-function figureOf(paper: Paper, defect: { quote: string; problem: string; figureId?: string }): string | null {
+function figureOf(paper: Paper, defect: { quote: string; problem: string; figureId?: string }, printed = printedFigures(paper)): string | null {
   if (defect.figureId) return defect.figureId
-  const printed = printedFigures(paper)
   const number = `${defect.quote} ${defect.problem}`.match(/\bfig(?:ure)?\.?\s*(\d+)/i)
   if (number) return printed[Number(number[1]) - 1]?.id ?? null
   const q = squash(defect.quote)
@@ -214,6 +213,9 @@ export const proof: Behavior = {
       run: async () => {
         const record = productionRecord(paper)
         const pages = await pagesOf(paper)
+        // The figures as this paper printed them: a figure sent back to be drawn again below is still the one its
+        // number names on the page.
+        const shown = printedFigures(paper)
         const checker = seatFamily(paper, 'checker')
         const seesImages = checker === 'gpt' && pages.images.length > 0
         // Without the PDF's own text, the source it was typeset from stands in for it.
@@ -230,7 +232,7 @@ You are the production editor. Below is the typeset paper as a reader will see i
 - tables that overflow the page or break apart;
 - an entry of the claim ledger appendix that says something the printed text does not (a result it does not report, a method it does not carry out);
 - missing, duplicated or misnumbered headings; a reference list with broken entries.
-Do not judge the science, the argument or the prose style; other steps do that. The byline, affiliations and date are as the authors gave them: do not report them. For each defect give page, where (${WHERE.join(', ')}), quote (the exact printed text it concerns, or the figure's number), problem, fix (what the printed page should show instead), and fix_in: prose when the words of a section must change, figure when the figure itself must be drawn again, ledger for an entry of the claim ledger, other for anything else (layout, references, front matter, the production record). If the paper prints cleanly, return no defects.
+Do not judge the science, the argument or the prose style; other steps do that. A figure or table set at the top or bottom of a page, with the text running on around it and past it, sits where typeset papers place them: do not report its position. The byline, affiliations and date are as the authors gave them: do not report them. For each defect give page, where (${WHERE.join(', ')}), quote (the exact printed text it concerns, or the figure's number), problem, fix (what the printed page should show instead), and fix_in: prose when the words of a section must change, figure when the figure itself must be drawn again, ledger for an entry of the claim ledger, other for anything else (layout, references, front matter, the production record). If the paper prints cleanly, return no defects.
 
 ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page}`).join('\n\n') : source}`,
           schema: obj({ defects: arr(obj({ page: int(), where: enm([...WHERE]), quote: str(), problem: str(), fix: str(), fix_in: enm([...FIX_IN]) })) }),
@@ -258,8 +260,8 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
         // found mechanically, and sent to the figure's own section.
         for (const d of defects) if (d.fixIn === 'figure' && CALLOUT.test(d.problem)) d.fixIn = 'prose'
         const prose = (s.outline?.sections ?? []).map((sec) => sectionText(paper, sec.id)).join('\n')
-        printedFigures(paper).forEach((fig, i) => {
-          if (calledOut(prose, i + 1) || defects.some((d) => CALLOUT.test(d.problem) && figureOf(paper, d) === fig.id)) return
+        shown.forEach((fig, i) => {
+          if (calledOut(prose, i + 1) || defects.some((d) => CALLOUT.test(d.problem) && figureOf(paper, d, shown) === fig.id)) return
           defects.push({ page: null, where: 'figure', quote: `Figure ${i + 1}`, problem: `Figure ${i + 1} is never referred to in the text.`, fix: `Refer to it as Figure ${i + 1} in the sentence that discusses what it shows.`, by: 'check', figureId: fig.id, fixIn: 'prose' })
         })
         // So is a table the sections print: it is numbered in the order the sections print them.
@@ -278,10 +280,10 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
           const prose = new Map<string, Found[]>()
           const ledger: Found[] = []
           for (const d of defects) {
-            const fig = d.fixIn === 'figure' || d.where === 'figure' ? figureOf(paper, d) : null
-            // A figure is drawn again only while a later reading can still send its new drawing back: a redraw on the
-            // last such reading would print unread, and a drawing brings defects of its own.
-            if (d.fixIn === 'figure' && fig && rounds < PROOF_ROUNDS) {
+            const fig = d.fixIn === 'figure' || d.where === 'figure' ? figureOf(paper, d, shown) : null
+            // A figure is drawn again on any reading that can still fix things: the reading after it, the recording one at
+            // the latest, reads the new drawing.
+            if (d.fixIn === 'figure' && fig) {
               // The figure is drawn again with the defect named.
               const figure = s.figures.find((f) => f.id === fig)!
               figure.revise = [figure.revise, `${d.problem} ${d.fix}`.trim()].filter(Boolean).join(' ')
@@ -294,14 +296,18 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
               // table's own section. A display equation is the section's own source, though printed it reads unlike it:
               // it is found by the page it is printed on.
               const table = d.where === 'table' ? tables[tableOf(d)]?.sectionId ?? null : null
-              const section = sectionOf(paper, d.quote, record) ?? d.tableSection ?? table ?? (fig ? s.figures.find((f) => f.id === fig)?.sectionId ?? null : null)
+              // A bare "Figure 3" or "Table 2" names the figure or the table, not words of a section, wherever else the
+              // number is printed: such a defect, a missing callout above all, goes to the figure's or the table's own section.
+              const bare = /^(?:fig(?:ure)?|table)\.?\s*\d+\.?$/i.test(d.quote.trim())
+              const own = d.tableSection ?? table ?? (fig ? s.figures.find((f) => f.id === fig)?.sectionId ?? null : null)
+              const section = (bare ? null : sectionOf(paper, d.quote, record)) ?? own
                 ?? sectionsOnPage(paper, pages.text, d.page).find((id) => d.where !== 'equation' || sectionText(paper, id).includes('$$')) ?? null
               if (section) prose.set(section, [...(prose.get(section) ?? []), d])
               else left.push(keep(d))
             } else left.push(keep(d))
           }
           const outline = (s.outline?.sections ?? []).map((sec, i) => `${i + 1} ${sec.title}`).join('\n')
-          const figures = printedFigures(paper).map((f, i) => `Figure ${i + 1}: ${f.caption}`).join('\n')
+          const figures = shown.map((f, i) => `Figure ${i + 1}: ${f.caption}`).join('\n')
           const tableList = tables.map((t, i) => `Table ${i + 1}: ${t.caption || '(no caption)'}`).join('\n')
           for (const [sectionId, found] of prose) {
             const section = s.outline!.sections.find((sec) => sec.id === sectionId)!

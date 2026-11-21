@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { calledOut, printedDefects, printedTables, proof } from '../../src/engine/behaviors/proof.js'
 import { figure } from '../../src/engine/behaviors/write.js'
 import { Paper } from '../../src/engine/paper.js'
-import { contentHash, fitTables, numberEquations, printedQuotes, splitWideEquations } from '../../src/engine/render.js'
+import { columnShares, contentHash, fitTables, numberEquations, printedQuotes, splitWideEquations } from '../../src/engine/render.js'
 import { ledgerAppendix } from '../../src/engine/behaviors/common.js'
 import { readableReason } from '../../src/engine/literature.js'
 
@@ -57,6 +57,18 @@ describe('what must never be printed', () => {
     expect(broken.startsWith('```{=typst}\n#[\n#show figure: set figure(placement: none)\n#show figure: set block(breakable: true)\n```')).toBe(true)
     // The caption stays inside, with the table it belongs to.
     expect(broken).toMatch(/: Included studies\.\n\n```\{=typst\}\n\]\n```\n\nNext paragraph\.$/)
+  })
+
+  it('lets narrow columns keep the room they need and shares the rest evenly among the wide ones', () => {
+    // A symbol, a meaning of up to 46 characters, a unit of 29 and a distribution of 30: too much for one line.
+    const [symbol, meaning, unit, value] = columnShares([6, 46, 29, 30])
+    expect(symbol).toBeCloseTo(9 / 95, 5)
+    expect(meaning).toBeCloseTo(unit, 5)
+    expect(value).toBeCloseTo(unit, 5)
+    expect(symbol + meaning + unit + value).toBeCloseTo(1, 5)
+    // Columns that all fit take the width in proportion to what they hold.
+    const [a, b] = columnShares([10, 30])
+    expect(b / a).toBeCloseTo(33 / 13, 5)
   })
 
   it('sets two formulas side by side that print wider than the column one above the other, aligned, under one number', () => {
@@ -117,6 +129,46 @@ describe('the typeset review', () => {
     const redrawn = contentHash(paper)
     Object.assign(s.figures[0], { source: '#text[p99 {{data.A5}} ms]' })
     expect(new Set([before, redrawn, contentHash(paper)]).size).toBe(3)
+  })
+
+  it('sends back every figure a reader names by its printed number, and tells the author the figures as printed', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const paper = Paper.create(join(dir, 'p'), 'seed')
+    const s = paper.state
+    s.outline = { sections: [{ id: 'S1', title: 'Model', purpose: '', claimIds: [], words: 300, figureIds: ['F1'] }, { id: 'S2', title: 'Results', purpose: '', claimIds: [], words: 300, figureIds: ['F2'] }], style: '', glossary: [] }
+    s.passages = {
+      S1: { sectionId: 'S1', text: 'Figure 1 shows the model, and Figure 2 its results.', revisions: [], checked: 'faithful' },
+      S2: { sectionId: 'S2', text: 'The frequencies are in the figure below.', revisions: [], checked: 'faithful' },
+    }
+    s.figures = [
+      { id: 'F1', caption: 'The model.', spec: '', sectionId: 'S1', status: 'rendered', file: 'figures/F1.png', source: '#text[model]' },
+      { id: 'F2', caption: 'The frequencies.', spec: '', sectionId: 'S2', status: 'rendered', file: 'figures/F2.png', source: '#text[frequencies]' },
+    ]
+    s.frame = { title: 'T', abstract: 'A', keywords: [], limitations: '', opens: '' }
+    s.round = paper.config.rounds
+    paper.settle('frame:final', 'done')
+    paper.settle(`typeset:${contentHash(paper)}`, 'done')
+    const asks: { seat: string; prompt: string }[] = []
+    paper.ask = (async (options: { seat: string; prompt: string }) => {
+      asks.push(options)
+      return options.seat === 'checker'
+        ? { defects: [
+          { page: 3, where: 'figure', quote: 'Figure 1', problem: 'A label overlaps the axis.', fix: 'Move the label.', fix_in: 'figure' },
+          { page: 5, where: 'figure', quote: 'Figure 2', problem: 'The pooled bar is labelled differently from the caption.', fix: 'Label it as the caption does.', fix_in: 'figure' },
+          { page: 5, where: 'figure', quote: 'Figure 2', problem: 'The results section never calls out Figure 2.', fix: 'Refer to it there.', fix_in: 'prose' },
+        ] }
+        : { edits: [{ old: 'in the figure below', new: 'in Figure 2' }] }
+    }) as Paper['ask']
+    await proof.ready(paper)[0].run()
+
+    // Sending Figure 1 back does not renumber Figure 2 for the defects after it.
+    expect(s.figures.map((f) => [f.id, f.status, f.redraws])).toEqual([['F1', 'planned', 1], ['F2', 'planned', 1]])
+    // The missing callout goes to the figure's own section, not to the one that happens to print its number, and that
+    // section's author is told the figures as the paper printed them.
+    expect(asks.filter((a) => a.seat === 'author')).toHaveLength(1)
+    expect(asks[1].prompt).toContain('section S2 Results')
+    expect(asks[1].prompt).toContain('Figure 1: The model.\nFigure 2: The frequencies.')
+    expect(s.passages.S2.text).toBe('The frequencies are in Figure 2.')
   })
 
   it('draws again a figure an earlier engine sent back under its settled first step, so the paper can finish', () => {

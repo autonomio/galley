@@ -220,7 +220,9 @@ export async function cslForDoi(doi: string): Promise<Record<string, unknown> | 
       const response = await fetch(url, { headers: { Accept: 'application/vnd.citationstyles.csl+json', 'User-Agent': UA }, redirect: 'follow', signal: AbortSignal.timeout(30_000) })
       if (response.status === 404) return null
       if (!response.ok) { await new Promise((r) => setTimeout(r, 1500 * (attempt + 1))); continue }
-      return (await response.json()) as Record<string, unknown>
+      const csl = (await response.json()) as Record<string, unknown>
+      await fromRegistry(doi, csl)
+      return csl
     } catch {
       await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)))
     }
@@ -228,10 +230,79 @@ export async function cslForDoi(doi: string): Promise<Record<string, unknown> | 
   return null
 }
 
+/** The JSON a registry's own API returns for a record, or null. */
+async function registryJson(url: string): Promise<any | null> {
+  try {
+    const response = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': UA }, signal: AbortSignal.timeout(30_000) })
+    return response.ok ? await response.json() : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * What a DOI's citation record folds away, taken from the record of the registry that issued it: the book a chapter is
+ * in beside the series it belongs to, and for a paper in proceedings, the proceedings' own title, its series and
+ * number, and its type. A record the registry cannot give is left as it came.
+ */
+export async function fromRegistry(doi: string, csl: Record<string, unknown>): Promise<void> {
+  const id = encodeURIComponent(doi).replace(/%2F/g, '/')
+  if (csl.source === 'Crossref') {
+    const record = (await registryJson(`https://api.crossref.org/works/${id}`))?.message
+    if (record) refineFromCrossref(csl, record)
+  } else {
+    const record = (await registryJson(`https://api.datacite.org/dois/${id}`))?.data?.attributes
+    if (record) refineFromDatacite(csl, record)
+  }
+}
+
+/** A chapter's Crossref record names the series first and the book second; the citation record keeps only the series. */
+export function refineFromCrossref(csl: Record<string, unknown>, record: any): void {
+  const titles = (Array.isArray(record?.['container-title']) ? record['container-title'] : []).filter((t: unknown) => typeof t === 'string' && t.trim())
+  if (titles.length < 2 || !/chapter|proceedings-article|book-section|book-part|reference-entry|book-track/.test(String(record.type))) return
+  csl['container-title'] = titles[titles.length - 1]
+  csl['collection-title'] = titles[0]
+  if (record.volume) {
+    csl['collection-number'] = String(record.volume)
+    delete csl.volume
+  }
+}
+
+const DATACITE_TYPES: Record<string, string> = { ConferencePaper: 'paper-conference', JournalArticle: 'article-journal', Preprint: 'article', BookChapter: 'chapter', Book: 'book', ConferenceProceeding: 'book', Report: 'report', Dissertation: 'thesis', Dataset: 'dataset', Software: 'software', Standard: 'standard' }
+
+/** A DataCite record says what a work is and what it was published in, with the series apart from the volume. */
+export function refineFromDatacite(csl: Record<string, unknown>, record: any): void {
+  const type = DATACITE_TYPES[String(record?.types?.resourceTypeGeneral)]
+  if (type) csl.type = type
+  for (const item of Array.isArray(record?.relatedItems) ? record.relatedItems : []) {
+    if (item?.relationType !== 'IsPublishedIn') continue
+    const titles: any[] = Array.isArray(item.titles) ? item.titles : []
+    const main = titles.find((t) => t && !t.titleType)?.title
+    const sub = titles.find((t) => t?.titleType === 'Subtitle')?.title
+    if (['ConferenceProceeding', 'Book', 'Journal'].includes(item.relatedItemType)) {
+      // A proceedings volume can carry its series and number as its title ("LIPIcs, Volume 102, CCC 2018") and its own
+      // name as the subtitle.
+      const name = sub && /\bvol(?:ume)?\.?\s*\d/i.test(String(main ?? '')) ? sub : [main, sub].filter(Boolean).join(': ')
+      if (name) csl['container-title'] = name
+      if (item.firstPage) csl.page = item.lastPage ? `${item.firstPage}-${item.lastPage}` : String(item.firstPage)
+      if (item.relatedItemType === 'Journal' && item.volume) csl.volume = String(item.volume)
+      if (item.relatedItemType === 'Journal' && item.issue) csl.issue = String(item.issue)
+    } else if (['Collection', 'BookSeries', 'Series'].includes(item.relatedItemType) && main) {
+      csl['collection-title'] = main
+      if (item.volume) csl['collection-number'] = String(item.volume)
+    }
+  }
+  // The series number is the series': it is not also the volume of the proceedings.
+  if (csl['collection-number'] && String(csl.volume ?? '') === String(csl['collection-number'])) delete csl.volume
+  // A paper's number within the proceedings or book it is in locates it there, as its pages do; the reference names
+  // the volume, as citation styles cite a chapter.
+  if (csl.type === 'paper-conference' || csl.type === 'chapter') delete csl.number
+}
+
 /** Registries sometimes list an affiliation as an author ("Department of …, … University"). */
 const ORGANIZATION = /\b(department|university|universit[äéà]t?|institute|institut|school|faculty|laborator(y|ies)|centre|center|college|hospital|academy|ministry|council|association|society|consortium)\b/i
 
-const CSL_STRINGS = ['type', 'title', 'container-title', 'container-title-short', 'collection-title', 'event-title', 'volume', 'issue', 'page', 'number', 'DOI', 'URL', 'publisher', 'publisher-place', 'ISSN', 'ISBN', 'genre', 'language']
+const CSL_STRINGS = ['type', 'title', 'container-title', 'container-title-short', 'collection-title', 'collection-number', 'event-title', 'volume', 'issue', 'page', 'number', 'DOI', 'URL', 'publisher', 'publisher-place', 'ISSN', 'ISBN', 'genre', 'language']
 const CSL_NAMES = ['author', 'editor']
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
@@ -278,6 +349,15 @@ export function cleanCsl(raw: Record<string, unknown>): Record<string, unknown> 
   // Registries name types their own way; citation styles expect CSL's names.
   const types: Record<string, string> = { 'journal-article': 'article-journal', 'proceedings-article': 'paper-conference', 'book-chapter': 'chapter', 'posted-content': 'article', dissertation: 'thesis', 'reference-entry': 'entry', 'monograph': 'book', 'edited-book': 'book' }
   out.type = types[String(out.type)] ?? (out.type || 'article-journal')
+  // A preprint server is where a preprint was posted, not a journal it appeared in.
+  if (/^10\.48550\//i.test(String(out.DOI ?? '')) || /^arxiv\b/i.test(String(out['container-title'] ?? '')) || /^arxiv$/i.test(String(out.publisher ?? ''))) {
+    out.type = 'article'
+    out.publisher = 'arXiv'
+    delete out['container-title']
+  }
+  // A container title that already states the volume ("LIPIcs, Volume 102, CCC 2018") prints it once.
+  const stated = String(out['container-title'] ?? '').match(/\bvol(?:ume)?\.?\s*(\d+)\b/i)
+  if (stated && stated[1] === String(out.volume ?? '')) delete out.volume
   return out
 }
 
