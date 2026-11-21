@@ -24,6 +24,14 @@ describe('works the text names', () => {
     expect(works.filter((w) => plausible({ ...named, authors: ['Wilks'], year: 1941 }, w)).map((w) => w.id)).toEqual(['W1'])
   })
 
+  it('takes the work\'s own title by its author as a candidate whatever year the index dates it by', () => {
+    const reprint: Work = { id: 'W2005097301', doi: '10.1080/00207166808803030', title: 'Three approaches to the quantitative definition of information *', authors: ['A. N. Kolmogorov'], year: 1968, venue: 'International Journal of Computer Mathematics', abstract: '', citedBy: null, url: null }
+    const named = { section: 'S3', quote: 'Kolmogorov complexity', authors: ['Kolmogorov'], year: 1965, title: 'Three Approaches to the Quantitative Definition of Information' }
+    expect(plausible(named, reprint)).toBe(true)
+    // Another work by the same author is still held to the year the text gives.
+    expect(plausible(named, { ...reprint, title: 'Logical basis for information theory and probability theory' })).toBe(false)
+  })
+
   it('reads the sentence a name stands in', () => {
     expect(sentenceAround('First point. As Wilks (1941) showed, n = 59. Next point.', 'Wilks (1941)')).toBe('As Wilks (1941) showed, n = 59.')
   })

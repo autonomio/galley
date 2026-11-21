@@ -413,27 +413,37 @@ async function correctReferences(paper: Paper, hash: string, found: Found[], lef
   const path = paper.path('build', 'refs.json')
   const printed: Record<string, unknown>[] = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : []
   const works = new Map(Object.values(paper.state.works).filter((w) => w.bibKey).map((w) => [w.bibKey!, w]))
+  // A work with no registry record is described by what the index says of it: the opening of its abstract and its
+  // author's institution say whether it is a thesis, a report or a book, and where it was written.
+  const indexed = (id: unknown): Record<string, string> | null => {
+    const work = works.get(String(id))
+    if (!work || work.csl) return null
+    const said = Object.entries({ abstract: work.abstract?.slice(0, 400) ?? '', institution: work.institution ?? '' }).filter(([, v]) => v.trim())
+    return said.length ? Object.fromEntries(said) : null
+  }
   const reply = await paper.ask<any>({
     behavior: 'proof', target: `${hash}:references`, seat: 'author', family: seatFamily(paper, 'author'),
     prompt: `${HOUSE}
 
-A reader of the typeset paper found these entries of its reference list printed wrongly. The list is typeset in Chicago author-date style from the citation records below. For each defect, give the record it concerns (id) and how to correct that record so its entry prints as the publication it is: fields to set and fields to remove. A value you set must already be in that record, moved from another field or copied from a field the style does not print; only type may take any of these values: ${CSL_TYPES.join(', ')}. Never invent a title, volume, page, editor, publisher or venue. Where the record does not hold what is missing, remove what prints wrongly. Fields you may set or remove: ${RECORD_FIELDS.join(', ')}. A defect no record can fix gets no correction.
+A reader of the typeset paper found these entries of its reference list printed wrongly. The list is typeset in Chicago author-date style from the citation records below. For each defect, give the record it concerns (id) and how to correct that record so its entry prints as the publication it is: fields to set and fields to remove. A value you set must already be in that record, moved from another field, copied from a field the style does not print, or taken from what the index says of a work that has no registry record (its index: the opening of its abstract and its author's institution, as where a thesis was written); only type may take any of these values: ${CSL_TYPES.join(', ')}. Never invent a title, volume, page, editor, publisher or venue. Where the record does not hold what is missing, remove what prints wrongly. Fields you may set or remove: ${RECORD_FIELDS.join(', ')}. A defect no record can fix gets no correction.
 
 DEFECTS:
 ${found.map((d, i) => `${i + 1}. "${d.quote}": ${d.problem}`).join('\n')}
 
 RECORDS:
-${printed.map((r) => { const raw = works.get(String(r.id))?.csl; return JSON.stringify({ ...r, ...(raw ? { registry: published(raw) } : {}) }) }).join('\n')}`,
+${printed.map((r) => { const raw = works.get(String(r.id))?.csl; const index = indexed(r.id); return JSON.stringify({ ...r, ...(raw ? { registry: published(raw) } : {}), ...(index ? { index } : {}) }) }).join('\n')}`,
     schema: obj({ corrections: arr(obj({ defect: int(), id: str(), set: arr(obj({ field: str(), value: str() })), remove: arr(str()) })) }),
   })
   const corrected = new Set<number>()
+  // What the index says of each work, as the reader was shown it before any record changed.
+  const shownIndex = new Map(printed.map((r) => [String(r.id), indexed(r.id)]))
   for (const fix of reply.corrections ?? []) {
     const n = Number(fix.defect)
     const work = works.get(String(fix.id))
     if (!work || !found[n - 1]) continue
     const entry = printed.find((r) => r.id === fix.id) ?? {}
     const record: Record<string, unknown> = work.csl ?? Object.fromEntries(Object.entries(entry).filter(([key]) => key !== 'id'))
-    const holds = squash(JSON.stringify([published(record), entry]))
+    const holds = squash(JSON.stringify([published(record), entry, shownIndex.get(String(fix.id)) ?? {}]))
     const changes: string[] = []
     for (const { field, value } of fix.set ?? []) {
       const v = String(value ?? '').trim()

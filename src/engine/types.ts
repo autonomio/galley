@@ -109,6 +109,10 @@ export interface Work {
   csl?: Record<string, unknown>
   /** Looked up once by its title, to complete a reference that had only its title, year and link. */
   titleChecked?: boolean
+  /** The kind of publication the index gives it (a CSL type), for a work with no DOI record to say so. */
+  kind?: string
+  /** The institution its first author wrote it at, as the index names it: where a thesis was written. */
+  institution?: string
   /** What a reader of the typeset paper corrected in its citation record, as "set field" or "remove field". */
   corrected?: string[]
 }
