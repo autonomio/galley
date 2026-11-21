@@ -1029,7 +1029,10 @@ function writeAnalysisPackage(paper: Paper, dir: string): void {
 
 export function contentHash(paper: Paper): string {
   const s = paper.state
+  // A reference record corrected after a reading prints a new entry, so it is a new revision too.
+  const corrected = Object.values(s.works).filter((w) => w.corrected?.length).map((w) => [w.id, w.corrected])
   return createHash('sha256').update(JSON.stringify({
+    ...(corrected.length ? { corrected } : {}),
     passages: Object.values(s.passages).map((p) => p.text), frame: s.frame, outcome: s.outcome,
     // The claim ledger is printed as an appendix, so a restated claim is a new revision too.
     claims: s.claims.map((c) => [c.id, c.status, c.text]),

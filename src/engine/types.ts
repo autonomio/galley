@@ -109,6 +109,8 @@ export interface Work {
   csl?: Record<string, unknown>
   /** Looked up once by its title, to complete a reference that had only its title, year and link. */
   titleChecked?: boolean
+  /** What a reader of the typeset paper corrected in its citation record, as "set field" or "remove field". */
+  corrected?: string[]
 }
 
 export interface Candidate {

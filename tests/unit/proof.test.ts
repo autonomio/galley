@@ -1,6 +1,6 @@
 // The typeset review: nothing that must never be printed reaches a page, and a
 // defect a reader finds goes back to whoever can fix it.
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -169,6 +169,39 @@ describe('the typeset review', () => {
     expect(asks[1].prompt).toContain('section S2 Results')
     expect(asks[1].prompt).toContain('Figure 1: The model.\nFigure 2: The frequencies.')
     expect(s.passages.S2.text).toBe('The frequencies are in Figure 2.')
+  })
+
+  it('corrects a reference entry in its record, and never with a value the record does not hold', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const paper = Paper.create(join(dir, 'p'), 'seed')
+    const s = paper.state
+    s.outline = { sections: [{ id: 'S1', title: 'Results', purpose: '', claimIds: [], words: 300, figureIds: [] }], style: '', glossary: [] }
+    s.passages = { S1: { sectionId: 'S1', text: 'Resource bounds can guide synthesis.', revisions: [], checked: 'faithful' } }
+    s.works = { W1: { id: 'W1', doi: '10.1007/x', title: 'Synthesis with Asymptotic Resource Bounds', authors: ['Qinheping Hu'], year: 2021, venue: null, abstract: '', citedBy: null, url: null, bibKey: 'hu2021synthesis', csl: { type: 'book-chapter', 'container-title': ['Lecture Notes in Computer Science', 'Computer Aided Verification'], page: '783-807', abstract: 'Volume 12759 of the series.' } } }
+    s.frame = { title: 'T', abstract: 'A', keywords: [], limitations: '', opens: '' }
+    s.round = paper.config.rounds
+    paper.settle('frame:final', 'done')
+    const before = contentHash(paper)
+    paper.settle(`typeset:${before}`, 'done')
+    mkdirSync(paper.path('build'), { recursive: true })
+    writeFileSync(paper.path('build', 'refs.json'), JSON.stringify([{ id: 'hu2021synthesis', type: 'chapter', title: 'Synthesis with Asymptotic Resource Bounds', 'container-title': 'Lecture Notes in Computer Science', page: '783-807' }]))
+    const seats: string[] = []
+    paper.ask = (async (options: { seat: string }) => {
+      seats.push(options.seat)
+      return options.seat === 'checker'
+        ? { defects: [{ page: 9, where: 'references', quote: 'In Lecture Notes in Computer Science', problem: 'The Hu et al. entry names the series in place of the book.', fix: 'Name the book.', fix_in: 'other' }] }
+        : { corrections: [{ defect: 1, id: 'hu2021synthesis', set: [{ field: 'container-title', value: 'Computer Aided Verification' }, { field: 'collection-title', value: 'Lecture Notes in Computer Science' }, { field: 'volume', value: '12759' }], remove: [] }] }
+    }) as Paper['ask']
+    await proof.ready(paper)[0].run()
+
+    expect(seats).toEqual(['checker', 'author'])
+    expect(s.works.W1.csl).toMatchObject({ 'container-title': 'Computer Aided Verification', 'collection-title': 'Lecture Notes in Computer Science' })
+    // The volume is in neither the record's bibliographic fields nor the printed entry, so it is not set.
+    expect(s.works.W1.csl!.volume).toBeUndefined()
+    expect(s.works.W1.corrected).toEqual(['set container-title', 'set collection-title'])
+    expect(s.proof).toMatchObject({ fixed: 1, left: [] })
+    // The corrected entry is a new revision, typeset and read again.
+    expect(contentHash(paper)).not.toBe(before)
   })
 
   it('draws again a figure an earlier engine sent back under its settled first step, so the paper can finish', () => {

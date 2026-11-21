@@ -7,7 +7,7 @@
 // text is restated as the text states it, and the paper is typeset and read
 // again. What the agents cannot fix is listed in the sign-off sheet.
 import { execFile } from 'node:child_process'
-import { mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Paper } from '../paper.js'
 import { HOUSE } from '../prompts.js'
@@ -279,6 +279,7 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
         else {
           const prose = new Map<string, Found[]>()
           const ledger: Found[] = []
+          const references: Found[] = []
           for (const d of defects) {
             const fig = d.fixIn === 'figure' || d.where === 'figure' ? figureOf(paper, d, shown) : null
             // A figure is drawn again on any reading that can still fix things: the reading after it, the recording one at
@@ -291,6 +292,7 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
               figure.status = 'planned'
               fixed++
             } else if (d.fixIn === 'ledger') ledger.push(d)
+            else if (d.where === 'references') references.push(d)
             else if (d.fixIn === 'prose' || d.where === 'equation') {
               // A missing callout or a wrong cross-reference has no quote in the prose: it belongs to the figure's or the
               // table's own section. A display equation is the section's own source, though printed it reads unlike it:
@@ -344,6 +346,7 @@ ${text}
             } else left.push(...found.map(keep))
           }
           if (ledger.length) fixed += await restateLedger(paper, hash, ledger, record, left)
+          if (references.length) fixed += await correctReferences(paper, hash, references, left)
         }
         s.proof = { rounds, hash, defects: defects.map(keep), fixed: (s.proof?.fixed ?? 0) + fixed, left }
         paper.journal({ event: 'proof', hash, round: rounds, defects: defects.length, fixed, left: left.length, images: seesImages ? pages.images.length : 0 })
@@ -390,4 +393,63 @@ ${manuscriptBlock(paper, false, false)}`,
     else if (item.how === 'narrowed' && item.narrowed && isNarrowing(c.text, item.narrowed)) { setClaim(paper, c, c.status, 'proof', `the printed text states it more narrowly: "${String(item.quote).slice(0, 300)}"`, item.narrowed); settled++ }
   }
   return settled
+}
+
+/** The types a reference can be given, and the fields of its record a reading may correct. */
+const CSL_TYPES = ['article', 'article-journal', 'article-magazine', 'article-newspaper', 'book', 'chapter', 'dataset', 'entry-encyclopedia', 'manuscript', 'paper-conference', 'patent', 'report', 'software', 'speech', 'standard', 'thesis', 'webpage']
+const RECORD_FIELDS = ['type', 'container-title', 'collection-title', 'collection-number', 'event-title', 'volume', 'issue', 'page', 'number', 'publisher', 'publisher-place', 'genre', 'edition']
+/** What of a registry's record says where a work was published: the rest (its abstract, its own references) is not shown. */
+const WHERE_PUBLISHED = [...RECORD_FIELDS, 'title', 'event', 'event-place', 'original-title', 'short-container-title', 'container-title-short', 'ISBN', 'ISSN']
+const published = (record: Record<string, unknown>) => Object.fromEntries(Object.entries(record).filter(([key]) => WHERE_PUBLISHED.includes(key)))
+
+/**
+ * Entries of the reference list the reader found printed wrongly are corrected in their citation records: a field
+ * retyped, moved or removed, never one invented. A value set must already be in the record, as its registry gave it.
+ * Returns how many defects were corrected; the rest are left for the authors.
+ */
+async function correctReferences(paper: Paper, hash: string, found: Found[], left: ProofDefect[]): Promise<number> {
+  const strip = ({ fixIn: _, tableSection: __, ...d }: Found): ProofDefect => d
+  const path = paper.path('build', 'refs.json')
+  const printed: Record<string, unknown>[] = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : []
+  const works = new Map(Object.values(paper.state.works).filter((w) => w.bibKey).map((w) => [w.bibKey!, w]))
+  const reply = await paper.ask<any>({
+    behavior: 'proof', target: `${hash}:references`, seat: 'author', family: seatFamily(paper, 'author'),
+    prompt: `${HOUSE}
+
+A reader of the typeset paper found these entries of its reference list printed wrongly. The list is typeset in Chicago author-date style from the citation records below. For each defect, give the record it concerns (id) and how to correct that record so its entry prints as the publication it is: fields to set and fields to remove. A value you set must already be in that record, moved from another field or copied from a field the style does not print; only type may take any of these values: ${CSL_TYPES.join(', ')}. Never invent a title, volume, page, editor, publisher or venue. Where the record does not hold what is missing, remove what prints wrongly. Fields you may set or remove: ${RECORD_FIELDS.join(', ')}. A defect no record can fix gets no correction.
+
+DEFECTS:
+${found.map((d, i) => `${i + 1}. "${d.quote}": ${d.problem}`).join('\n')}
+
+RECORDS:
+${printed.map((r) => { const raw = works.get(String(r.id))?.csl; return JSON.stringify({ ...r, ...(raw ? { registry: published(raw) } : {}) }) }).join('\n')}`,
+    schema: obj({ corrections: arr(obj({ defect: int(), id: str(), set: arr(obj({ field: str(), value: str() })), remove: arr(str()) })) }),
+  })
+  const corrected = new Set<number>()
+  for (const fix of reply.corrections ?? []) {
+    const n = Number(fix.defect)
+    const work = works.get(String(fix.id))
+    if (!work || !found[n - 1]) continue
+    const entry = printed.find((r) => r.id === fix.id) ?? {}
+    const record: Record<string, unknown> = work.csl ?? Object.fromEntries(Object.entries(entry).filter(([key]) => key !== 'id'))
+    const holds = squash(JSON.stringify([published(record), entry]))
+    const changes: string[] = []
+    for (const { field, value } of fix.set ?? []) {
+      const v = String(value ?? '').trim()
+      if (!RECORD_FIELDS.includes(field) || !v || (field === 'type' ? !CSL_TYPES.includes(v) : !holds.includes(squash(v)))) continue
+      record[field] = v
+      changes.push(`set ${field}`)
+    }
+    for (const field of fix.remove ?? []) {
+      if (!RECORD_FIELDS.includes(field) || field === 'type' || !(field in record)) continue
+      delete record[field]
+      changes.push(`remove ${field}`)
+    }
+    if (!changes.length) continue
+    work.csl = record
+    work.corrected = [...(work.corrected ?? []), ...changes]
+    corrected.add(n)
+  }
+  found.forEach((d, i) => { if (!corrected.has(i + 1)) left.push(strip(d)) })
+  return corrected.size
 }
