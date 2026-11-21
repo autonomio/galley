@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { copyedit } from '../../src/engine/behaviors/copyedit.js'
 import { proof } from '../../src/engine/behaviors/proof.js'
-import { STORY_STEPS, checkCalculation, renumber, researchLost, storyCaveats, storyCharts, storyExample, storyRead, storyReadDone, storyTold, writtenNumber } from '../../src/engine/behaviors/story.js'
+import { STORY_STEPS, checkCalculation, madeTalk, renumber, researchLost, storyCaveats, storyCharts, storyExample, storyRead, storyReadDone, storyRegister, storyTold, writtenNumber } from '../../src/engine/behaviors/story.js'
 import { fidelity } from '../../src/engine/behaviors/write.js'
 import { chartCatalog, drawChart, panelRows, toCsv } from '../../src/engine/charts.js'
 import { Paper } from '../../src/engine/paper.js'
@@ -64,6 +64,26 @@ describe('telling the research', () => {
     // A written 66,300 may round 66,312; a written 100 does not stand for 149.
     expect(writtenNumber('66,300')?.tolerance).toBe(50)
     expect(writtenNumber('100')?.tolerance).toBe(0.5)
+  })
+
+  it('finds what the paper says of its own making, and sends it to be told as the work', async () => {
+    expect(madeTalk('The weights are fixed. The simulation record does not establish whether they apply to variances. Each dataset was described by galley.')).toEqual([
+      'The simulation record does not establish whether they apply to variances.', 'Each dataset was described by galley.',
+    ])
+    expect(madeTalk('Galley takes seats.', true)).toEqual([])
+    const paper = reviewed()
+    paper.state.passages.S2.text = 'Search costs exceed execution costs. The simulation record does not establish the weights.'
+    for (const step of STORY_STEPS.slice(0, 3)) paper.settle(step.key, 'done')
+    const prompts: string[] = []
+    paper.ask = (async (options: { seat: string; prompt: string }) => {
+      prompts.push(options.prompt)
+      // An edit that says the same thing of the record again goes back once; then it is left as it was.
+      return options.seat === 'checker' ? { parts: [] } : { edits: [{ in: 'S1', old: 'Scaling curves describe', new: 'As the production record shows, scaling curves describe' }] }
+    }) as Paper['ask']
+    await storyRegister.ready(paper)[0].run()
+    expect(prompts[0]).toContain('- [S2] "The simulation record does not establish the weights."')
+    expect(prompts).toHaveLength(2)
+    expect(paper.state.passages.S1.text).toBe('Scaling curves describe what compute buys [@kaplan2020].')
   })
 
   it('renumbers the figures a text refers to when a chart is placed before them', () => {

@@ -57,7 +57,8 @@ function telling(paper: Paper, step: number): boolean {
   return STORY_STEPS.slice(0, step).every((_, i) => stepDone(paper, i))
 }
 
-const STORY = `The research in this manuscript is finished and has been through review; you are now telling it. Change how the paper tells its research, never the research: every claim keeps its strength and its conditions; every number, citation, definition, proposition, equation and table stays in the paper; nothing is added that the research did not establish, and no source is cited that the paper does not already cite. A {{placeholder}} is a recorded number: it stays exactly as written wherever it stands, and moves only whole.
+const STORY = `The research in this manuscript is finished and has been through review; you are now telling it. Change how the paper tells its research, never the research: every claim keeps its strength and its conditions; every number, citation, definition, proposition, equation and table stays in the paper; nothing is added that the research did not establish, and no source is cited that the paper does not already cite. A {{placeholder}} is a recorded number: it stays exactly as written wherever it stands, and moves only whole. Name every quantity, object and result by the paper's own term for it, exactly as the paper defines it: a bound stays a bound, an estimate an estimate, a modeled cost a modeled cost.
+Outside its section on the use of AI, the paper never speaks of how it was made: it names no tool or model that produced it, and never speaks of a run, a record of its own making (a simulation record, an analysis record), what that record does or does not show, a ledger, a check or a review step. It states the work, its methods and its sources.
 Edits are exact: in is the id in brackets of the part the edit is made in, old is copied character for character from that part as given below (long enough to occur once in it), and new replaces it. To add a paragraph, give the sentence it follows as old, and that sentence followed by the new paragraph as new. Change nothing your task does not need.`
 
 /** One part of the paper a story step reads: its title, its abstract, a section or a figure caption. */
@@ -140,6 +141,15 @@ export function researchLost(before: Map<string, string>, after: Map<string, str
   return problems
 }
 
+const MADE_NAMES = /\b(galley|Canary|Resolvent)\b/
+const MADE_TERMS = /\b(?:simulation|analysis|production) record\b|\bclaim ledger\b|\bproduction journal\b|\bevidence package\b|\bsign-off sheet\b/i
+
+/** The sentences of a text that speak of how the paper was made rather than of the work: printed only where the paper states its use of AI. */
+export function madeTalk(text: string, aboutSystem = false): string[] {
+  const sentences = text.split(/(?<=[.!?])\s+(?=[A-Z(])/).map((s) => s.trim()).filter(Boolean)
+  return [...new Set([...selfTalk(text, aboutSystem), ...sentences.filter((s) => (!aboutSystem && MADE_NAMES.test(s)) || MADE_TERMS.test(s))])]
+}
+
 /** A number as a text writes it ("66,300", "4.23", "1.2 × 10^5", "98%"), with half a unit of its last digit as its tolerance. */
 export function writtenNumber(value: string): { value: number; tolerance: number } | null {
   const m = value.trim().replace(/\$/g, '').replace(/\\(?:times|cdot)/g, '×').replace(/[{}]/g, '').replace(/[   ]/g, '').replace(/−/g, '-')
@@ -216,10 +226,18 @@ ${legend ? `\n${legend}\n` : ''}${step.context ? `\n${step.context}\n` : ''}
 THE PAPER:
 ${block(step.parts, before, null)}`
   const schema = obj({ edits: arr(obj({ in: str(), old: str(), new: str() })), ...(step.schema ?? {}) })
+  const about = Boolean(paper.state.brief?.aboutSystem)
   const attempt = (answer: any) => {
     const texts = new Map(before)
     applyEdits(texts, answer.edits ?? [], step.editable)
-    return { texts, problems: step.extra?.(answer, texts, record) ?? [] }
+    const problems = step.extra?.(answer, texts, record) ?? []
+    // A story step never adds a word on how the paper was made.
+    for (const [id, text] of texts) {
+      if (text === (before.get(id) ?? '')) continue
+      const was = new Set(madeTalk(before.get(id) ?? '', about))
+      for (const sentence of madeTalk(text, about)) if (!was.has(sentence)) problems.push(`[${id}] this sentence speaks of how the paper was made, which the paper never does: "${sentence.slice(0, 240)}"`)
+    }
+    return { texts, problems }
   }
   let reply = await paper.ask<any>({ behavior: step.behavior, target: 'tell', seat: 'author', family: author, prompt, schema })
   let result = attempt(reply)
@@ -278,7 +296,7 @@ async function objections(paper: Paper, step: Told, before: Map<string, string>,
     prompt: `${HOUSE}
 
 A storytelling step (${step.what}) rewrote parts of a finished, reviewed manuscript. It may change how the paper tells its research, never the research. Compare each changed part with what it was, against the paper as it now reads:
-- kept: every claim the part held is still in the paper with the same strength and the same conditions; every number, citation, definition, proposition and table it held is still in the paper; it adds no claim, result, number or source the research did not already hold, and says nothing of the research that the paper does not support. A condition or caveat moved to the Limitations section, a scope stated once where the paper defines it instead of in every sentence, a number the paper holds now shown with its working in a worked example, and a passage moved elsewhere in the paper, are kept.
+- kept: every claim the part held is still in the paper with the same strength and the same conditions; every number, citation, definition, proposition and table it held is still in the paper; it adds no claim, result, number or source the research did not already hold, and says nothing of the research that the paper does not support. A condition or caveat moved to the Limitations section, a scope stated once where the paper defines it instead of in every sentence, a number the paper holds now shown with its working in a worked example, a passage moved elsewhere in the paper, and a statement corrected so that it agrees with what the paper itself establishes (its definitions, propositions and results), are kept.
 - changed: something the research holds was lost, strengthened, weakened, misstated or added; say exactly what.
 For each changed part give id, verdict, and what (empty when kept).
 
@@ -337,9 +355,9 @@ export const storyCaveats: Behavior = {
       behavior: 'story-caveats', what: 'gathering the caveats into the Limitations section', parts, anchor: id,
       editable: new Set(parts.map((p) => p.id).filter((p) => p !== id)),
       task: `Your task: the caveats. The paper states the limits of its work in one place, its Limitations section, and nowhere else.
-- A caveat says what the work does not show or how far its results may not reach: an assumption that may not hold in practice, a case or condition left untested, a comparison not made, a sample or setting that limits how far a result generalizes, a step taken on judgment. Find every caveat in the sections and figure captions, remove it from where it stands, and state it in the Limitations section.
+- A caveat says what the work does not show or how far its results may not reach: an assumption that may not hold in practice, a case or condition left untested, a comparison not made, a sample or setting that limits how far a result generalizes, a step taken on judgment. Find every caveat in the sections and figure captions, remove it from where it stands, and state it in the Limitations section. Move each caveat as it is written, changing only what it needs to read in its new place (a word like "this" replaced by what it refers to, a connecting word): its terms and its claim stay exactly as they were.
 - What a result is about is not a caveat: the quantity measured, the model it is computed in, the setting and conventions it holds under. That stays where the paper defines it (its method or setup), stated once. Where a sentence reporting a result repeats a condition the paper has already stated, remove the repetition; where a condition is stated nowhere else, keep it with the result.
-- limitations: the text of the Limitations section, without a heading. The limits of the work, each stated once, plainly and specifically, in the paper's own terms, with what each means for how far the results reach; include the limits listed below that hold for the text as it now reads. A paragraph for each limit or for a group of related limits; no bullet list. Limits of the work only: never how the paper was produced, drafted, reviewed or checked; no hedging and no apology.${s.outline!.sections.some((sec) => sec.id === id) ? ' The paper already has a Limitations section: return it whole, with what you add.' : ''} If the paper has no caveat at all, return limitations empty.`,
+- limitations: the text of the Limitations section, without a heading. The limits of the work, each stated once, plainly and specifically, in the paper's own terms, with what each means for how far the results reach; include the limits listed below that hold for the text as it now reads, each in the paper's own terms. A paragraph for each limit or for a group of related limits; no bullet list. Limits of the work only: never how the paper was produced, drafted, reviewed or checked; no hedging and no apology.${s.outline!.sections.some((sec) => sec.id === id) ? ' The paper already has a Limitations section: return it whole, with what you add.' : ''} If the paper has no caveat at all, return limitations empty.`,
       context: limits.length ? `LIMITS OF THE WORK THE AUTHORS WERE LEFT DURING WRITING AND REVIEW (not yet in the paper):\n${limits.join('\n')}` : '',
       schema: { limitations: str() },
       extra: (reply, texts) => {
@@ -411,6 +429,10 @@ export const storyRegister: Behavior = {
   id: 'story-register', stage: 'close', improver: true, title: 'One language and one register',
   ready: (paper) => stepTarget(paper, 3, 'one language and one register', async () => {
     const parts = partsOf(paper, false)
+    const about = Boolean(paper.state.brief?.aboutSystem)
+    // What the paper says of its own making is found by code, and goes, whoever wrote it.
+    const talk = parts.flatMap((p) => madeTalk(p.text, about).map((sentence) => `- [${p.id}] "${sentence}"`))
+    const review = paper.state.literature?.status === 'done'
     await tell(paper, {
       behavior: 'story-register', what: 'making the language and register one throughout', parts,
       editable: new Set(parts.map((p) => p.id)),
@@ -419,7 +441,10 @@ export const storyRegister: Behavior = {
 - one voice: the same person (we) or the same impersonal construction throughout, and the same tense conventions (what the paper does in the present, what was done in the past), as the field writes them;
 - one name for each concept, method, quantity and unit, the one the paper defines, used the same way everywhere;
 - one way of doing the same thing: introducing a definition, reporting a result, referring to a figure or a table;
-- internal labels (run names such as S1, section numbers standing in for names) only where the reader needs them to find something; elsewhere, the thing's name.
+- internal labels (run names such as S1, section numbers standing in for names) only where the reader needs them to find something; elsewhere, the thing's name.${talk.length ? `
+- These sentences speak of how the paper was made, which the paper never does outside its section on the use of AI. Rewrite each so that it states the work itself (its method, its data, its sources), or remove it where it says nothing else:
+${talk.join('\n')}` : ''}${review ? `
+- The paper's literature review screened the records that covered most of its question, not every record its searches found: it is a targeted review, not a systematic review in the formal sense. Wherever the paper names it, name it so, and where the paper reports it, say plainly that it is not a systematic review in the formal sense${paper.config.literatureReview === 'load-bearing' ? ', though the paper rests on it' : ''}.` : ''}
 Leave alone what already reads as one; return no edits when the whole paper does.`,
     })
   }),
@@ -614,7 +639,7 @@ export const storyRead: Behavior = {
 You are reading a finished paper in your field from its title to its last section, as a careful reader meets it. Its research is done and reviewed and stays as it is. Report what still makes it harder to follow than it needs to be:
 - unnecessary complication: a sentence or passage that makes the reader work harder than its content needs (stacked qualifications, nested definitions, labels where names would do, a detour from the line of the argument);
 - incoherence: a passage that does not follow from the one before it, a term or symbol used before it is explained, a point made twice in different words, an order that makes the reader wait for what they need;
-- tension: the paper pulling two ways (a finding stated more strongly in one place than in another, a title or abstract that promises what the body does not deliver, a figure and the text that disagree, a caveat outside the Limitations section).
+- tension: the paper pulling two ways (a finding stated more strongly in one place than in another, a title or abstract that promises what the body does not deliver, a figure and the text that disagree, a caveat outside the Limitations section, a sentence on how the paper itself was made).
 For each, give where (the id in brackets of the part), quote (copied exactly from it), problem, and fix (what it should say instead). Report what a careful reader in the field would want changed, and only that; if the paper reads cleanly, return no problems.
 
 THE PAPER:
