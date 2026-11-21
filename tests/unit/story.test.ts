@@ -2,7 +2,7 @@
 // prints after the conclusion without a number; a worked number must be what its arithmetic gives; a change that
 // loses what the research rests on, or that another family judges changed the research, is undone; and a chart draws
 // only the paper's own records.
-import { mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -149,6 +149,18 @@ describe('telling the research', () => {
     expect(paper.state.outline!.sections.map((sec) => sec.id)).toEqual(['S1', 'S2', 'S3'])
   })
 
+  it('undoes the part a sentence moved from when the part it moved into is undone', async () => {
+    const paper = reviewed()
+    for (const step of STORY_STEPS.slice(0, 3)) paper.settle(step.key, 'done')
+    const moved = ' The cost model is not validated against measured training runs, so these are modeled costs.'
+    paper.ask = (async (options: { seat: string }) => options.seat === 'checker'
+      ? { parts: [{ id: 'S2', verdict: 'kept', what: '' }, { id: 'S3', verdict: 'changed', what: 'it weakens the conclusion' }] }
+      : { edits: [{ in: 'S2', old: moved, new: '' }, { in: 'S3', old: 'Search dominates.', new: `Search dominates.${moved}` }] }) as Paper['ask']
+    await storyRegister.ready(paper)[0].run()
+    expect(paper.state.passages.S3.text).toBe('Search dominates.')
+    expect(paper.state.passages.S2.text).toContain(moved.trim())
+  })
+
   it('leaves the text as it was when a worked number stays wrong', async () => {
     const paper = reviewed()
     for (const step of STORY_STEPS.slice(0, 2)) paper.settle(step.key, 'done')
@@ -215,6 +227,30 @@ describe('charts from the paper\'s own records', () => {
     expect(interval.rows[0]).toEqual({ label: 'a', estimate: out.result.outputs.profit.p50, lower: out.result.outputs.profit.p5, upper: out.result.outputs.profit.p95 })
     expect(toCsv(interval.rows).split('\n')[0]).toBe('label,estimate,lower,upper')
     expect(panelRows(paper, { kind: 'hist', data: ['sim:S9:profit'], labels: [], x: '', y: '', unit: '', marks: [] })).toEqual({ problem: 'sim:S9:profit is not a simulated quantity of this paper' })
+  })
+
+  it('keeps a figure whose replacing chart would drop the paper\'s only citation from its caption', async () => {
+    const paper = reviewed()
+    for (const step of STORY_STEPS.slice(0, 4)) paper.settle(step.key, 'done')
+    const out = simulate(spec)
+    if (!out.ok) throw new Error('spec did not run')
+    paper.state.simulations = { S1: { id: 'S1', title: out.result.title, purpose: 'p', assumptions: [], result: out.result } }
+    paper.state.passages.S1.text = 'Scaling curves describe what compute buys.'
+    paper.state.figures = [{ id: 'F1', caption: 'Profit by run, as in earlier work [@kaplan2020].', spec: '', sectionId: 'S2', status: 'rendered', file: 'figures/F1.png' }]
+    const fake = join(dir, 'astetik')
+    writeFileSync(fake, '#!/bin/sh\nif [ "$1" = catalog ]; then echo \'{"plots":{"hist":{"options":[]},"interval":{"options":[]}},"spec_fields":[]}\'; else exit 2; fi\n')
+    chmodSync(fake, 0o755)
+    const was = process.env.GALLEY_ASTETIK
+    process.env.GALLEY_ASTETIK = fake
+    try {
+      paper.ask = (async () => ({ charts: [{ section: 'S2', replaces: 'F1', purpose: 'p', caption: 'Profit by run.', panels: [{ kind: 'hist', data: ['sim:S1:profit'], labels: ['a'], x: 'Profit', y: 'Draws', unit: 'EUR', x_unit: '', marks: [] }], mention: { old: '', new: '' } }] })) as Paper['ask']
+      await storyCharts.ready(paper).find((t) => t.key === 'story:charts')!.run()
+      expect(paper.state.notes.at(-1)?.text).toContain("removes the paper's only citation of @kaplan2020")
+      expect(paper.state.figures[0]).toMatchObject({ id: 'F1', caption: 'Profit by run, as in earlier work [@kaplan2020].', file: 'figures/F1.png' })
+    } finally {
+      if (was === undefined) delete process.env.GALLEY_ASTETIK
+      else process.env.GALLEY_ASTETIK = was
+    }
   })
 
   it('draws no chart without Astetik, and says so', async () => {

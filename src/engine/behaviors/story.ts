@@ -12,7 +12,7 @@ import { fillPlaceholders, productionRecord, type Record_ } from '../record.js'
 import type { Behavior, Target } from '../scheduler.js'
 import { arr, bool, enm, num, obj, str, type Schema } from '../schema.js'
 import { compile, parse } from '../simulation/expression.js'
-import { applyExact, citedKeys, words, type Edit } from '../text.js'
+import { applyExact, citedKeys, contentWords, overlap, words, type Edit } from '../text.js'
 import type { ChartPanel, ChartPlan, Figure, Section } from '../types.js'
 import { astetikCatalog, astetikCommand, chartCatalog, drawable, drawChart } from '../charts.js'
 import { reviewDone } from './close.js'
@@ -139,6 +139,29 @@ export function researchLost(before: Map<string, string>, after: Map<string, str
     if (lost.length) problems.set(id, lost)
   }
   return problems
+}
+
+
+/** A text's sentences that carry content: the units a rewrite can move from one part to another. */
+const sentencesOf = (text: string) => text.split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter((x) => contentWords(x).size >= 5)
+const bestMatch = (sentence: string, text: string) => Math.max(0, ...sentencesOf(text).map((other) => overlap(sentence, other)))
+
+/**
+ * The kept parts whose rewrite moved a sentence into a part that was undone: with its destination undone, what moved
+ * would be gone from the paper, so the part it came from is undone too.
+ */
+export function movedInto(before: Map<string, string>, proposed: Map<string, string>, texts: Map<string, string>, undone: Set<string>): Map<string, string> {
+  const found = new Map<string, string>()
+  for (const [id, text] of texts) {
+    const was = before.get(id) ?? ''
+    if (undone.has(id) || text === was) continue
+    const removed = sentencesOf(was).filter((sentence) => bestMatch(sentence, text) < 0.8)
+    for (const destination of undone) {
+      const into = proposed.get(destination) ?? '', had = before.get(destination) ?? ''
+      if (removed.some((sentence) => bestMatch(sentence, into) >= 0.8 && bestMatch(sentence, had) < 0.8)) { found.set(id, `what it moved into ${destination} was not kept there`); break }
+    }
+  }
+  return found
 }
 
 const MADE_NAMES = /\b(galley|Canary|Resolvent)\b/
@@ -273,10 +296,18 @@ ${block(step.parts, before, null)}`
     const again = await repair([...undone].map(([id, what]) => `[${id}] this would change the research: ${what}`))
     if (!again.problems.length) { texts = again.texts; undone = await judge(texts) }
   }
-  const proposed = changedIn(texts)
+  const proposed = new Map(texts)
   for (const id of undone.keys()) texts.set(id, before.get(id) ?? '')
+  // What moved between parts stands or falls with the part it moved to, and the undoing itself may not lose what the
+  // research rests on: parts are undone until nothing more must go.
+  for (;;) {
+    const more = movedInto(before, proposed, texts, new Set(undone.keys()))
+    for (const [id, lost] of researchLost(before, texts, record)) if (!undone.has(id)) more.set(id, lost.join('; '))
+    if (!more.size) break
+    for (const [id, what] of more) { undone.set(id, what); texts.set(id, before.get(id) ?? '') }
+  }
   // Parts that stand together (caveats moved and the section that now states them) stand or fall as one.
-  if (step.anchor && proposed.includes(step.anchor) && undone.has(step.anchor)) {
+  if (step.anchor && changedIn(proposed).includes(step.anchor) && undone.has(step.anchor)) {
     for (const id of texts.keys()) texts.set(id, before.get(id) ?? '')
   }
   const changed = changedIn(texts)
@@ -584,6 +615,11 @@ export const storyCharts: Behavior = {
         if (!id) { let k = 1; while (taken.has(`chart${k}`)) k++; id = `chart${k}`; taken.add(id) }
         const plan: ChartPlan = { purpose: String(raw.purpose ?? ''), panels, ...(replaced ? { replaces: replaced.id } : {}) }
         const fig: Figure = { id, caption: String(raw.caption ?? '').trim() || replaced?.caption || '', spec: plan.purpose, sectionId: replaced?.sectionId ?? section!.id, status: 'planned', kind: 'chart', chart: plan }
+        // A caption that replaces another keeps every citation and recorded number the old one held, unless the paper
+        // states them elsewhere; a new caption cites and states nothing the paper does not.
+        const rest = parts.filter((p) => p.id !== id).map((p) => p.text).join('\n\n')
+        const captionLost = researchLost(new Map([[id, replaced?.caption ?? ''], ['rest', rest]]), new Map([[id, fig.caption], ['rest', rest]]), record).get(id)
+        if (captionLost?.length) { paper.note('story-charts', `A chart was left out: its caption ${captionLost.join('; ').replace(/^it /, '')}.`); continue }
         const result = await drawChart(paper, fig, 'draw1')
         if (!result.ok) { paper.note('story-charts', `A chart was left out: ${result.problem}.`); continue }
         Object.assign(fig, { status: 'rendered', file: result.file, source: result.source, chart: { ...plan, bundle: result.bundle } })
@@ -609,6 +645,8 @@ export const storyCharts: Behavior = {
       }
       // A reference added must not take anything the research rests on with it.
       for (const [id] of researchLost(renumbered, texts, record)) texts.set(id, renumbered.get(id)!)
+      // A chart's caption is its own, checked above and renumbered with it: the caption it replaced is not written back.
+      for (const d of drawn) { texts.delete(d.fig.id); original.delete(d.fig.id) }
       commit(paper, texts, original, 'story-charts')
       paper.journal({ event: 'story', step: 'story-charts', charts: drawn.map((d) => d.fig.id) })
       paper.save()
