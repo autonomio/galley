@@ -75,6 +75,24 @@ describe('stopping a paper\'s run', () => {
     expect(alive(helper)).toBe(false)
   })
 
+  it('stops what the leader leaves in its group when it dies while being stopped', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-stop-'))
+    const paper = join(dir, 'trees')
+    mkdirSync(paper)
+    const leftFile = join(dir, 'left.pid')
+    // On SIGTERM the run starts one more process in its own group, one that works on the paper, and exits.
+    const leader = spawn(process.execPath, ['-e', `process.on('SIGTERM', () => { const c = require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', process.argv[2] + '/out/paper.md'], { stdio: 'ignore' }); require('fs').writeFileSync(process.argv[1], String(c.pid)); process.exit(0) }); setInterval(() => {}, 1000)`, leftFile, paper], { detached: true, stdio: 'ignore' })
+    started.push(leader)
+    writeFileSync(join(paper, 'progress.json'), JSON.stringify({ pid: leader.pid }))
+    await until(() => alive(leader.pid!))
+    await new Promise((done) => setTimeout(done, 300))
+    expect(await stopRun(paper, 500)).toBe(true)
+    await until(() => existsSync(leftFile) && readFileSync(leftFile, 'utf8').length > 0)
+    const left = Number(readFileSync(leftFile, 'utf8'))
+    extra.push(left)
+    expect(alive(left)).toBe(false)
+  })
+
   it('leaves running a shared service the run started, Canary\'s, which serves every project', async () => {
     dir = mkdtempSync(join(tmpdir(), 'galley-stop-'))
     const paper = join(dir, 'trees')

@@ -100,9 +100,12 @@ export async function stopRun(paperDir: string, patienceMs = 5000): Promise<bool
   // Once it has gone, what is left in its group counts only when it shows it is this paper's: its command names the
   // folder, or it works inside it. Its pid can be reused once that group has emptied, and the group that then has
   // it is someone else's.
-  const starts = (table: Proc[]) => leader
-    ? table.filter((p) => p.pid === pid)
-    : table.filter((p) => p.pgid === pid && !shared(p) && (names(p.command) || inside(workingDir(p.pid))))
+  // Asked of each fresh look, since the leader can die while it is being stopped.
+  const starts = (table: Proc[]) => {
+    const head = table.find((p) => p.pid === pid)
+    if (head) return names(head.command) ? [head] : []
+    return table.filter((p) => p.pgid === pid && !shared(p) && (names(p.command) || inside(workingDir(p.pid))))
+  }
   const first = starts(all)
   if (!first.length) return true
   const tracked = new Set(runProcesses(all, first).map((p) => p.pid))
