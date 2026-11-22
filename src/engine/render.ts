@@ -18,7 +18,7 @@ import { writeReproduction } from './simulation/index.js'
 import { PLACEHOLDERS } from './prompts.js'
 import { fillPlaceholders, productionRecord, type Record_ } from './record.js'
 import { software, sourceStatement } from './self.js'
-import { authorsNamed, escapeUnknownCitations, squash } from './text.js'
+import { authorsNamed, authorYear, escapeUnknownCitations, squash } from './text.js'
 import type { Annotation, AnnotationAuthor, AnnotationLabel, AnnotationReply } from '../types.js'
 import type { AuthorNote, Claim, Family, Finding, Work } from './types.js'
 
@@ -713,6 +713,71 @@ const PAUSE_MS = 4_000
  * take in what a person changed there (edits, notes, replies, decisions on
  * proposed changes), then write what the paper now says.
  */
+const thousands = (n: number) => n.toLocaleString('en-US')
+
+/** The thesis as a brief: the thesis, how it stands to the field, what it holds under, depends on and opens, and its test. */
+export function thesisMarkdown(paper: Paper): string {
+  const s = paper.state
+  const t = s.thesis
+  if (!t) return ''
+  const byKey = new Map(Object.values(s.works).filter((w) => w.bibKey).map((w) => [w.bibKey!, w]))
+  const used = new Set<string>()
+  const cite = (keys: string[]) => {
+    const works = keys.map((k) => byKey.get(k)).filter((w): w is Work => !!w)
+    works.forEach((w) => used.add(w.bibKey!))
+    return works.length ? ` (${works.map((w) => authorYear(w)).join('; ')})` : ''
+  }
+  const stance = ({ extend: 'Extend: it builds on what the field holds.', contest: 'Contest: it goes against what the field holds.', reframe: 'Reframe: it goes beyond what the field holds, onto another axis.' } as const)[t.stance]
+  const status = { given: 'given by the seed', assumed: 'assumed', supported: 'supported', unknown: 'not yet known' } as const
+  const authors = paper.config.authors.map((a) => a.affiliation ? `${a.name}, ${a.affiliation}` : a.name).join('; ')
+  const date = new Date(s.thesis?.test ? Date.now() : Date.parse(s.createdAt)).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  const lit = s.literature?.status === 'done' ? s.literature : null
+  const test = t.test
+  const parts = [
+    `# ${t.title || 'Thesis'}`,
+    [authors, date].filter(Boolean).join(' · '),
+    `**Thesis.** ${t.statement}`,
+    `**Stance.** ${stance}`,
+    `## How it stands to the field\n\n${t.relation}`,
+    t.positions.length ? `The positions that draw most of the work on this subject:\n\n${t.positions.map((p) => `- **${p.name}.** ${p.holds} It rests on ${p.restsOn.replace(/\.$/, '')}${cite(p.sources)}.`).join('\n')}` : '',
+    t.sharedAssumption ? `What every position takes for granted: ${t.sharedAssumption}` : '',
+    t.setAside ? `The first idea, set aside: ${t.setAside}` : '',
+    t.conditions.length ? `## What it holds under\n\n${t.conditions.map((c) => `- ${c.statement.replace(/\.$/, '')}${cite(c.sources)}. *${status[c.status]}*`).join('\n')}` : '',
+    t.dependsOn.length ? `## What it depends on\n\n${t.dependsOn.map((d) => `- ${d}`).join('\n')}` : '',
+    t.decides ? `## What would decide it\n\n${t.decides}` : '',
+    t.opens ? `## What it opens\n\n${t.opens}` : '',
+    t.residue ? `## What it leaves open\n\n${t.residue}` : '',
+    test ? `## Tested against the literature\n\n${test.passes ? 'It meets the test for its stance.' : 'It does not yet meet the test for its stance.'}${test.objections.length ? `\n\n${test.objections.map((o) => `- ${o}`).join('\n')}` : ''}${test.already.length ? `\n\nAlready stated in: ${test.already.join('; ')}.` : ''}${test.revisedFrom ? `\n\nThe thesis was formulated again after a first test. It first read: ${test.revisedFrom}` : ''}` : '',
+    lit ? `## The literature it draws on\n\nA literature review run with Canary on ${lit.searchedOn} asked: "${lit.question}" Of ${thousands(lit.counts?.discovered ?? 0)} records found, ${thousands(lit.counts?.screened ?? 0)} were screened, ${thousands(lit.counts?.retrieved ?? 0)} read in full and ${thousands(lit.counts?.reviewed ?? 0)} included. It is a targeted review, not a systematic review in the formal sense.` : '',
+    used.size ? `## Sources\n\n${[...used].map((k) => byKey.get(k)!).map((w) => `- ${w.authors.slice(0, 6).join(', ')}${w.authors.length > 6 ? ' et al.' : ''} (${w.year ?? 'n.d.'}). ${w.title}.${w.venue ? ` ${w.venue}.` : ''}${w.doi ? ` https://doi.org/${w.doi}` : ''}`).join('\n')}` : '',
+  ]
+  return `${parts.filter(Boolean).join('\n\n')}\n`
+}
+
+/** Writes the brief beside the run (Markdown and PDF) and into the document the run started from. */
+export async function writeThesisBrief(paper: Paper): Promise<void> {
+  const markdown = thesisMarkdown(paper)
+  const out = paper.path('out')
+  mkdirSync(out, { recursive: true })
+  writeFileSync(join(out, 'thesis.md'), markdown)
+  try {
+    await exec('pandoc', ['thesis.md', '-f', 'markdown-citations', '-o', 'thesis.pdf', '--pdf-engine=typst', '-V', 'papersize=a4', '-V', 'fontsize=10.5pt', '-V', `header-includes=${TYPST_HEADER}`], out)
+  } catch (error) {
+    paper.note('thesis-brief', `The brief's PDF was not made: ${(error as Error).message.slice(0, 200)}`)
+  }
+  writeThesisToEditor(paper, markdown)
+}
+
+/** The document the run started from becomes the brief, as a paper's document becomes the paper. */
+function writeThesisToEditor(paper: Paper, markdown: string): void {
+  if (!markdown) return
+  const dir = editorDir(paper)
+  mkdirSync(dir, { recursive: true })
+  const docPath = join(dir, `${editorSlug(paper)}.md`)
+  if (fileText(docPath) !== markdown) writeReplacing(docPath, markdown)
+  paper.state.editorWritten = { doc: digest(markdown), notes: paper.state.editorWritten?.notes ?? '' }
+}
+
 export function syncEditor(paper: Paper): { edits: string[], notes: number, decisions: number } {
   const s = paper.state
   const dir = editorDir(paper)
@@ -727,6 +792,11 @@ export function syncEditor(paper: Paper): { edits: string[], notes: number, deci
       writeFileSync(paper.path(kept), held)
       rmSync(file, { force: true })
     }
+  }
+  // A thesis run writes its document once, when the brief is ready; until then the document keeps the seed.
+  if (paper.config.mode === 'thesis') {
+    if (s.outcome === 'thesis_ready') writeThesisToEditor(paper, fileText(paper.path('out', 'thesis.md')) ?? '')
+    return { edits: [], notes: 0, decisions: 0 }
   }
   const seen = { doc: fileText(docPath), notes: fileText(notesPath) }
   const docChanged = seen.doc !== null && digest(seen.doc) !== s.editorWritten?.doc

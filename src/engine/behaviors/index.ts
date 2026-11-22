@@ -1,5 +1,7 @@
 // The ladder: every behavior in the order it was built and proven. The
 // scheduler scans it top to bottom, so earlier rungs always react first.
+// One ladder serves both branches: a run takes the rungs of its own mode (a
+// paper's, or a thesis's), and the rungs they share serve both.
 import type { Behavior } from '../scheduler.js'
 import { calibrate, finalFrame, ready, reconcile, reprofile, typeset } from './close.js'
 import { extract, outline, plan, position, reformulate, reviewIdea, selectDirection } from './front.js'
@@ -14,6 +16,7 @@ import { citeNamed } from './named.js'
 import { copyedit } from './copyedit.js'
 import { findWebSources } from './web.js'
 import { storyCaveats, storyCharts, storyExample, storyLead, storyRead, storyRegister } from './story.js'
+import { formulateThesis, testThesis, thesisBrief } from './thesis.js'
 
 // One behavior writes the frame: once when the draft is checked, and again from the reviewed text.
 const frame: Behavior = { ...firstFrame, ready: (paper) => [...firstFrame.ready(paper), ...finalFrame(paper)] }
@@ -23,8 +26,11 @@ export const LADDER: Behavior[] = [
   extract,
   // Aim: is this worth writing, and in which direction?
   position, reviewIdea, reformulate, selectDirection,
-  // When asked for: a systematic review of the literature, by Canary, in the background.
+  // When asked for, and always for a thesis: a literature review, by Canary, in the background.
   literatureReview,
+  // The thesis branch: from the stance the person chose, one thesis against what the field holds, tested for that stance,
+  // and the brief a later paper can start from.
+  formulateThesis, testThesis, thesisBrief,
   // With the authors' data: plan the analysis to the field's standard, have a statistician review it, run it, then argue.
   planAnalysis, reviewAnalysisPlan, extractData, analyzeData,
   // When asked for: the Monte Carlo simulation the argument needs, run on this machine.

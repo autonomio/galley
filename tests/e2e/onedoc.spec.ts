@@ -20,7 +20,8 @@ test('starting a paper turns its seed document into the paper, and keeps the see
 
   await page.locator('[data-action="write-paper"]').click()
   const wizard = page.locator('dialog.gw')
-  for (const step of ['Next: Materials', 'Next: Settings', 'Next: Start']) await wizard.getByRole('button', { name: step }).click()
+  await wizard.getByRole('radio', { name: /A paper/ }).click()
+  for (const step of ['Next: Seed', 'Next: Materials', 'Next: Settings', 'Next: Start']) await wizard.getByRole('button', { name: step }).click()
   await wizard.getByRole('button', { name: 'Start the paper' }).click()
   await expect(wizard.getByRole('heading', { name: 'Writing the paper' })).toBeVisible()
   await expect(wizard).toContainText('This document is now the paper')

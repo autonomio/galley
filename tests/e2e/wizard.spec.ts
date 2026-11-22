@@ -32,6 +32,11 @@ test('the paper wizard walks through seed, materials and settings, and starts th
 
   await page.locator('[data-action="write-paper"]').click()
   const wizard = page.locator('dialog.gw')
+  // The first step asks what to make; nothing is chosen for you.
+  await expect(wizard.getByRole('heading', { name: 'What to make' })).toBeVisible()
+  await expect(wizard.getByRole('button', { name: 'Next: Seed' })).toBeDisabled()
+  await wizard.getByRole('radio', { name: /A paper/ }).click()
+  await wizard.getByRole('button', { name: 'Next: Seed' }).click()
   await expect(wizard.getByRole('heading', { name: 'Your seed' })).toBeVisible()
   await expect(wizard.locator('details.gw-seed summary')).toHaveText('Your seed, as you wrote it')
   await expect(wizard).toContainText('this document becomes the paper')
@@ -100,6 +105,8 @@ test('a link to a published dataset becomes a dataset, read from its record and 
   await page.waitForFunction((s) => window.galley?.slug === s, slug)
   await page.locator('[data-action="write-paper"]').click()
   const wizard = page.locator('dialog.gw')
+  await wizard.getByRole('radio', { name: /A paper/ }).click()
+  await wizard.getByRole('button', { name: 'Next: Seed' }).click()
   await wizard.getByRole('button', { name: 'Next: Materials' }).click()
   await wizard.getByLabel('Link', { exact: true }).fill('https://zenodo.org/records/19781923')
   await wizard.getByRole('button', { name: 'Add link' }).click()
@@ -135,6 +142,8 @@ test('one line connects a database: its databases are listed, one becomes a priv
   await page.waitForFunction((s) => window.galley?.slug === s, slug)
   await page.locator('[data-action="write-paper"]').click()
   const wizard = page.locator('dialog.gw')
+  await wizard.getByRole('radio', { name: /A paper/ }).click()
+  await wizard.getByRole('button', { name: 'Next: Seed' }).click()
   await wizard.getByRole('button', { name: 'Next: Materials' }).click()
 
   await wizard.getByLabel('Database connection').fill('root@trades.example.org')
@@ -177,6 +186,8 @@ test('a world model as the sources: read once, only its sources by default, and 
   await page.waitForFunction((s) => window.galley?.slug === s, slug)
   await page.locator('[data-action="write-paper"]').click()
   const wizard = page.locator('dialog.gw')
+  await wizard.getByRole('radio', { name: /A paper/ }).click()
+  await wizard.getByRole('button', { name: 'Next: Seed' }).click()
   await wizard.getByRole('button', { name: 'Next: Materials' }).click()
   await wizard.getByLabel('Choose a world model').setInputFiles({ name: 'attention-model-main.zip', mimeType: 'application/zip', buffer: Buffer.from('PK') })
   const card = wizard.getByRole('region', { name: 'World model' })
@@ -269,4 +280,54 @@ test('the status window keeps the seed unfolded through its 10-second refresh', 
   await expect(status).toContainText('18 model calls')
   await expect(status.locator('details.gw-seed')).toHaveAttribute('open', '')
   await expect(status.locator('details.gw-seed blockquote')).toBeVisible()
+})
+
+test('the wizard makes a thesis: its direction first, then the seed, the author and the account, and starts it with them', async ({ page }) => {
+  const dir = process.env.GALLEY_E2E_DIR!
+  const slug = `thesis-${Date.now()}`
+  writeFileSync(join(dir, `${slug}.md`), `# Street trees\n\n${'City trees die young in narrow pavement pits. '.repeat(20)}\n`)
+  let posted: { settings: Record<string, unknown>; materials: unknown[]; datasets: unknown[] } | null = null
+  await page.route('**/api/galley-papers/_context', (route) => route.fulfill({ json: {
+    openalexKey: true,
+    seats: { author: { family: 'claude', name: 'Claude Opus 5.5', model: 'claude-opus-5-5' }, checker: { family: 'gpt', name: 'GPT-6.2 Sol', model: 'gpt-6.2-sol' }, challenger: { family: 'gemini', name: 'Gemini 4 Carbon', model: 'gemini-4-carbon-high' }, verifier: { family: 'gemini', name: 'Gemini 4 Carbon', model: 'gemini-4-carbon-high' } },
+    referees: ['methods', 'field', 'citations', 'editor'],
+    defaults: { venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, simulation: false },
+    review: { research: 'gpt-6.1-sol', audit: 'gpt-6-astra', papers: 50 },
+  } }))
+  await page.route(`**/api/galley-papers/${slug}`, async (route) => {
+    if (route.request().method() !== 'POST') return route.fulfill({ status: 404, body: '' })
+    posted = route.request().postDataJSON()
+    return route.fulfill({ status: 202, json: {} })
+  })
+  await page.goto('/')
+  await page.waitForFunction(() => !!window.galley?.slug)
+  await page.evaluate((s) => window.galley.open(s), slug)
+  await page.waitForFunction((s) => window.galley.slug === s, slug)
+
+  await page.locator('[data-action="write-paper"]').click()
+  const wizard = page.locator('dialog.gw')
+  await wizard.getByRole('radio', { name: /A thesis/ }).click()
+  // A thesis takes its direction first: extend, contest or reframe, with none chosen for you.
+  await wizard.getByRole('button', { name: 'Next: Direction' }).click()
+  await expect(wizard.getByRole('heading', { name: 'The thesis\'s direction' })).toBeVisible()
+  await expect(wizard.getByRole('button', { name: 'Next: Seed' })).toBeDisabled()
+  await expect(wizard.getByRole('radiogroup', { name: 'Direction' }).getByRole('radio')).toHaveCount(3)
+  await wizard.getByRole('radio', { name: /Reframe: beyond the flow/ }).click()
+  await wizard.getByRole('button', { name: 'Next: Seed' }).click()
+  await expect(wizard).toContainText('The thesis starts from your words')
+  await wizard.getByRole('button', { name: 'Next: Settings' }).click()
+  await expect(wizard.getByRole('heading', { name: 'How the thesis is made' })).toBeVisible()
+  await expect(wizard).not.toContainText('Referee rounds')
+  await wizard.getByLabel('Name').fill('Ada Lovelace')
+  await wizard.getByRole('button', { name: 'Next: Start' }).click()
+  await expect(wizard.locator('.gw-plan')).toContainText('Literature review')
+  await expect(wizard.locator('.gw-plan')).toContainText('Formulate the thesis')
+  await expect(wizard.locator('.gw-plan')).toContainText('Test it')
+  await expect(wizard.locator('.gw-plan')).not.toContainText('Draft')
+  await wizard.getByRole('button', { name: 'Start the thesis' }).click()
+  await expect(wizard.getByRole('heading', { name: 'Formulating the thesis' })).toBeVisible()
+
+  expect(posted!.settings).toMatchObject({ mode: 'thesis', stance: 'reframe', author: 'Ada Lovelace' })
+  expect(posted!.materials).toEqual([])
+  expect(posted!.datasets).toEqual([])
 })

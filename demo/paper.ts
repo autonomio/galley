@@ -1,7 +1,7 @@
-// A host action: the open document is a seed, and galley writes the paper.
-// The button opens the paper wizard (seed, materials, settings, start); on a
-// seed that already has a paper, it shows where that paper stands. Either
-// window is a view of its own (view=paper), so a link can open it.
+// A host action: the open document is a seed, and galley makes a thesis or a paper from it.
+// The button opens the wizard, whose first step asks which; on a seed that already has a
+// project, it shows where that project stands. Either window is a view of its own
+// (view=paper), so a link can open it.
 import { icons, type Editor, type EditorAction } from '../src/index.js'
 import type { Router } from './route.js'
 import { openPaperStatus, openPaperWizard } from './wizard.js'
@@ -62,8 +62,8 @@ export function writePaperAction(link?: Router): EditorAction {
 
   return {
     id: 'write-paper',
-    label: 'Write a paper from this document',
-    description: 'Use this document as the seed of a paper: add your materials and settings, then galley researches, writes, reviews and typesets it. On a seed that already has a paper, it shows where that paper stands.',
+    label: 'Make a thesis or a paper from this document',
+    description: 'Use this document as the seed of a thesis or a paper. A thesis is formulated against what the literature holds, in the direction you choose, and comes back as a brief; a paper is researched, written, reviewed and typeset. On a seed that already has a project, it shows where it stands.',
     icon: icons.play,
     run: (editor) => start(editor),
   }

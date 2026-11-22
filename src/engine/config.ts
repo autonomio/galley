@@ -48,6 +48,11 @@ export interface Author {
   orcid?: string
 }
 
+/** One pipeline, two branches: a paper, or a thesis that can become one later. */
+export type Mode = 'paper' | 'thesis'
+/** Extend builds on what the field holds, contest goes against it, reframe goes beyond it onto another axis. */
+export type Stance = 'extend' | 'contest' | 'reframe'
+
 export interface PaperConfig {
   /** Overrides the title the system chooses. */
   title?: string
@@ -95,7 +100,11 @@ export interface PaperConfig {
    * the literature and the web. See worldmodel.ts.
    */
   worldModel?: WorldModelConfig
-  /** Include a systematic review of the literature, run by Canary: as its own section, or (load-bearing) as the paper's main contribution. */
+  /** What the run makes: a paper (the default), or a thesis, formulated from the seed and the literature and handed back as a brief. */
+  mode?: Mode
+  /** A thesis's stance toward what the field holds: build on it, contest it, or reframe it. */
+  stance?: Stance
+  /** Include a literature review, run by Canary: as its own section, or (load-bearing) as the paper's main contribution. */
   literatureReview?: boolean | 'load-bearing'
   /** Include a Monte Carlo simulation the author designs and galley runs on this machine: in support, or (load-bearing) as what the main contribution rests on. */
   simulation?: boolean | 'load-bearing'
