@@ -640,6 +640,8 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
   }
 
   async function loadDoc(slug: string): Promise<void> {
+    // A document being deleted is not opened again: once gone, nothing would keep its edits.
+    if (slug === session.deletingSlug) return
     const requestId = ++loadRequestId
     if (!(await flushBeforeLeaving('switch documents')) || requestId !== loadRequestId) return
     notes?.close()
@@ -777,33 +779,36 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     })
   }
 
-  /** Delete a document from the picker: the open one as the toolbar does, any other where it is. */
-  async function removeDocument(slug: string): Promise<void> {
-    if (slug === session.slug) return remove()
-    const d = session.docs.find((x) => x.slug === slug)
-    if (!d || !(await confirmDelete(d))) return
-    try {
-      await session.store.remove(slug)
-    } catch (error) {
-      console.error('[galley] delete failed:', error)
-      notify({ source: 'documents', level: 'error', message: 'Could not delete the document' })
-      return
-    }
-    try { historyStore?.removeItem(historyKey(slug)) } catch (error) {
-      console.error('[galley] the deleted document\'s history could not be removed:', error)
-    }
-    session.forget(slug)
-    renderPicker()
-    void session.fetchDocs({ fresh: true })
+  // One delete at a time, in the order they were confirmed: each holds session.deletingSlug for as long as it runs.
+  let deletions: Promise<void> = Promise.resolve()
+
+  /** Delete the open document, asked first: the toolbar's delete. */
+  async function remove(): Promise<void> {
+    if (session.slug) await removeDocument(session.slug)
   }
 
-  async function remove(): Promise<void> {
-    const d = session.current()
-    if (!d) return
-    if (!(await confirmDelete(d))) return
+  /**
+   * Delete a document, asked first. Asking takes time, and the writer may open
+   * another document meanwhile, or this one: whether it is the open document
+   * is decided only once they have answered.
+   */
+  async function removeDocument(slug: string): Promise<void> {
+    const d = session.slug === slug ? session.current() : session.docs.find((x) => x.slug === slug)
+    if (!d || !(await confirmDelete(d))) return
+    const run = deletions.then(() => deleteConfirmed(d))
+    deletions = run.catch(() => { /* reported where it failed */ })
+    await run
+  }
+
+  async function deleteConfirmed(d: DocSummary): Promise<void> {
+    // While it goes, the document takes no saves and cannot be opened (loadDoc).
     session.deletingSlug = d.slug
-    await session.discard()
-    loadRequestId += 1
+    if (session.slug === d.slug) {
+      // What is unsaved in it goes with it, and a switch already under way is called off.
+      surface.setEditable(false)
+      await session.discard()
+      loadRequestId += 1
+    }
     try {
       await session.store.remove(d.slug)
     } catch (error) {
@@ -811,16 +816,25 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       notify({ source: 'documents', level: 'error', message: 'Could not delete the document' })
       session.deletingSlug = null
       if (session.slug === d.slug) {
+        surface.setEditable(!session.frozen)
         session.scheduleSave(surface.getText())
         session.scheduleAnnotationsSave()
       }
       return
     }
-    // The deleted document must stop being an editable target before the
-    // replacement's reads begin, or keystrokes in that gap could recreate it.
     try { historyStore?.removeItem(historyKey(d.slug)) } catch (error) {
       console.error('[galley] the deleted document\'s history could not be removed:', error)
     }
+    // A document no longer open leaves the list only: the page belongs to whatever the writer opened meanwhile.
+    if (session.slug !== d.slug) {
+      session.forget(d.slug)
+      session.deletingSlug = null
+      renderPicker()
+      void session.fetchDocs({ fresh: true })
+      return
+    }
+    // The deleted document must stop being an editable target before the
+    // replacement's reads begin, or keystrokes in that gap could recreate it.
     notes?.close()
     session.forget(d.slug)
     surface.setEditable(false)

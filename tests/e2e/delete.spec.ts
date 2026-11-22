@@ -48,6 +48,48 @@ test('every document in the picker has a delete button: a dialog asks, Cancel ke
   expect(await page.evaluate(() => window.galley.slug)).toBe(beta)
 })
 
+// Asking takes a moment (what goes with the document is looked up first): long enough to open another document.
+const slowAsking = (page: Page) => page.route('**/api/galley-live', async (route) => {
+  await new Promise((done) => setTimeout(done, 1500))
+  await route.continue().catch(() => { /* the page moved on */ })
+})
+const open = async (page: Page, slug: string) => {
+  await page.evaluate((s) => window.galley.open(s), slug)
+  await page.waitForFunction((s) => window.galley.slug === s, slug)
+}
+
+test('opening another document while a delete is asked leaves the page on it', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => !!window.galley?.slug)
+  const first = await newDocument(page, 'First')
+  const second = await newDocument(page, 'Second')
+  await newDocument(page, 'Third')
+  await open(page, first)
+  await slowAsking(page)
+  await page.locator('[data-action="delete"]').click()
+  await open(page, second)
+  const dialog = page.locator('dialog.galley-dialog')
+  await expect(dialog.locator('.galley-dialog-title')).toHaveText('Delete “First”?')
+  await dialog.getByRole('button', { name: 'Delete' }).click()
+  await expect.poll(async () => (await page.request.get(`/api/galley/doc/${first}`)).status()).toBe(404)
+  expect(await page.evaluate(() => window.galley.slug)).toBe(second)
+  expect(await page.evaluate(() => window.galley.text())).toBe('# Second')
+})
+
+test('a document opened while its delete is asked is deleted as the open one, and the page moves on from it', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => !!window.galley?.slug)
+  const target = await newDocument(page, 'Target')
+  await newDocument(page, 'Stays')
+  await slowAsking(page)
+  await page.locator('.galley-picker-trigger').click()
+  await deleteButton(page, target).click()
+  await open(page, target)
+  await page.locator('dialog.galley-dialog').getByRole('button', { name: 'Delete' }).click()
+  await expect.poll(async () => (await page.request.get(`/api/galley/doc/${target}`)).status()).toBe(404)
+  await page.waitForFunction((s) => !!window.galley.slug && window.galley.slug !== s, target)
+})
+
 test('deleting a document deletes the project made from it, and stops a run still going for it first', async ({ page }) => {
   const paper = writePaper(docs(), papers(), { title: 'Delete me' })
   const dir = join(papers(), paper.slug)
