@@ -781,7 +781,8 @@ export function thesisMarkdown(paper: Paper): string {
   const lit = s.literature?.status === 'done' ? s.literature : null
   const test = t.test
   const parts = [
-    `# ${prose(t.title) || 'Thesis'}`,
+    // A title the person set stands over the one the thesis was given.
+    `# ${paper.config.title || prose(t.title) || 'Thesis'}`,
     [authors, date].filter(Boolean).join(' · '),
     `**Thesis.** ${prose(t.statement)}`,
     `**Stance.** ${stance}`,
@@ -804,25 +805,27 @@ export function thesisMarkdown(paper: Paper): string {
           : test.searched === null ? 'No search for work already stating it ran, so its novelty was judged from the literature review alone.' : '',
       test.already.length ? `Already stated in: ${test.already.join('; ')}.` : '',
       test.revisedFrom ? `The thesis was formulated again after a first test. It first read: ${prose(test.revisedFrom)}` : '',
-    ].filter(Boolean).join('\n\n') : '',
+    ].filter(Boolean).join('\n\n') : paper.config.off.includes('test-thesis') ? '## Tested against the literature\n\nThe test was turned off for this run, so the thesis was not tested.' : '',
     lit ? `## The literature it draws on\n\nA literature review run with Canary on ${lit.searchedOn} asked: "${lit.question}" Of ${thousands(lit.counts?.discovered ?? 0)} records found, ${thousands(lit.counts?.screened ?? 0)} were screened, ${thousands(lit.counts?.retrieved ?? 0)} read in full and ${thousands(lit.counts?.reviewed ?? 0)} included. It is a targeted review, not a systematic review in the formal sense.` : '',
     used.size ? `## Sources\n\n${[...used].map((k) => source(byKey.get(k)!)).join('\n')}` : '',
   ]
   return `${parts.filter(Boolean).join('\n\n')}\n`
 }
 
-/** Writes the brief beside the run (Markdown and PDF) and into the document the run started from. */
-export async function writeThesisBrief(paper: Paper): Promise<void> {
+/** Writes the brief beside the run (Markdown and PDF) and into the document the run started from; true once its PDF is made. */
+export async function writeThesisBrief(paper: Paper): Promise<boolean> {
   const markdown = thesisMarkdown(paper)
   const out = paper.path('out')
   mkdirSync(out, { recursive: true })
   writeFileSync(join(out, 'thesis.md'), markdown)
+  writeThesisToEditor(paper, markdown)
   try {
     await exec('pandoc', ['thesis.md', '-f', 'markdown-citations', '-o', 'thesis.pdf', '--pdf-engine=typst', '-V', 'papersize=a4', '-V', 'fontsize=10.5pt', '-V', `header-includes=${TYPST_HEADER}`], out)
+    return true
   } catch (error) {
     paper.note('thesis-brief', `The brief's PDF was not made: ${(error as Error).message.slice(0, 200)}`)
+    return false
   }
-  writeThesisToEditor(paper, markdown)
 }
 
 /**

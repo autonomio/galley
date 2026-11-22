@@ -152,7 +152,11 @@ export const formulateThesis: Behavior = {
   },
 }
 
-/** The closest work a search finds for the thesis, so a reader can say whether it is already stated; null when no search ran. */
+/**
+ * The closest work a search finds for the thesis, so a reader can say whether it is already stated; null when the run
+ * searches no literature for it. A search that fails throws: a novelty test without it is not one, so the step is
+ * tried again, and recorded as not run once its tries are used up.
+ */
 async function closestWork(paper: Paper, thesis: Thesis): Promise<SearchHit[] | null> {
   if (paper.config.worldModel?.only || !thesis.noveltyQueries.length) return null
   const queries = thesis.noveltyQueries.map((search, i) => ({ id: `t${thesis.revision}q${i + 1}`, search }))
@@ -162,8 +166,7 @@ async function closestWork(paper: Paper, thesis: Thesis): Promise<SearchHit[] | 
     const seen = new Set<string>()
     return Object.values(results).flatMap((r) => r.results).filter((hit) => !seen.has(hit.id) && seen.add(hit.id)).slice(0, 20)
   } catch (error) {
-    paper.note('test-thesis', `The search for work already stating the thesis did not run: ${(error as Error).message}`, true)
-    return null
+    throw new Error(`the search for work already stating the thesis failed: ${(error as Error).message}`)
   }
 }
 
@@ -183,7 +186,7 @@ Return passes (true when it meets the test), objections (each a concrete problem
 
 THE THESIS (${stance.name}: ${stance.gist}): ${thesis.statement}
 How it stands to the field: ${thesis.relation}
-${thesis.setAside ? `The first idea, set aside: ${thesis.setAside}\n` : ''}
+${thesis.decides ? `What would decide it: ${thesis.decides}\n` : ''}${thesis.dependsOn.length ? `What it depends on: ${thesis.dependsOn.join('; ')}\n` : ''}${thesis.setAside ? `The first idea, set aside: ${thesis.setAside}\n` : ''}
 THE FIELD'S POSITIONS:
 ${thesis.positions.map((p) => `- ${p.name}: holds ${p.holds}; rests on ${p.restsOn}`).join('\n')}
 ${thesis.sharedAssumption ? `Shared by all of them: ${thesis.sharedAssumption}\n` : ''}
@@ -238,11 +241,14 @@ export const thesisBrief: Behavior = {
   id: 'thesis-brief', stage: 'thesis', modes: ['thesis'], improver: false, title: 'Write the thesis brief',
   ready: (paper) => {
     const s = paper.state
-    if (!live(paper) || !s.thesis?.test) return []
+    // A thesis is briefed once tested, or at once when its test is turned off for the run.
+    if (!live(paper) || !s.thesis || (!s.thesis.test && !paper.config.off.includes('test-thesis'))) return []
     return [{
       key: 'thesis-brief:final', label: 'the brief',
       run: async () => {
-        await writeThesisBrief(paper)
+        // The brief is in the document either way; without its PDF the step is not done, so it is tried again, and a
+        // run that stops on it carries on from here when resumed.
+        if (!(await writeThesisBrief(paper))) throw new Error('the brief\'s PDF was not made; the brief itself is in the document')
         s.outcome = 'thesis_ready'
         paper.save()
       },

@@ -206,6 +206,49 @@ test('a world model as the sources: read once, only its sources by default, and 
   expect([posted!.settings.literatureReview, posted!.settings.webSources]).toEqual([false, false])
 })
 
+test('a world model that failed on the paper\'s Materials step does not stop a thesis, and a start under way is sent once', async ({ page }) => {
+  const dir = process.env.GALLEY_E2E_DIR!
+  const slug = `thesis-once-${Date.now()}`
+  writeFileSync(join(dir, `${slug}.md`), `# Street trees\n\n${'City trees die young in narrow pavement pits. '.repeat(20)}\n`)
+  await page.route('**/api/galley-papers/_world-model?**', (route) => route.fulfill({ status: 500, body: 'the zip could not be read' }))
+  const posts: { worldModel?: unknown }[] = []
+  let release = () => {}
+  const held = new Promise<void>((done) => { release = done })
+  await page.route(`**/api/galley-papers/${slug}`, async (route) => {
+    if (route.request().method() !== 'POST') return route.fulfill({ status: 404, body: '' })
+    posts.push(route.request().postDataJSON())
+    await held
+    return route.fulfill({ status: 202, json: {} })
+  })
+  await page.goto(`/?doc=${slug}`)
+  await page.waitForFunction((s) => window.galley?.slug === s, slug)
+  await page.locator('[data-action="write-paper"]').click()
+  const wizard = page.locator('dialog.gw')
+  await wizard.getByRole('radio', { name: /A paper/ }).click()
+  await wizard.getByRole('button', { name: 'Next: Seed' }).click()
+  await wizard.getByRole('button', { name: 'Next: Materials' }).click()
+  await wizard.getByLabel('Choose a world model').setInputFiles({ name: 'broken.zip', mimeType: 'application/zip', buffer: Buffer.from('PK') })
+  await expect(wizard.getByRole('region', { name: 'World model' })).toContainText('Not read')
+  // Back to the start, for a thesis instead: it takes no materials.
+  await wizard.getByRole('button', { name: 'Back' }).click()
+  await wizard.getByRole('button', { name: 'Back' }).click()
+  await wizard.getByRole('radio', { name: /A thesis/ }).click()
+  await wizard.getByRole('button', { name: 'Next: Direction' }).click()
+  await wizard.getByRole('radio', { name: /Reframe: beyond the flow/ }).click()
+  await wizard.getByRole('button', { name: 'Next: Seed' }).click()
+  await wizard.getByRole('button', { name: 'Next: Settings' }).click()
+  await wizard.getByLabel('Name').fill('Ada Lovelace')
+  await wizard.getByRole('button', { name: 'Next: Start' }).click()
+  await wizard.getByRole('button', { name: 'Start the thesis' }).click()
+  // While the start is out, neither Back nor a second press can send it again.
+  await expect(wizard.getByRole('button', { name: 'Starting…' })).toBeDisabled()
+  await expect(wizard.getByRole('button', { name: 'Back' })).toBeDisabled()
+  release()
+  await expect(wizard.getByRole('heading', { name: 'Formulating the thesis' })).toBeVisible()
+  expect(posts).toHaveLength(1)
+  expect(posts[0].worldModel).toBeUndefined()
+})
+
 test('a seed that already has a paper shows where the paper stands, and opens the manuscript once it is typeset', async ({ page }) => {
   const dir = process.env.GALLEY_E2E_DIR!
   const slug = `seed-${Date.now()}`

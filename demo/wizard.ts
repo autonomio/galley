@@ -119,6 +119,8 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   let allDatabases = false
   let saved: { name: string; via: string; host?: string; url?: string; container?: string; database: string }[] | null = null
   // A world model the paper's sources come from: a Resolvent repository as a zip, read once on the machine running galley.
+  // Set while the start request is out, so neither Back and Next nor a second press can send it twice.
+  let starting = false
   let worldModel: { file: string; state: 'reading' | 'read' | 'failed'; error?: string; token?: string; name?: string; claims?: number; evidence?: number; sources?: number; only: boolean } | null = null
   let step = 0
   let context: Context | null = null
@@ -155,8 +157,10 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       h('span', { class: 'gw-num', text: String(i + 1) }), name)))
     back.hidden = step === 0
     next.textContent = step === all.length - 1 ? (thesis() ? 'Start the thesis' : 'Start the paper') : `Next: ${all[step + 1]}`
-    // The first step asks what to make, and a thesis its direction: neither has a default.
-    next.disabled = (all[step] === 'Make' && !settings.mode) || (all[step] === 'Direction' && !settings.stance)
+    // The first step asks what to make, and a thesis its direction: neither has a default. A start under way is never
+    // started twice.
+    next.disabled = starting || (all[step] === 'Make' && !settings.mode) || (all[step] === 'Direction' && !settings.stance)
+    back.disabled = starting
     const draw: Record<Step, () => (Node | null)[]> = { Make: makeStep, Direction: directionStep, Seed: seedStep, Materials: materialsStep, Settings: settingsStep, Start: startStep }
     body.replaceChildren(...draw[all[step]]().filter((x): x is Node => !!x))
     body.scrollTop = 0
@@ -601,10 +605,15 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   }
 
   async function start(): Promise<void> {
+    if (starting) return
+    starting = true
     next.disabled = true
+    back.disabled = true
     next.textContent = 'Starting…'
+    // A thesis takes no materials, a world model among them, even one still on the paper's Materials step.
+    const model = thesis() ? null : worldModel
     try {
-      if (worldModel && worldModel.state !== 'read') throw new Error(worldModel.state === 'reading' ? 'The world model is still being read; start again in a moment.' : 'The world model could not be read; remove it or choose it again.')
+      if (model && model.state !== 'read') throw new Error(model.state === 'reading' ? 'The world model is still being read; start again in a moment.' : 'The world model could not be read; remove it or choose it again.')
       // A thesis is formulated from the literature only: no materials go with it.
       if (thesis()) { items.length = 0; datasets.length = 0 }
       const materials = await Promise.all(items.map(async (item) => item.kind === 'link'
@@ -626,8 +635,8 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
         body: JSON.stringify({
           text, materials, datasets: sets,
           // With only its world model, the paper has no systematic review and no web sources.
-          settings: worldModel?.only ? { ...settings, literatureReview: false, webSources: false } : settings,
-          ...(worldModel?.token ? { worldModel: { token: worldModel.token, only: worldModel.only } } : {}),
+          settings: model?.only ? { ...settings, literatureReview: false, webSources: false } : settings,
+          ...(model?.token ? { worldModel: { token: model.token, only: model.only } } : {}),
         }),
       })
       if (!response.ok) throw new Error(await response.text())
@@ -647,7 +656,9 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       next.onclick = () => { dialog.close(); options.onStart?.(slug) }
       hint.textContent = ''
     } catch (error) {
+      starting = false
       next.disabled = false
+      back.disabled = false
       next.textContent = thesis() ? 'Start the thesis' : 'Start the paper'
       body.append(h('p', { class: 'gw-error', role: 'alert', text: `The ${thesis() ? 'thesis' : 'paper'} did not start: ${(error as Error).message}` }))
     }
@@ -676,7 +687,7 @@ interface StatusData {
   /** A thesis run: its direction, and the thesis once formulated, with whether it met its test. */
   mode?: 'paper' | 'thesis'
   stance?: string
-  thesis?: { statement: string; passes: boolean | null } | null
+  thesis?: { statement: string; passes: boolean | null; searched?: number | null } | null
   settings: { literatureReview: boolean | string; simulation: boolean | string; rounds: number; words: number; venue: string; authors: string[]; materials: string[]; families?: string[]; seats?: Record<string, string> }
 }
 
@@ -751,7 +762,7 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
     const n = (x: number | null) => x === null ? '…' : x.toLocaleString('en-US')
     const rows: [string, string][] = isThesis ? [
       ['Thesis', d.thesis?.statement ?? 'not formulated yet'],
-      ['Test', !d.thesis || d.thesis.passes === null ? 'not yet' : d.thesis.passes ? 'meets the test for its direction' : 'does not yet meet the test for its direction'],
+      ['Test', !d.thesis || d.thesis.passes === null ? 'not yet' : `${d.thesis.passes ? 'meets the test for its direction' : 'does not yet meet the test for its direction'}${d.thesis.searched === null ? ', without a novelty search' : ''}`],
       ['So far', `${n(d.cost.calls)} model calls · ${d.cost.tokensInM} M tokens · ${d.cost.hours} h`],
     ] : [
       ['Claims', `${n(d.claims.total)}: ${d.claims.supported + d.claims.narrowed} with verified sources, ${d.claims.own} your work, ${d.claims.premises} premises, ${d.claims.hypotheses} hypotheses, ${d.claims.open} still open`],

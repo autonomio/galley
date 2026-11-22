@@ -272,7 +272,8 @@ function workingNotes(s: PaperState, config: { rounds?: number, literatureReview
     const findings = s.findings.filter((f) => f.origin === 'agent')
     note('review', 'Review', `Round ${s.round} of ${config.rounds ?? s.round} · ${plural(findings.length, 'finding')} · ${findings.filter((f) => f.status === 'open').length} open`, 'referee')
   }
-  if (s.thesis) note('thesis', 'Thesis', `${s.thesis.title || s.thesis.statement}${s.thesis.test ? ` · ${s.thesis.test.passes ? 'meets its test' : 'does not yet meet its test'}` : ' · being tested'}`, 'author')
+  const test = s.thesis?.test
+  if (s.thesis) note('thesis', 'Thesis', `${s.thesis.title || s.thesis.statement}${test ? ` · ${test.passes ? 'meets its test' : 'does not yet meet its test'}${test.searched === null ? ', without a novelty search' : ''}` : ' · being tested'}`, 'author')
   if (s.outcome === 'ready_for_submission') note('ready', 'Ready', 'Every gate holds on one revision. The sign-off is yours.', 'galley')
   if (s.outcome === 'thesis_ready') note('ready', 'Ready', pdf ? 'The brief is in the document, with a PDF beside it.' : 'The brief is in the document; its PDF was not made.', 'galley')
   return notes
@@ -324,7 +325,7 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
     // Settled as the thesis takes it: in, ended, or not part of this run.
     { id: 'literature', label: 'Literature', done: !config.literatureReview || (config.off ?? []).includes('literature-review') || (!!s.literature && s.literature.status !== 'running') },
     { id: 'thesis', label: 'Thesis', done: !!s.thesis },
-    { id: 'test', label: 'Test', done: !!s.thesis?.test },
+    { id: 'test', label: 'Test', done: !!s.thesis?.test || (config.off ?? []).includes('test-thesis') },
     { id: 'brief', label: 'Brief', done: s.outcome === 'thesis_ready' },
   ] : [
     { id: 'seed', label: 'Seed', done: !!s.brief },
