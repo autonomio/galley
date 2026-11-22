@@ -87,7 +87,7 @@ function slugFromSeed(seed: string, file: string): string {
 
 /** What each behavior is doing, in words a person reads in the status view. */
 const DOING: Record<string, string> = {
-  extract: 'Reading the seed', position: 'Searching the literature for prior art', 'review-idea': 'Reviewing the idea on seven factors', 'literature-review': 'Systematic review of the literature (Canary)', simulate: 'Designing and running the simulation',
+  extract: 'Reading the seed', position: 'Searching the literature for prior art', 'review-idea': 'Reviewing the idea on seven factors', 'literature-review': 'Literature review (Canary)', simulate: 'Designing and running the simulation',
   reformulate: 'Writing three directions', 'select-direction': 'Choosing a direction', 'analysis-plan': 'Planning the analysis of your data', 'analysis-review': 'A statistician reviewing the analysis plan', 'extract-data': 'Extracting from the database', analyze: 'Running the analyses of your data', plan: 'Planning the argument',
   outline: 'Outlining', 'find-evidence': 'Finding evidence', verify: 'Verifying citations', reassess: 'Reassessing the thesis', calibrate: 'Calibrating the verifier',
   draft: 'Drafting', figure: 'Drawing figures', fidelity: 'Checking sections against their claims', frame: 'Writing the title and abstract',
@@ -299,7 +299,7 @@ async function main(): Promise<void> {
       const onlySources = !/^(yes|on|true)$/i.test(flag('other-sources') ?? '')
       const worldModel = worldModelPath ? keepWorldModel(dir, await loadWorldModelFile(resolve(worldModelPath)), onlySources) : undefined
       if (worldModel) console.log(`World model: "${worldModel.name}", ${worldModel.claims} claims, ${worldModel.sources} sources; ${worldModel.only ? 'its sources only' : 'its sources first, then the literature and the web'}`)
-      if (worldModel?.only && option(flag('literature-review')) !== undefined) console.log('No systematic review: the paper rests only on its world model (give --other-sources yes to add one).')
+      if (worldModel?.only && option(flag('literature-review')) !== undefined) console.log('No literature review: the paper rests only on its world model (give --other-sources yes to add one).')
       const materials = [...loose, ...units.materials]
       for (const m of materials) console.log(`Material ${m.id}: ${m.kind} ${m.url ?? m.name}${m.dataset ? ` in ${m.dataset}` : ''}${m.kind === 'dataset' ? (m.private ? ' (private)' : ' (shared)') : m.text ? '' : ' (its text could not be read)'}`)
       for (const u of units.datasets) console.log(`Dataset ${u.id}: ${u.name}, produced by ${u.producedBy}${u.doi ? `, DOI ${u.doi}` : u.url ? `, ${u.url}` : ''}${u.describedIn ? `, first reported in ${u.describedIn}` : ''}`)

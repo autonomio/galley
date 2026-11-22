@@ -331,7 +331,7 @@ function quantileOf(sorted: number[], p: number): number {
  * numeric column's count, missing values, mean, standard deviation, median, 5th, 95th and 99th percentiles,
  * minimum and maximum. The paper prints it as an appendix, so a reader can check every number against the data.
  */
-export function describeData(paper: Paper): string {
+export function describeData(paper: Paper, firstTable = 1): string {
   const datasets = (paper.config.materials ?? []).filter((m) => m.kind === 'dataset')
   if (!datasets.length) return ''
   const f = (x: number) => Number.isFinite(x) ? fmt(x) : '—'
@@ -363,7 +363,9 @@ export function describeData(paper: Paper): string {
     return `| Column | n | Missing | Mean | SD | Median | P5 | P95 | P99 | Min | Max |\n|:-------------------|------:|------:|------:|-----:|------:|-----:|-----:|-----:|-----:|-----:|\n${lines.join('\n')}\n\n: ${m.id}: ${m.name}, ${rows.length.toLocaleString('en-US')} rows${shown}.`
   }).filter(Boolean)
   if (!tables.length) return ''
-  return `Each dataset as it was analysed, described from the data itself: for every numeric column, the number of values, the missing values, the mean, the standard deviation, the median, the 5th, 95th and 99th percentiles, the minimum and the maximum. The percentiles interpolate linearly between order statistics, so they can differ slightly from quantiles the text computes another way.\n\n${tables.join('\n\n')}`
+  // The tables are referred to by the numbers they print with.
+  const which = tables.length === 1 ? `Table ${firstTable} describes the dataset` : `Tables ${firstTable}–${firstTable + tables.length - 1} describe each dataset`
+  return `${which} as it was analysed, from the data itself: for each numeric column (at most 15 per dataset; the caption of a larger one says how many it has), the number of values, the missing values, the mean, the standard deviation, the median, the 5th, 95th and 99th percentiles, the minimum and the maximum. The percentiles interpolate linearly between order statistics, so they can differ slightly from quantiles the text computes another way.\n\n${tables.join('\n\n')}`
 }
 
 // Separators from 10,000 on, so a year reads as 2015, not 2,015.

@@ -138,7 +138,9 @@ export const DEFAULT_REFEREES: RefereeSeat[] = [
     seat: 'methods',
     family: 'gpt',
     brief: 'You are the methods referee. Judge whether every claim is supported by the evidence the paper gives, whether the argument follows, '
-      + 'which conclusions overreach, and which limitations are missing. A skeptical expert must be able to accept each load-bearing claim.',
+      + 'which conclusions overreach, and which limitations are missing. A skeptical expert must be able to accept each load-bearing claim. '
+      + 'Compare every statement the paper makes about its data and analyses with the analysis records given with it (the measurements and their '
+      + 'assumption checks): a statement a record contradicts, where the paper does not say why it reads the record differently, is a material finding.',
   },
   {
     seat: 'field',

@@ -265,9 +265,7 @@ ${block(step.parts, before, null)}`
   let reply = await paper.ask<any>({ behavior: step.behavior, target: 'tell', seat: 'author', family: author, prompt, schema })
   let result = attempt(reply)
   // What must be put right goes back to the author once, with the rest of its answer kept.
-  let repaired = false
   const repair = async (problems: string[]) => {
-    repaired = true
     reply = await paper.ask<any>({
       behavior: step.behavior, target: 'repair', seat: 'author', family: author, schema,
       prompt: `${prompt}\n\nYOUR ANSWER:\n${JSON.stringify(reply).slice(0, 30_000)}\n\nIt cannot stand as it is:\n${problems.map((p) => `- ${p}`).join('\n')}\nReturn the complete answer again, edits included, with these put right; keep what was not questioned.`,
@@ -292,7 +290,8 @@ ${block(step.parts, before, null)}`
   }
   let texts = result.texts
   let undone = await judge(texts)
-  if (undone.size && !repaired) {
+  // What the reader from another family objects to goes back to the author once, whether or not the code's problems did.
+  if (undone.size) {
     const again = await repair([...undone].map(([id, what]) => `[${id}] this would change the research: ${what}`))
     if (!again.problems.length) { texts = again.texts; undone = await judge(texts) }
   }
@@ -413,7 +412,7 @@ export const storyLead: Behavior = {
       task: `Your task: the beginning and the title.
 - The paper's main findings come first. Rewrite the opening of the introduction ([${first.id}]) so that its first paragraph states what the paper finds, plainly and specifically, with the key numbers ({{placeholders}} where the paper states them so), before any background or definition. The reader meets this paragraph before any definition, so it says the findings in words a reader in the field already knows: a term the paper defines later appears in it only with the few words that say what it means. The rest of the introduction then takes the reader from the problem to how the paper reaches these findings; what the new opening displaces moves to where it fits, said once.
 - A main finding is a result the paper establishes, in the words and with the strength and the conditions its results section gives it: not a promise, a method or a list of sections.
-- ${own ? 'The authors set the title: return it as title, unchanged.' : `title: a reader in the field${field ? ` (${field})` : ''} understands it without reading the paper. It says what the paper finds or provides, in words the field already uses; a term the paper itself coins appears in it only where the title's own words make it clear. At most 15 words. Return the current title if it already does this.`}`,
+- ${own ? 'The authors set the title: return it as title, unchanged.' : `title: a reader in the field${field ? ` (${field})` : ''} understands it without reading the paper. It says what the paper finds or provides, in words the field already uses, and claims nothing the paper does not back; a term the paper itself coins appears in it only where the title's own words make it clear. At most 15 words. Return the current title if it already does this.`}`,
       schema: { title: str() },
       extra: (reply, texts) => {
         const title = String(reply.title ?? '').trim().replace(/^["“]|["”]$/g, '')
@@ -437,7 +436,7 @@ export const storyExample: Behavior = {
 - Choose the case that best shows the main result: a setting the paper itself uses (one of its runs, a measured case, the parameters of a proposition). If the paper already works a case through, make that one complete and easy to follow instead (its inputs named, each step shown, the result tied to the claim it illustrates), and return present true.
 - Place it where the reader needs it: where the method is first applied, or beside the main result; as its own paragraph or paragraphs, introduced as an example. A few sentences of plain working, not a new section of theory.
 - Use only the paper's own definitions, data and results. A number the paper states keeps its form, its {{placeholder}} included. Every number the example works out is shown with its working in the text, and listed in calculations: expression, the arithmetic that gives it (numbers, + - * / ^, parentheses, log10, log, sqrt, exp, min, max, and {{placeholders}} for recorded numbers), and value, the number exactly as the example writes it. Each one is checked.
-- No new data, measurement, simulation or claim: the example shows what the paper already establishes.`,
+- No new data, measurement, simulation or claim: the example shows what the paper already establishes. Build it only from numbers the paper prints (its {{placeholders}} and the values it states) and arithmetic on them: introduce no input value the paper does not state, and never present a chosen case, a hypothetical setting or a single simulation draw as one of the paper's results. For a simulated result, work from the summary numbers the paper reports (its percentiles and shares), not from a draw, whose inputs the paper does not print.`,
       context: numbers.length ? `RECORDED NUMBERS, for calculations: ${numbers.slice(0, 400).map(([key, value]) => `{{${key}}} = ${value}`).join('; ')}` : '',
       schema: { present: bool(), calculations: arr(obj({ expression: str(), value: str() })) },
       extra: (reply, texts, rec) => {
@@ -507,6 +506,21 @@ function panelsOf(raw: any[]): ChartPanel[] {
   }))
 }
 
+/**
+ * A revised chart keeps its data as they were: each revised panel is matched to the original panel with the same data,
+ * each label stays with the reference it names wherever the revision moved it, and the units stay. Only the design changes.
+ */
+export function keepData(original: ChartPanel[], revised: ChartPanel[]): ChartPanel[] {
+  const same = (a: string[], b: string[]) => a.length === b.length && a.every((ref) => b.includes(ref))
+  return original.map((was, j) => {
+    const now = revised.find((p) => same(p.data, was.data)) ?? revised[j]
+    if (!now) return was
+    const named = new Map(now.data.map((ref, i) => [ref, now.labels[i]]))
+    const labels = was.data.map((ref, i) => named.get(ref) ?? now.labels[i] ?? was.labels[i] ?? '')
+    return { ...now, kind: was.kind, data: was.data, labels, unit: was.unit, xUnit: was.xUnit }
+  })
+}
+
 /** A chart's panels are drawable here when every reference is data of this paper that its kind can draw, and every mark is a value the text states. */
 function chartProblems(paper: Paper, panels: ChartPanel[], kinds: ChartPanel['kind'][], text: string): string[] {
   const catalog = new Map(chartCatalog(paper).map((d) => [d.ref, d]))
@@ -549,7 +563,7 @@ Your task: the charts. Find the parts of the paper that gain most from a chart: 
 - labels: at most three words each; group: one or two words. They print as panel titles and legends, in a third of the page's width.
 - labels: what each reference is called in the chart (a run's setting, a group), in the paper's words, never an internal id. x and y: the axis labels, named as the paper names the quantities. unit: the unit of the measured quantity as the paper writes it.
 ${marks ? '- marks: at most two reference lines a panel needs (a threshold, a floor), each at a value the text states, with a short label.' : '- marks: none; reference lines cannot be drawn yet, so neither the chart nor its caption has one.'}
-- caption: what the chart shows and how to read it, at most 50 words, in the paper's terms; a number in it is written as its {{placeholder}}.
+- caption: what the chart shows and how to read it, at most 50 words, in the paper's terms; a number in it is written as its {{placeholder}}. It refers to no section by its number.
 - section: the id of the section it belongs in. mention: an exact edit in that section that refers the reader to the chart where the text discusses what it shows, writing the chart as [[chart-1]], [[chart-2]], … in the order you list the charts; it prints as its figure number. A chart that replaces a figure needs no mention.
 If no part of the paper gains from a chart, return no charts.
 
@@ -574,10 +588,10 @@ export const storyCharts: Behavior = {
         run: async () => {
           const reply = await paper.ask<any>({
             behavior: 'story-charts', target: `redraw-${fig.id}`, seat: 'author', family: seatFamily(paper, 'author'),
-            prompt: `${HOUSE}\n\nIn the typeset paper, a reader found this in a chart: ${fig.revise}\nRevise the chart's design to answer it: its axis labels, units, labels, marks or panels. Its data stay the same references. caption: the caption as it should print, at most 50 words, unchanged unless the defect is in it.\n\nTHE CHART:\n${JSON.stringify({ caption: fig.caption, panels: fig.chart!.panels })}`,
+            prompt: `${HOUSE}\n\nIn the typeset paper, a reader found this in a chart: ${fig.revise}\nRevise the chart's design to answer it: its axis labels, labels, marks or panels. Its data stay the same references, in the same units. caption: the caption as it should print, at most 50 words, referring to no section by its number, unchanged unless the defect is in it.\n\nTHE CHART:\n${JSON.stringify({ caption: fig.caption, panels: fig.chart!.panels })}`,
             schema: obj({ caption: str(), panels: arr(panelSchema) }),
           })
-          const panels = panelsOf(reply.panels).map((p, i) => ({ ...p, data: fig.chart!.panels[i]?.data ?? p.data }))
+          const panels = keepData(fig.chart!.panels, panelsOf(reply.panels))
           const drawn = await drawChart(paper, { ...fig, chart: { ...fig.chart!, panels } }, `redraw${fig.redraws ?? 1}`)
           fig.status = 'rendered'
           if (!drawn.ok) { paper.note('story-charts', `Chart ${fig.id} could not be drawn again (${drawn.problem}); it prints as it was.`); paper.save(); return }
@@ -637,10 +651,10 @@ export const storyCharts: Behavior = {
           // What Astetik's checks found goes back to the author once: the chart's labels, units or grouping change, its data do not.
           const revised = await paper.ask<any>({
             behavior: 'story-charts', target: `revise-${id}`, seat: 'author', family: seatFamily(paper, 'author'),
-            prompt: `${HOUSE}\n\nThe chart below could not be drawn: ${result.problem}\nRevise its design so that it can be: shorter labels, panel or axis titles, another unit or grouping. Its data stay the same references${canMark ? '' : ', and it has no reference lines'}. caption: the caption as it should print, at most 50 words, its numbers as {{placeholders}}.\n\nTHE CHART:\n${JSON.stringify({ caption: fig.caption, panels })}`,
+            prompt: `${HOUSE}\n\nThe chart below could not be drawn: ${result.problem}\nRevise its design so that it can be: shorter labels, panel or axis titles, another grouping. Its data stay the same references, in the same units${canMark ? '' : ', and it has no reference lines'}. caption: the caption as it should print, at most 50 words, its numbers as {{placeholders}}, referring to no section by its number.\n\nTHE CHART:\n${JSON.stringify({ caption: fig.caption, panels })}`,
             schema: obj({ caption: str(), panels: arr(panelSchema) }),
           })
-          const again = panelsOf(revised.panels).map((p, j) => ({ ...p, kind: panels[j]?.kind ?? p.kind, data: panels[j]?.data ?? p.data }))
+          const again = keepData(panels, panelsOf(revised.panels))
           const caption = String(revised.caption ?? '').trim() || fig.caption
           const lostNow = researchLost(new Map([[id, replaced?.caption ?? ''], ['rest', rest]]), new Map([[id, caption], ['rest', rest]]), record).get(id)
           if (lostNow?.length || chartProblems(paper, again, kinds, text).length) { paper.note('story-charts', `A chart was left out: ${result.problem}.`); continue }
@@ -705,7 +719,7 @@ You are reading a finished paper in your field from its title to its last sectio
 - unnecessary complication: a sentence or passage that makes the reader work harder than its content needs (stacked qualifications, nested definitions, labels where names would do, a detour from the line of the argument);
 - incoherence: a passage that does not follow from the one before it, a term or symbol used before it is explained, a point made twice in different words, an order that makes the reader wait for what they need;
 - tension: the paper pulling two ways (a finding stated more strongly in one place than in another, a title or abstract that promises what the body does not deliver, a figure and the text that disagree, a caveat outside the Limitations section, a sentence on how the paper itself was made).
-The paper opens with its main findings by design, in its abstract and in the first paragraph of its introduction: that order is not a problem to report. Where the opening uses a term before the paper defines it, the fix explains the term in a few words where it stands.
+${titleIsTheAuthors(paper) ? '' : `- the title, judged on its own: it must be the best title this paper can have, completely clear to a reader in the field who has not read the paper, and claim nothing the paper does not back: no property, scope or setting that the body treats as an assumption, leaves undocumented or limits in its Limitations section. Where it falls short, report it on [title], with the title it should have (at most 15 words) as the fix.\n`}The paper opens with its main findings by design, in its abstract and in the first paragraph of its introduction: that order is not a problem to report. Where the opening uses a term before the paper defines it, the fix explains the term in a few words where it stands.
 For each, give where (the id in brackets of the part), quote (copied exactly from it), problem, and fix (what it should say instead). Report what a careful reader in the field would want changed, and only that; if the paper reads cleanly, return no problems.
 
 THE PAPER:

@@ -23,10 +23,11 @@ export interface CalibrationItem { id: string; claim: string; cite: Citation; ki
  * paired with another claim's passage, claims inflated beyond their passage,
  * and unaltered controls. Deterministic, so a rerun asks the same questions.
  */
-export function calibrationItems(verified: Citation[], textOf: (claimId: string) => string): CalibrationItem[] {
+export function calibrationItems(verified: Citation[], textOf: (claimId: string) => string, controlsFrom: Citation[] = verified): CalibrationItem[] {
   const items: CalibrationItem[] = []
   if (verified.length < 2) return items
   const pick = (i: number) => verified[(i * 7) % verified.length]
+  const control = (i: number) => controlsFrom[(i * 7) % controlsFrom.length]
   const add = (claimText: string, cite: Citation, kind: CalibrationItem['kind']) => items.push({ id: `P${items.length + 1}`, claim: claimText, cite, kind })
   for (let i = 0; i < 3; i++) {
     const a = pick(i)
@@ -40,7 +41,7 @@ export function calibrationItems(verified: Citation[], textOf: (claimId: string)
     const text = textOf(a.claimId)
     add(`It is now established beyond doubt, in every field and without exception, that ${text.charAt(0).toLowerCase()}${text.slice(1)}`, a, 'overclaim')
   }
-  for (let i = 6; i < 8; i++) add(textOf(pick(i).claimId), pick(i), 'control')
+  if (controlsFrom.length) for (let i = 6; i < 8; i++) add(textOf(control(i).claimId), control(i), 'control')
   return items
 }
 
@@ -55,7 +56,10 @@ export const calibrate: Behavior = {
     return [{
       key: 'calibrate:verifier', label: 'planted defects for the verifier',
       run: async () => {
-        const items = calibrationItems(verified, (id) => claim(paper, id)!.text)
+        // The unaltered controls come from citations galley's own verifier checked: a literature review's citations rest on
+        // the excerpts Canary kept, which can be shorter than the passages its audit read.
+        const own = verified.filter((c) => claim(paper, c.claimId)?.origin !== 'review')
+        const items = calibrationItems(verified, (id) => claim(paper, id)!.text, own)
         const order = [...items].sort((x, y) => (x.id.charCodeAt(1) * 31 + x.claim.length) % 11 - (y.id.charCodeAt(1) * 31 + y.claim.length) % 11)
         const family = seatFamily(paper, 'verifier')
         const reply = await paper.ask<any>({

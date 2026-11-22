@@ -121,7 +121,7 @@ function doing(s: PaperState, behavior: string, target: string): string {
     case 'review-idea': return 'scoring the idea on seven impact factors'
     case 'reformulate': return 'reframing the idea three ways'
     case 'select-direction': return 'choosing a direction'
-    case 'literature-review': return 'running the systematic review with Canary'
+    case 'literature-review': return 'running the literature review with Canary'
     case 'analyze': return 'measuring your data'
     case 'simulate': return 'designing and running the simulation'
     case 'plan': return 'planning the argument'
@@ -198,7 +198,7 @@ function activity(s: PaperState, events: JournalEvent[]): LiveEntry[] {
       case 'review-idea': say(e, seat, `scored the idea ${s.ideaReview ? s.ideaReview.factors.reduce((a, f) => a + f.score, 0) : '?'} of 21: ${String(s.ideaReview?.verdict ?? '').replace(/_/g, ' ')}.`); break
       case 'reformulate': say(e, seat, 'proposed three directions.'); break
       case 'select-direction': say(e, seat, `chose “${s.directions.find((d) => d.id === s.selectedDirection?.id)?.title ?? 'a direction'}”.`); break
-      case 'literature-review': say(e, 'galley', 'received the systematic review from Canary.'); break
+      case 'literature-review': say(e, 'galley', 'received the literature review from Canary.'); break
       case 'plan': say(e, seat, 'planned the argument and set a working title.'); break
       case 'outline': say(e, seat, `outlined ${plural(s.outline?.sections.length ?? 0, 'section')}.`); break
       case 'find-evidence': say(e, seat, `searched for sources for ${ids.length > 3 ? plural(ids.length, 'claim') : ids.join(', ')}.`, where); break

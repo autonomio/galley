@@ -52,10 +52,16 @@ function measured(paper: Paper, id: string): { value: number; low: number; high:
 }
 
 /** What a panel's series are told apart by, as the paper names it; it heads the panels or the legend. */
-export const groupOf = (panel: ChartPanel) => (panel.group ?? '').replace(/[^\p{L}\p{N} ()-]/gu, '').trim() || 'Run'
+export const groupOf = (panel: ChartPanel) => {
+  const name = (panel.group ?? '').replace(/[^\p{L}\p{N} ()-]/gu, '').trim()
+  // A run label under a column the rows already use would overwrite that column's data.
+  return name && !TAKEN.has(name.toLowerCase()) ? name : 'Run'
+}
 
 /** The columns a line chart's course prints as: its mean and, for a single course, the two ends of its band. */
 const LINE = { mean: 'Mean', lower: '5th percentile', upper: '95th percentile' }
+/** The columns a panel's rows already use. */
+const TAKEN = new Set(['row', 'value', 'x', 'label', 'estimate', 'lower', 'upper', LINE.mean, LINE.lower, LINE.upper].map((name) => name.toLowerCase()))
 
 /** Series colours that stay legible on white and apart from one another, in the order the series come. */
 const SERIES_COLORS = ['primary', 'secondary', '#7D5595']
