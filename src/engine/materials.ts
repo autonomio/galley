@@ -435,11 +435,14 @@ export function materialsBlock(paper: Paper, options: { fullSchema?: boolean } =
   const list = paper.config.materials ?? []
   // A database with no extracts yet still shows its schema, so the analysis can be planned on it.
   if (!list.length && !(paper.config.datasets ?? []).some((u) => u.connection)) return ''
+  // The first rows serve the seats that plan and code the analyses. Once the analyses have run, every number the
+  // paper uses is a measurement, and the profile still gives each column's type and distribution.
+  const measured = Object.keys(paper.state.measurements ?? {}).length > 0
   const describe = (m: Material) => {
     if (m.kind === 'dataset') {
       const rows = datasetRows(paper, m)
       const profile = profileText(profileDataset(rows)).split('\n').map((l) => `  ${l}`).join('\n')
-      const sample = m.private ? '' : `\n  First rows:\n${rows.slice(0, 15).map((r) => `  ${JSON.stringify(r)}`).join('\n')}`
+      const sample = m.private || measured ? '' : `\n  First rows:\n${rows.slice(0, 15).map((r) => `  ${JSON.stringify(r)}`).join('\n')}`
       return `[${m.id}] dataset "${m.name}"${m.private ? " (private: the data stays on the authors' machine; this is its profile)" : ''}\n${profile}${sample}`
     }
     const text = m.text ? readFileSync(paper.path(m.text), 'utf8') : ''

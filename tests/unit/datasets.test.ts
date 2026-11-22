@@ -32,4 +32,18 @@ describe('datasets', () => {
     expect(availabilityStatement(paper)).toContain('was produced by others. It is available at https://doi.org/10.5281/zenodo.123')
     expect(citableKeys(paper).size).toBe(1)
   })
+
+  it('shows a shared dataset\'s first rows until the analyses have run, and its profile always', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const file = join(dir, 'trees.csv')
+    writeFileSync(file, `id,site\n${Array.from({ length: 30 }, (_, i) => `${i},${i % 2 ? 'pit' : 'park'}`).join('\n')}\n`)
+    const out = join(dir, 'p')
+    const { materials, datasets } = await addDatasets(out, [{ name: 'Street trees', files: [file], producedBy: 'others', private: false }])
+    const paper = Paper.create(out, 'seed', { materials, datasets })
+    expect(materialsBlock(paper)).toContain('First rows')
+    paper.state.measurements = { A1: { id: 'A1', analysis: 'P1', name: 'trees', value: '30', summary: 'P1 trees: 30', n: 30 } }
+    const block = materialsBlock(paper)
+    expect(block).not.toContain('First rows')
+    expect(block).toContain('site')
+  })
 })
