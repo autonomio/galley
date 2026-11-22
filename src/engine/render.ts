@@ -731,6 +731,16 @@ function citeName(w: Work): string {
   return `${words.slice(0, 4).join(' ')}${words.length > 4 ? '…' : ''} ${w.year ?? 'n.d.'}`
 }
 
+/** A work named in the sentence itself, as its subject or object: "Xu et al. (2025) report…". */
+function narrativeName(w: Work): string {
+  const cited = citeName(w)
+  const year = String(w.year ?? 'n.d.')
+  return cited.endsWith(` ${year}`) ? `${cited.slice(0, -year.length - 1)} (${year})` : cited
+}
+
+/** A DOI as a registry holds it, whatever link or prefix a source wrote it with. */
+const bareDoi = (doi: string | null | undefined) => doi?.trim().replace(/^(https?:\/\/(dx\.)?doi\.org\/|doi:\s*)/i, '') || null
+
 /**
  * A clause the model wrote as a sentence, made to read on after "that": its first letter lowered, unless its first
  * word is a name or an acronym, which the brief also writes with a capital where no sentence starts.
@@ -754,25 +764,29 @@ export function thesisMarkdown(paper: Paper): string {
   if (!t) return ''
   const byKey = new Map(Object.values(s.works).filter((w) => w.bibKey).map((w) => [w.bibKey!, asNamed(w)]))
   const used = new Set<string>()
-  const cite = (keys: string[]) => {
-    const works = keys.map((k) => byKey.get(k)).filter((w): w is Work => !!w)
+  const escaped = (key: string) => key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // Sources cited after a sentence, less any the sentence already cites in its text: each is cited once.
+  const cite = (keys: string[], text = '') => {
+    const works = keys.filter((k) => !new RegExp(`@?\\b${escaped(k)}\\b`).test(text)).map((k) => byKey.get(k)).filter((w): w is Work => !!w)
     works.forEach((w) => used.add(w.bibKey!))
     return works.length ? ` (${works.map(citeName).join('; ')})` : ''
   }
-  // A source cited inside the text, as @key or a bare key, reads as its authors and year, like those cited by key.
-  const keys = [...byKey.keys()].sort((a, b) => b.length - a.length).map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  // A source cited inside the text, as @key or a bare key, reads as its authors and year, like those cited by key:
+  // within parentheses as "(Xu et al. 2025)", in the sentence itself as "Xu et al. (2025)".
+  const keys = [...byKey.keys()].sort((a, b) => b.length - a.length).map(escaped)
   const keyed = keys.length ? new RegExp(`@?\\b(${keys.join('|')})\\b`, 'g') : null
   const prose = (text: string) => !keyed ? text : text.replace(keyed, (match: string, key: string, at: number, whole: string) => {
     used.add(key)
     const before = whole.slice(0, at)
     const inside = before.lastIndexOf('(') > before.lastIndexOf(')') && /^[^()]*\)/.test(whole.slice(at + match.length))
-    return inside ? citeName(byKey.get(key)!) : `(${citeName(byKey.get(key)!)})`
+    return inside ? citeName(byKey.get(key)!) : narrativeName(byKey.get(key)!)
   })
   const context = [t.statement, t.relation, t.sharedAssumption, t.setAside, ...t.positions.flatMap((p) => [p.holds, p.restsOn])].join(' ')
   const source = (w: Work) => {
     const title = `${w.title}${/[.?!]$/.test(w.title) ? '' : '.'}`
     const head = w.authors.length ? `${sourceAuthors(w.authors)} (${w.year ?? 'n.d.'}). ${title}` : `${title} (${w.year ?? 'n.d.'}).`
-    return `- ${head}${w.venue ? ` ${w.venue}.` : ''}${w.doi ? ` https://doi.org/${w.doi}` : ''}`
+    const doi = bareDoi(w.doi)
+    return `- ${head}${w.venue ? ` ${w.venue}.` : ''}${doi ? ` https://doi.org/${doi}` : ''}`
   }
   const stance = ({ extend: 'Extend: it builds on what the field holds.', contest: 'Contest: it goes against what the field holds.', reframe: 'Reframe: it goes beyond what the field holds, onto another axis.' } as const)[t.stance]
   const status = { given: 'given by the seed', assumed: 'assumed', supported: 'supported', unknown: 'not yet known' } as const
@@ -787,10 +801,10 @@ export function thesisMarkdown(paper: Paper): string {
     `**Thesis.** ${prose(t.statement)}`,
     `**Stance.** ${stance}`,
     `## How it stands to the field\n\n${prose(t.relation)}`,
-    t.positions.length ? `The positions that draw most of the work on this subject:\n\n${t.positions.map((p) => `- **${p.name}.** ${prose(p.holds)} It rests on the assumption that ${prose(continuing(p.restsOn.replace(/\.$/, ''), context))}${cite(p.sources)}.`).join('\n')}` : '',
+    t.positions.length ? `The positions that draw most of the work on this subject:\n\n${t.positions.map((p) => `- **${p.name}.** ${prose(p.holds)} It rests on the assumption that ${prose(continuing(p.restsOn.replace(/\.$/, ''), context))}${cite(p.sources, `${p.holds} ${p.restsOn}`)}.`).join('\n')}` : '',
     t.sharedAssumption ? `What every position takes for granted: ${prose(t.sharedAssumption)}` : '',
     t.setAside ? `The first idea, set aside: ${prose(t.setAside)}` : '',
-    t.conditions.length ? `## What it holds under\n\n${t.conditions.map((c) => `- ${prose(c.statement.replace(/\.$/, ''))}${cite(c.sources)}. *${status[c.status]}*`).join('\n')}` : '',
+    t.conditions.length ? `## What it holds under\n\n${t.conditions.map((c) => `- ${prose(c.statement.replace(/\.$/, ''))}${cite(c.sources, c.statement)}. *${status[c.status]}*`).join('\n')}` : '',
     t.dependsOn.length ? `## What it depends on\n\n${t.dependsOn.map((d) => `- ${prose(d)}`).join('\n')}` : '',
     t.decides ? `## What would decide it\n\n${prose(t.decides)}` : '',
     t.opens ? `## What it opens\n\n${prose(t.opens)}` : '',
@@ -800,7 +814,7 @@ export function thesisMarkdown(paper: Paper): string {
       test.passes ? 'It meets the test for its stance.' : 'It does not yet meet the test for its stance.',
       test.objections.length ? test.objections.map((o) => `- ${prose(o)}`).join('\n') : '',
       // What its novelty was checked against: the nearest work a search found, and what the thesis claims that it does not.
-      test.closest?.length ? `The closest work the search found, and how the thesis differs from it:\n\n${test.closest.map((c) => `- ${c.title} (${c.year ?? 'n.d.'}). ${prose(c.differs)}${c.doi ? ` https://doi.org/${c.doi}` : ''}`).join('\n')}`
+      test.closest?.length ? `The closest work the search found, and how the thesis differs from it:\n\n${test.closest.map((c) => `- ${c.title} (${c.year ?? 'n.d.'}). ${prose(c.differs)}${bareDoi(c.doi) ? ` https://doi.org/${bareDoi(c.doi)}` : ''}`).join('\n')}`
         : test.searched === 0 ? 'The search for work already stating it found none to compare.'
           : test.searched === null ? 'No search for work already stating it ran, so its novelty was judged from the literature review alone.' : '',
       test.already.length ? `Already stated in: ${test.already.join('; ')}.` : '',
