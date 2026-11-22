@@ -2,15 +2,15 @@
 // prints after the conclusion without a number; a worked number must be what its arithmetic gives; a change that
 // loses what the research rests on, or that another family judges changed the research, is undone; and a chart draws
 // only the paper's own records.
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { copyedit } from '../../src/engine/behaviors/copyedit.js'
 import { proof } from '../../src/engine/behaviors/proof.js'
 import { STORY_STEPS, checkCalculation, madeTalk, renumber, researchLost, storyCaveats, storyCharts, storyExample, storyRead, storyReadDone, storyRegister, storyTold, writtenNumber } from '../../src/engine/behaviors/story.js'
 import { fidelity } from '../../src/engine/behaviors/write.js'
-import { chartCatalog, drawChart, panelRows, toCsv } from '../../src/engine/charts.js'
+import { chartCatalog, declaredFailure, drawChart, panelRows, toCsv } from '../../src/engine/charts.js'
 import { Paper } from '../../src/engine/paper.js'
 import { buildManuscript, contentHash } from '../../src/engine/render.js'
 import { simulate } from '../../src/engine/simulation/index.js'
@@ -251,6 +251,41 @@ describe('charts from the paper\'s own records', () => {
       if (was === undefined) delete process.env.GALLEY_ASTETIK
       else process.env.GALLEY_ASTETIK = was
     }
+  })
+
+  // With Astetik installed on this machine, galley draws real charts from its records: nothing typed, every check passed.
+  const real = join(homedir(), '.galley', 'astetik', '.venv', 'bin', 'astetik')
+  it.skipIf(!existsSync(real))('draws a histogram of two runs and a course with its band through the installed Astetik', async () => {
+    const paper = reviewed()
+    const one = simulate(spec), two = simulate({ ...spec, id: 'S2', seed: 8 })
+    if (!one.ok || !two.ok) throw new Error('spec did not run')
+    const steps = { t: Array.from({ length: 12 }, (_, i) => i), ess: [], bands: { stock: { mean: Array.from({ length: 12 }, (_, i) => 10 + i), p5: Array.from({ length: 12 }, (_, i) => 8 + i * 0.8), p50: Array.from({ length: 12 }, (_, i) => 10 + i), p95: Array.from({ length: 12 }, (_, i) => 12 + i * 1.2) } } }
+    paper.state.simulations = {
+      S1: { id: 'S1', title: 'Profit', purpose: 'p', assumptions: [], result: one.result },
+      S2: { id: 'S2', title: 'Profit, other seed', purpose: 'p', assumptions: [], result: two.result },
+      S4: { id: 'S4', title: 'Stock', purpose: 'p', assumptions: [], result: { ...one.result, id: 'S4', series: { ...one.result.series, steps } } },
+    }
+    const was = process.env.GALLEY_ASTETIK
+    process.env.GALLEY_ASTETIK = real
+    try {
+      const hist = await drawChart(paper, { id: 'chart1', caption: '', spec: '', sectionId: 'S2', status: 'planned', kind: 'chart', chart: { purpose: '', panels: [{ kind: 'hist', data: ['sim:S1:profit', 'sim:S2:profit'], labels: ['Base', 'Other seed'], x: 'First-year profit', y: 'Draws', unit: 'EUR', group: 'Run', marks: [] }] } }, 'test')
+      expect(hist).toMatchObject({ ok: true, file: 'figures/chart1.png' })
+      expect(existsSync(paper.path('build', 'figures', 'chart1.png'))).toBe(true)
+      const line = await drawChart(paper, { id: 'chart2', caption: '', spec: '', sectionId: 'S2', status: 'planned', kind: 'chart', chart: { purpose: '', panels: [{ kind: 'line', data: ['steps:S4:stock'], labels: ['Stock'], x: 'Day', y: 'Stock', unit: 'units', xUnit: 'd', marks: [] }] } }, 'test')
+      expect(line).toMatchObject({ ok: true, file: 'figures/chart2.png' })
+    } finally {
+      if (was === undefined) delete process.env.GALLEY_ASTETIK
+      else process.env.GALLEY_ASTETIK = was
+    }
+  }, 120_000)
+
+  it('reads what Astetik\'s checks found from its report, past the warnings before it', () => {
+    const stderr = 'Matplotlib is building the font cache; this may take a moment.\n/x/_plot_backend.py:133: UserWarning: Glyph 955 missing\n  cast(NativeCanvas, figure.canvas).draw()\n' + JSON.stringify({ code: 'PAPER_VERIFICATION', message: 'Paper output failed publication checks.', details: { report: { checks: [
+      { check: 'label_clipping', passed: false, issues: [{ text: 'Calibration run: S3, lowest-budget corner' }] },
+      { check: 'glyph_coverage', passed: false, issues: [{ text: 'memory weight λ = 1', missing: [{ character: 'λ' }] }] },
+      { check: 'minimum_type_size', passed: true },
+    ] } } })
+    expect(declaredFailure(stderr)).toBe('Paper output failed publication checks. (label clipping: "Calibration run: S3, lowest-budget corner"; glyph coverage: "memory weight λ = 1" lacks λ)')
   })
 
   it('draws no chart without Astetik, and says so', async () => {
