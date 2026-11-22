@@ -185,6 +185,8 @@ describe('the thesis branch', () => {
     expect(brief).toMatch(/^# Roots under one street\n/)
     expect(brief).toContain('The test was turned off for this run, so the thesis was not tested.')
     expect(readFileSync(join(dir, 'editor', 'trees.md'), 'utf8')).toBe(brief)
+    // Beside the page, a thesis whose test is off is not "being tested".
+    expect(liveView(join(dir, 'p'))!.notes.find((n) => n.key === 'thesis')?.text).toBe('Roots under one street · not tested: the test is off for this run')
     await thesisBrief.ready(paper)[0].run()
     expect(paper.state.outcome).toBe('thesis_ready')
     expect(existsSync(paper.path('out', 'thesis.pdf'))).toBe(true)

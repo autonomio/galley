@@ -235,7 +235,7 @@ function activity(s: PaperState, events: JournalEvent[], mode: 'paper' | 'thesis
   return out
 }
 
-function workingNotes(s: PaperState, config: { rounds?: number, literatureReview?: unknown, simulation?: unknown, datasets?: unknown[], materials?: { kind?: string }[] }, pdf = false): WorkingNote[] {
+function workingNotes(s: PaperState, config: { rounds?: number, literatureReview?: unknown, simulation?: unknown, datasets?: unknown[], materials?: { kind?: string }[], off?: string[], title?: string }, pdf = false): WorkingNote[] {
   const notes: WorkingNote[] = []
   const note = (key: string, label: string, text: string, seat: string, family: Family | null = null) => notes.push({ key, label, text, seat, family })
   if (!s.brief) note('start', 'Starting', 'The Author is reading your seed.', 'author')
@@ -273,7 +273,7 @@ function workingNotes(s: PaperState, config: { rounds?: number, literatureReview
     note('review', 'Review', `Round ${s.round} of ${config.rounds ?? s.round} · ${plural(findings.length, 'finding')} · ${findings.filter((f) => f.status === 'open').length} open`, 'referee')
   }
   const test = s.thesis?.test
-  if (s.thesis) note('thesis', 'Thesis', `${s.thesis.title || s.thesis.statement}${test ? ` · ${test.passes ? 'meets its test' : 'does not yet meet its test'}${test.searched === null ? ', without a novelty search' : ''}` : ' · being tested'}`, 'author')
+  if (s.thesis) note('thesis', 'Thesis', `${config.title || s.thesis.title || s.thesis.statement}${test ? ` · ${test.passes ? 'meets its test' : 'does not yet meet its test'}${test.searched === null ? ', without a novelty search' : ''}` : (config.off ?? []).includes('test-thesis') ? ' · not tested: the test is off for this run' : ' · being tested'}`, 'author')
   if (s.outcome === 'ready_for_submission') note('ready', 'Ready', 'Every gate holds on one revision. The sign-off is yours.', 'galley')
   if (s.outcome === 'thesis_ready') note('ready', 'Ready', pdf ? 'The brief is in the document, with a PDF beside it.' : 'The brief is in the document; its PDF was not made.', 'galley')
   return notes
