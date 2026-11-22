@@ -16,7 +16,8 @@ import { Paper } from '../../src/engine/paper.js'
 // The search for work already stating the thesis finds one work: the closest its test is checked against.
 vi.mock('../../src/engine/evidence.js', async (original) => ({
   ...(await original<typeof import('../../src/engine/evidence.js')>()),
-  canarySearch: vi.fn(async () => ({ t0q1: { results: [{ id: 'W9', doi: '10.1/roots', title: 'Roots cross pavements', year: 2019, venue: null, type: null, authors: ['Ann Root'], abstract: 'Roots of street trees cross under pavements.', oa: null, url: null }] } })),
+  // A search record can hold its DOI as a full link.
+  canarySearch: vi.fn(async () => ({ t0q1: { results: [{ id: 'W9', doi: 'https://doi.org/10.1/roots', title: 'Roots cross pavements', year: 2019, venue: null, type: null, authors: ['Ann Root'], abstract: 'Roots of street trees cross under pavements.', oa: null, url: null }] } })),
 }))
 import { syncEditor, thesisMarkdown } from '../../src/engine/render.js'
 import { branch } from '../../src/engine/scheduler.js'
@@ -63,7 +64,8 @@ describe('the thesis branch', () => {
         shared_assumption: `The single tree is the unit of care (@${key}).`, set_aside: 'Smaller pits save trees.',
         thesis: options.target === 'thesis' ? 'Street trees are best treated as a network.' : 'Street trees live or die as one shared root network.',
         title: 'Street trees as one network', relation: 'It leaves the pit for the network the roots form.',
-        conditions: [{ statement: 'Roots cross from pit to pit', status: 'unknown', sources: [survey] },{ statement: 'Narrow pits shorten tree lives', status: 'supported', sources: [key] }],
+        // A source cited both in the sentence and in its sources is cited once.
+        conditions: [{ statement: 'Roots cross from pit to pit', status: 'unknown', sources: [survey] }, { statement: `Narrow pits shorten tree lives (@${key})`, status: 'supported', sources: [key] }],
         depends_on: [`Roots reach across pavements, as shown by ${key}.`], decides: 'A survey of roots under one street.', opens: 'Planting for the network.', residue: '', novelty_queries: ['roots across pits'],
       }
       return { passes: verdicts.shift(), objections: ['It is the opposite of pit engineering.'], already: [], closest: [{ title: 'Roots cross pavements', differs: 'It follows single roots, not the network they form.' }, { title: 'A work the search never found', differs: 'Left out.' }] }
@@ -94,7 +96,8 @@ describe('the thesis branch', () => {
     expect(brief).toContain('- TreeLab (2025). Root survey of one street. https://doi.org/10.5281/zenodo.1')
     // A key written into the text reads as the work's authors and year; the raw key never shows.
     expect(brief).toContain('What every position takes for granted: The single tree is the unit of care (Roe 2020).')
-    expect(brief).toContain('- Roots reach across pavements, as shown by (Roe 2020).')
+    // A key in the sentence itself reads as a name in it: "as shown by Roe (2020)".
+    expect(brief).toContain('- Roots reach across pavements, as shown by Roe (2020).')
     expect(brief).not.toContain(key)
     // What its novelty was checked against: the closest work found, dated and linked from the search's own record.
     expect(brief).toContain('The closest work the search found, and how the thesis differs from it:\n\n- Roots cross pavements (2019). It follows single roots, not the network they form. https://doi.org/10.1/roots')
@@ -143,7 +146,7 @@ describe('the thesis branch', () => {
     }
     const brief = thesisMarkdown(paper)
     expect(brief).toContain('**Thesis.** Street trees live or die as one shared root network (Roe 2020).')
-    expect(brief).toContain('It first read: Street trees are a network, as (Roe 2020) hints.')
+    expect(brief).toContain('It first read: Street trees are a network, as Roe (2020) hints.')
     expect(brief).toContain('No search for work already stating it ran, so its novelty was judged from the literature review alone.')
     expect(brief).toContain('- Jane Roe (2020). Narrow pits shorten tree lives.')
     expect(brief).not.toContain(key)
