@@ -12,6 +12,7 @@ import welcome from './welcome.md?raw'
 import { createEditor, createHttpStore, createLocalStore, iconButton, icons, type EditorAction } from '../src/index.js'
 import { choicesAction } from './choices.js'
 import { filesAction } from './files.js'
+import { fetchPapers } from './glance.js'
 import { livingPaper } from './living.js'
 import { writePaperAction } from './paper.js'
 import { proposalsAction } from './proposals.js'
@@ -52,6 +53,12 @@ const editor = createEditor(document.getElementById('editor')!, {
   // Grouped: the view and its comments; the document; the paper written from it, and its files; and, on its own, delete.
   toolbar: ['writer', 'comments', '|', 'new', 'import', 'copy', download, ...(local ? [] : ['|' as const, writePaperAction(router), choicesAction(router), proposalsAction(router), filesAction(router)]), '|', 'delete'],
   storagePrefix: local ? 'galley-local' : 'galley',
+  // Deleting a document deletes the project made from it too (vite.config.ts), so the dialog that asks says so.
+  deleting: local ? undefined : async (slug) => {
+    const project = (await fetchPapers()).find((p) => p.doc === slug)
+    if (!project) return null
+    return `The document, its notes and the project made from it are deleted: the run, its journal and any PDF.${project.running ? ' Its run is still going and is stopped first.' : ''}`
+  },
   // A paper's document is written by its team while you work in it: who is at work, its notes and its history.
   // Every paper beside the page, whichever document is open: where each stands and who is at work on what.
   plugins: local ? [] : [livingPaper(store, router), papersRail()],

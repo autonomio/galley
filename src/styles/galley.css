@@ -115,12 +115,24 @@
   color: var(--galley-text-muted);
 }
 .galley-picker-bucket:first-child { margin-top: var(--galley-sp-1); }
+/* A row: the document, its age, and after it the button that deletes it. */
+.galley-picker-row {
+  display: flex;
+  align-items: center;
+  gap: var(--galley-sp-1);
+  padding-right: var(--galley-sp-1);
+  border-radius: var(--galley-r-card);
+  transition: background var(--galley-dur-feedback) ease-out;
+}
+.galley-picker-row:hover, .galley-picker-row:focus-within { background: var(--galley-row-hover); }
+.galley-picker-row.is-active { background: var(--galley-accent-tint); }
 .galley-picker-item {
   display: flex;
+  flex: 1;
   align-items: center;
   justify-content: space-between;
   gap: var(--galley-sp-2);
-  width: 100%;
+  min-width: 0;
   padding: var(--galley-sp-2) var(--galley-sp-3);
   border: none;
   border-radius: var(--galley-r-card);
@@ -130,13 +142,76 @@
   line-height: var(--galley-lh-ui);
   text-align: left;
   cursor: pointer;
-  transition: background var(--galley-dur-feedback) ease-out;
 }
-.galley-picker-item:hover, .galley-picker-item:focus-visible { background: var(--galley-row-hover); }
-.galley-picker-item.is-active { background: var(--galley-accent-tint); }
 .galley-picker-item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--galley-fw-strong); }
 .galley-picker-item-time { flex: 0 0 auto; font-size: var(--galley-fs-micro); color: var(--galley-text-muted); font-variant-numeric: tabular-nums; }
+.galley-picker-delete {
+  flex: none;
+  width: var(--galley-size-button);
+  height: var(--galley-size-button);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--galley-r-card);
+  background: transparent;
+  color: var(--galley-text-muted);
+  cursor: pointer;
+  transition: color var(--galley-dur-feedback) ease-out, background var(--galley-dur-feedback) ease-out;
+}
+.galley-picker-delete:hover { color: var(--galley-failed); background: var(--galley-failed-tint); }
+.galley-picker-delete svg { display: block; }
+.galley-picker-delete:focus-visible {
+  outline: var(--galley-line-focus) solid var(--galley-accent);
+  outline-offset: calc(var(--galley-line-focus) * -1);
+}
 .galley-picker-empty { padding: var(--galley-sp-3) var(--galley-sp-2); color: var(--galley-text-muted); font-size: var(--galley-fs-ui); }
+
+/* ---------- A question before a change (dialog.ts) ---------- */
+.galley-dialog {
+  width: min(calc(100vw - var(--galley-sp-6)), calc(var(--galley-sp-unit) * 112));
+  padding: var(--galley-sp-6);
+  border: var(--galley-line-hair) solid var(--galley-edge);
+  border-radius: var(--galley-r-panel);
+  background: var(--galley-surface);
+  color: var(--galley-text);
+  box-shadow: var(--galley-shadow-panel);
+  font-family: var(--galley-font-ui);
+  font-size: var(--galley-fs-ui);
+  line-height: var(--galley-lh-body);
+}
+.galley-dialog[open] { animation: galley-dialog-in var(--galley-dur-settle) var(--galley-ease-flow); }
+@keyframes galley-dialog-in { from { opacity: 0; transform: translateY(var(--galley-sp-1)) scale(0.98); } }
+.galley-dialog::backdrop { background: var(--galley-backdrop); }
+.galley-dialog-title {
+  margin: 0 0 var(--galley-sp-3);
+  font-family: var(--galley-font-display);
+  font-size: var(--galley-fs-dialog);
+  font-weight: var(--galley-fw-display);
+  line-height: var(--galley-lh-tight);
+  color: var(--galley-text-strong);
+  overflow-wrap: anywhere;
+}
+.galley-dialog-details p { margin: 0 0 var(--galley-sp-2); color: var(--galley-text-soft); }
+.galley-dialog-actions { display: flex; justify-content: flex-end; gap: var(--galley-sp-2); margin-top: var(--galley-sp-6); }
+.galley-dialog-btn {
+  height: calc(var(--galley-sp-unit) * 8);
+  padding: 0 var(--galley-sp-4);
+  border: var(--galley-line-hair) solid var(--galley-edge);
+  border-radius: var(--galley-r-card);
+  background: transparent;
+  color: var(--galley-text);
+  font: inherit;
+  font-weight: var(--galley-fw-strong);
+  cursor: pointer;
+  transition: background var(--galley-dur-feedback) ease-out, border-color var(--galley-dur-feedback) ease-out;
+}
+.galley-dialog-btn:hover { background: var(--galley-row-hover); }
+.galley-dialog-btn.is-primary { border-color: var(--galley-accent); background: var(--galley-accent); color: var(--galley-on-solid); }
+.galley-dialog-btn.is-danger { border-color: var(--galley-failed); background: var(--galley-failed); color: var(--galley-on-solid); }
+.galley-dialog-btn:is(.is-primary, .is-danger):hover { filter: brightness(1.12); }
+.galley-dialog-btn:focus-visible { outline: var(--galley-line-focus) solid var(--galley-accent); outline-offset: var(--galley-line-focus); }
 
 /* ---------- The page ---------- */
 /* The panes never scroll the window sideways: a pane sliding in from the

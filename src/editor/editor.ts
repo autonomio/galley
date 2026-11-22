@@ -22,6 +22,7 @@ import { createSurface, type Surface } from '../surface/surface.js'
 import type { DocumentStore } from '../stores/types.js'
 import type { Annotation, AnnotationRange, DocSummary, EditOutcome, EditProposal, Version } from '../types.js'
 import { Emitter, el } from './dom.js'
+import { confirmDialog } from './dialog.js'
 import { createDocPicker, type DocPicker } from './doc-picker.js'
 import { icons } from './icons.js'
 import { createMargin } from './margin.js'
@@ -92,8 +93,13 @@ export interface EditorOptions {
   }
   /** Show notices yourself instead of in the editor's own stack. */
   notify?: (notice: Notice) => void
-  /** Ask the writer a yes/no question. Default window.confirm. */
+  /** Ask the writer a yes/no question. Default window.confirm, and the editor's own dialog for a delete. */
   confirm?: (message: string) => boolean | Promise<boolean>
+  /**
+   * What deleting this document takes with it, in a sentence or two for the dialog that asks; null when only the
+   * document and its notes go. For a host that deletes more along with a document.
+   */
+  deleting?: (slug: string) => string | null | Promise<string | null>
   theme?: 'dark' | 'light'
   /** Shown in an empty document. */
   placeholder?: string
@@ -580,6 +586,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
   const picker: DocPicker | null = options.picker === false ? null : createDocPicker({
     select: (slug) => { void loadDoc(slug) },
     opening: () => { if (session.docsError) void session.fetchDocs() },
+    remove: (slug) => { void removeDocument(slug) },
   })
   if (picker) barRight.append(picker.element)
 
@@ -754,10 +761,46 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     }
   }
 
+  /** Whether the writer confirms deleting this document, asked with what goes with it. */
+  async function confirmDelete(d: DocSummary): Promise<boolean> {
+    const title = d.title || UNTITLED
+    if (options.confirm) return !!(await options.confirm(`Delete "${title}"? This cannot be undone.`))
+    let goes: string | null = null
+    try { goes = (await options.deleting?.(d.slug)) ?? null } catch (error) {
+      console.error('[galley] what goes with the document could not be told:', error)
+    }
+    return confirmDialog(root, {
+      title: `Delete “${title}”?`,
+      details: [goes ?? 'The document and its notes are deleted.', 'This cannot be undone.'],
+      confirm: 'Delete',
+      danger: true,
+    })
+  }
+
+  /** Delete a document from the picker: the open one as the toolbar does, any other where it is. */
+  async function removeDocument(slug: string): Promise<void> {
+    if (slug === session.slug) return remove()
+    const d = session.docs.find((x) => x.slug === slug)
+    if (!d || !(await confirmDelete(d))) return
+    try {
+      await session.store.remove(slug)
+    } catch (error) {
+      console.error('[galley] delete failed:', error)
+      notify({ source: 'documents', level: 'error', message: 'Could not delete the document' })
+      return
+    }
+    try { historyStore?.removeItem(historyKey(slug)) } catch (error) {
+      console.error('[galley] the deleted document\'s history could not be removed:', error)
+    }
+    session.forget(slug)
+    renderPicker()
+    void session.fetchDocs({ fresh: true })
+  }
+
   async function remove(): Promise<void> {
     const d = session.current()
     if (!d) return
-    if (!(await ask(`Delete "${d.title || UNTITLED}"? This cannot be undone.`))) return
+    if (!(await confirmDelete(d))) return
     session.deletingSlug = d.slug
     await session.discard()
     loadRequestId += 1

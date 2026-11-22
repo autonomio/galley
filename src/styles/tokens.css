@@ -59,6 +59,8 @@
   --galley-text-muted: var(--galley-p-n4);
   --galley-row-hover: color-mix(in srgb, var(--galley-surface) 55%, transparent);
   --galley-shadow-color: var(--galley-p-black);
+  --galley-on-solid: var(--galley-p-white);     /* text on a solid accent or destructive button */
+  --galley-backdrop: color-mix(in srgb, var(--galley-p-black) 45%, transparent);  /* behind a dialog */
 
   /* Meanings. Change one and its tint and edge follow. */
   --galley-accent: var(--galley-p-blue);      /* links, focus, the active item */
@@ -95,6 +97,7 @@
   --galley-fs-code: calc(var(--galley-ctl-base-size) * 0.92);
   --galley-fs-h1: calc(var(--galley-ctl-base-size) * 2.4 * var(--galley-ctl-heading));
   --galley-fs-h2: calc(var(--galley-ctl-base-size) * 1.6 * var(--galley-ctl-heading));
+  --galley-fs-dialog: calc(var(--galley-ctl-base-size) * 1.3);
   --galley-lh-tight: 1.15;
   --galley-lh-ui: 1.4;
   --galley-lh-body: calc(1.55 * var(--galley-ctl-leading));
