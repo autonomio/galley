@@ -414,7 +414,13 @@ export interface Thesis {
   noveltyQueries: string[]
   revision: number
   /** The test for its stance, by a family other than the author's. */
-  test?: { passes: boolean; objections: string[]; already: string[]; family: string; revisedFrom?: string }
+  test?: {
+    passes: boolean; objections: string[]; already: string[]; family: string; revisedFrom?: string
+    /** The closest work the search found, and how the thesis differs from each: what its novelty was checked against. */
+    closest?: { title: string; year: number | null; doi: string | null; differs: string }[]
+    /** How many works the search for work already stating the thesis found. */
+    searched?: number
+  }
 }
 
 export interface PaperState {

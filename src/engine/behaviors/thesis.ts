@@ -79,13 +79,13 @@ ${stance.task}
 - thesis: one sentence in plain words, at most 40 words.
 - title: at most 12 words, clear to a reader who has not read the brief, claiming nothing the thesis does not.
 - relation: two or three sentences on how the thesis stands to the positions.
-- conditions: what the thesis holds under, each marked by what holds it up: given (the seed states it), assumed (the thesis assumes it), supported (a source shows it; name its keys) or unknown (nobody has established it).
+- conditions: what the thesis holds under: each a claim about the world that must be true for the thesis to hold, never the seed's question or aim restated, each marked by what holds it up: given (the seed states it), assumed (the thesis assumes it), supported (a source shows it; name its keys) or unknown (nobody has established it).
 - depends_on: the conditions under which it would stop holding.
 - decides: what would decide it: the observation, comparison or argument that would settle it.
 - opens: what a good answer would let someone understand, investigate or stop doing.
 - residue: the tension it leaves unresolved, or empty if none is apparent.
 - novelty_queries: two or three literature searches that would find work already stating this thesis.
-${stanceOf(paper) === 'reframe' ? '' : '- set_aside: empty.\n'}Use only the sources listed below, by key. Write in the field's words; a term the field does not use is explained where it appears. Say nothing about how this thesis was produced.
+${stanceOf(paper) === 'reframe' ? '' : '- set_aside: empty.\n'}Use only the sources listed below, by key: in a sources field, the key alone; inside any text, the key as @key. Write in the field's words; a term the field does not use is explained where it appears. Say nothing about how this thesis was produced.
 
 ${briefBlock(paper)}
 
@@ -167,7 +167,7 @@ async function closestWork(paper: Paper, thesis: Thesis): Promise<SearchHit[]> {
   }
 }
 
-async function judge(paper: Paper, thesis: Thesis): Promise<{ passes: boolean; objections: string[]; already: string[]; family: string }> {
+async function judge(paper: Paper, thesis: Thesis): Promise<NonNullable<Thesis['test']>> {
   const stance = STANCES[thesis.stance]
   const hits = await closestWork(paper, thesis)
   const family = seatFamily(paper, 'challenger')
@@ -178,7 +178,7 @@ async function judge(paper: Paper, thesis: Thesis): Promise<{ passes: boolean; o
 Test a thesis for its stance toward the field. Judge it only by this test:
 ${stance.test}
 Work from the field as mapped below, the literature review's findings and the closest work a search found. A thesis is speculation to explore further, so do not ask it to be proven; ask whether it meets its stance's test.
-Return passes (true when it meets the test), objections (each a concrete problem with the thesis, empty when it passes) and already (the titles of closest works that already state it, empty when none does).
+Return passes (true when it meets the test), objections (each a concrete problem with the thesis, empty when it passes), already (the titles of closest works that already state it, empty when none does) and closest: the two to four works below that come nearest to the thesis, each by its title exactly as listed, with differs: in one sentence, what the thesis claims that the work does not, or that the work already states it. Leave closest empty when the search found none.
 
 THE THESIS (${stance.name}: ${stance.gist}): ${thesis.statement}
 How it stands to the field: ${thesis.relation}
@@ -190,9 +190,16 @@ ${literatureBlock(paper)}
 
 THE CLOSEST WORK A SEARCH FOUND:
 ${hits.length ? hits.map((h) => `- ${h.title} (${h.year ?? 'n.d.'}). ${h.abstract.slice(0, 600)}`).join('\n') : '(the search found none, or did not run)'}`,
-    schema: obj({ passes: bool(), objections: arr(str()), already: arr(str()) }),
+    schema: obj({ passes: bool(), objections: arr(str()), already: arr(str()), closest: arr(obj({ title: str(), differs: str() })) }),
   })
-  return { passes: !!reply.passes, objections: (reply.objections ?? []).map(String).filter(Boolean), already: (reply.already ?? []).map(String).filter(Boolean), family }
+  // A work the verdict names is the search's own record, so the brief can date and link it; one it cannot find is left out.
+  const bare = (title: string) => title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+  const closest = ((reply.closest ?? []) as { title?: unknown; differs?: unknown }[]).flatMap((c) => {
+    const hit = hits.find((h) => bare(h.title) === bare(String(c.title ?? '')))
+    const differs = String(c.differs ?? '').trim()
+    return hit && differs ? [{ title: hit.title, year: hit.year, doi: hit.doi, differs }] : []
+  })
+  return { passes: !!reply.passes, objections: (reply.objections ?? []).map(String).filter(Boolean), already: (reply.already ?? []).map(String).filter(Boolean), family, closest, searched: hits.length }
 }
 
 export const testThesis: Behavior = {

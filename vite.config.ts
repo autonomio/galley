@@ -88,7 +88,7 @@ function livePlugin(): Plugin {
       server.middlewares.use('/api/galley-live', (req, res) => {
         const doc = decodeURIComponent((req.url || '').replace(/^\//, '').split('?')[0])
         if (!doc) {
-          const list = livePapers(papers).map(({ dir: paperDir, view }) => ({ ...view, document: existsSync(join(dir, `${view.doc}.md`)), pdf: existsSync(join(paperDir, 'out', 'paper.pdf')) }))
+          const list = livePapers(papers).map(({ dir: paperDir, view }) => ({ ...view, document: existsSync(join(dir, `${view.doc}.md`)), pdf: existsSync(join(paperDir, 'out', view.mode === 'thesis' ? 'thesis.pdf' : 'paper.pdf')) }))
           res.setHeader('Content-Type', 'application/json')
           res.setHeader('Cache-Control', 'no-store')
           res.end(JSON.stringify({ papers: list }))

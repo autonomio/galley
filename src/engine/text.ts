@@ -77,7 +77,8 @@ export function citationKey(work: Work, taken: Set<string>): string {
 
 /** Author-year label for prompts: "Uzzi et al. 2013". */
 export function authorYear(work: Work): string {
-  const last = (name: string) => name.trim().split(/\s+/).pop() ?? name
+  // A family name is a name's last word, or what comes before the comma of a name written family first ("Liu, Fangcheng").
+  const last = (name: string) => (/^[^,]+,[^,]+$/.test(name) ? name.split(',')[0].trim() : name.trim().split(/\s+/).pop() ?? name)
   const names = work.authors.length === 0 ? 'Anon.' : work.authors.length === 1 ? last(work.authors[0])
     : work.authors.length === 2 ? `${last(work.authors[0])} and ${last(work.authors[1])}` : `${last(work.authors[0])} et al.`
   return `${names} ${work.year ?? 'n.d.'}`
