@@ -643,7 +643,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       )
       back.hidden = true
       next.disabled = false
-      next.textContent = options.onStart ? 'Open the paper' : 'Close'
+      next.textContent = options.onStart ? (thesis() ? 'Open the thesis' : 'Open the paper') : 'Close'
       next.onclick = () => { dialog.close(); options.onStart?.(slug) }
       hint.textContent = ''
     } catch (error) {

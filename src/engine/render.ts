@@ -719,7 +719,9 @@ function asNamed(w: Work): Work {
   const people = Array.isArray(csl.author) ? csl.author as { given?: string; family?: string; literal?: string }[] : []
   const authors = w.authors.length ? w.authors : people.map((p) => p.literal ?? [p.given, p.family].filter(Boolean).join(' '))
   const issued = Number((csl.issued as { 'date-parts'?: unknown[][] } | undefined)?.['date-parts']?.[0]?.[0])
-  return { ...w, authors: authors.map((a) => a.replace(/\s+/g, ' ').trim()).filter(Boolean), year: w.year ?? (Number.isInteger(issued) ? issued : null), title: bareTitle(w.title) }
+  // A name a registry wrote family first ("Liu, Fangcheng") reads given name first, like the rest.
+  const givenFirst = (name: string) => name.replace(/^([^,]+),\s*(?!(?:Jr|Sr|II|III|IV)\.?$)([^,]+)$/, '$2 $1')
+  return { ...w, authors: authors.map((a) => givenFirst(a.replace(/\s+/g, ' ').trim())).filter(Boolean), year: w.year ?? (Number.isInteger(issued) ? issued : null), title: bareTitle(w.title) }
 }
 
 /** How the brief cites a work in its text: author and year, or a work without authors by the start of its title. */
@@ -757,6 +759,15 @@ export function thesisMarkdown(paper: Paper): string {
     works.forEach((w) => used.add(w.bibKey!))
     return works.length ? ` (${works.map(citeName).join('; ')})` : ''
   }
+  // A source cited inside the text, as @key or a bare key, reads as its authors and year, like those cited by key.
+  const keys = [...byKey.keys()].sort((a, b) => b.length - a.length).map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const keyed = keys.length ? new RegExp(`@?\\b(${keys.join('|')})\\b`, 'g') : null
+  const prose = (text: string) => !keyed ? text : text.replace(keyed, (match: string, key: string, at: number, whole: string) => {
+    used.add(key)
+    const before = whole.slice(0, at)
+    const inside = before.lastIndexOf('(') > before.lastIndexOf(')') && /^[^()]*\)/.test(whole.slice(at + match.length))
+    return inside ? citeName(byKey.get(key)!) : `(${citeName(byKey.get(key)!)})`
+  })
   const context = [t.statement, t.relation, t.sharedAssumption, t.setAside, ...t.positions.flatMap((p) => [p.holds, p.restsOn])].join(' ')
   const source = (w: Work) => {
     const title = `${w.title}${/[.?!]$/.test(w.title) ? '' : '.'}`
@@ -774,16 +785,25 @@ export function thesisMarkdown(paper: Paper): string {
     [authors, date].filter(Boolean).join(' · '),
     `**Thesis.** ${t.statement}`,
     `**Stance.** ${stance}`,
-    `## How it stands to the field\n\n${t.relation}`,
-    t.positions.length ? `The positions that draw most of the work on this subject:\n\n${t.positions.map((p) => `- **${p.name}.** ${p.holds} It rests on the assumption that ${continuing(p.restsOn.replace(/\.$/, ''), context)}${cite(p.sources)}.`).join('\n')}` : '',
-    t.sharedAssumption ? `What every position takes for granted: ${t.sharedAssumption}` : '',
-    t.setAside ? `The first idea, set aside: ${t.setAside}` : '',
-    t.conditions.length ? `## What it holds under\n\n${t.conditions.map((c) => `- ${c.statement.replace(/\.$/, '')}${cite(c.sources)}. *${status[c.status]}*`).join('\n')}` : '',
-    t.dependsOn.length ? `## What it depends on\n\n${t.dependsOn.map((d) => `- ${d}`).join('\n')}` : '',
-    t.decides ? `## What would decide it\n\n${t.decides}` : '',
-    t.opens ? `## What it opens\n\n${t.opens}` : '',
-    t.residue ? `## What it leaves open\n\n${t.residue}` : '',
-    test ? `## Tested against the literature\n\n${test.passes ? 'It meets the test for its stance.' : 'It does not yet meet the test for its stance.'}${test.objections.length ? `\n\n${test.objections.map((o) => `- ${o}`).join('\n')}` : ''}${test.already.length ? `\n\nAlready stated in: ${test.already.join('; ')}.` : ''}${test.revisedFrom ? `\n\nThe thesis was formulated again after a first test. It first read: ${test.revisedFrom}` : ''}` : '',
+    `## How it stands to the field\n\n${prose(t.relation)}`,
+    t.positions.length ? `The positions that draw most of the work on this subject:\n\n${t.positions.map((p) => `- **${p.name}.** ${prose(p.holds)} It rests on the assumption that ${prose(continuing(p.restsOn.replace(/\.$/, ''), context))}${cite(p.sources)}.`).join('\n')}` : '',
+    t.sharedAssumption ? `What every position takes for granted: ${prose(t.sharedAssumption)}` : '',
+    t.setAside ? `The first idea, set aside: ${prose(t.setAside)}` : '',
+    t.conditions.length ? `## What it holds under\n\n${t.conditions.map((c) => `- ${prose(c.statement.replace(/\.$/, ''))}${cite(c.sources)}. *${status[c.status]}*`).join('\n')}` : '',
+    t.dependsOn.length ? `## What it depends on\n\n${t.dependsOn.map((d) => `- ${prose(d)}`).join('\n')}` : '',
+    t.decides ? `## What would decide it\n\n${prose(t.decides)}` : '',
+    t.opens ? `## What it opens\n\n${prose(t.opens)}` : '',
+    t.residue ? `## What it leaves open\n\n${prose(t.residue)}` : '',
+    test ? [
+      '## Tested against the literature',
+      test.passes ? 'It meets the test for its stance.' : 'It does not yet meet the test for its stance.',
+      test.objections.length ? test.objections.map((o) => `- ${prose(o)}`).join('\n') : '',
+      // What its novelty was checked against: the nearest work a search found, and what the thesis claims that it does not.
+      test.closest?.length ? `The closest work the search found, and how the thesis differs from it:\n\n${test.closest.map((c) => `- ${c.title} (${c.year ?? 'n.d.'}). ${prose(c.differs)}${c.doi ? ` https://doi.org/${c.doi}` : ''}`).join('\n')}`
+        : test.searched === 0 ? 'The search for work already stating it found none to compare.' : '',
+      test.already.length ? `Already stated in: ${test.already.join('; ')}.` : '',
+      test.revisedFrom ? `The thesis was formulated again after a first test. It first read: ${test.revisedFrom}` : '',
+    ].filter(Boolean).join('\n\n') : '',
     lit ? `## The literature it draws on\n\nA literature review run with Canary on ${lit.searchedOn} asked: "${lit.question}" Of ${thousands(lit.counts?.discovered ?? 0)} records found, ${thousands(lit.counts?.screened ?? 0)} were screened, ${thousands(lit.counts?.retrieved ?? 0)} read in full and ${thousands(lit.counts?.reviewed ?? 0)} included. It is a targeted review, not a systematic review in the formal sense.` : '',
     used.size ? `## Sources\n\n${[...used].map((k) => source(byKey.get(k)!)).join('\n')}` : '',
   ]

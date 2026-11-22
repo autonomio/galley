@@ -7,8 +7,12 @@ export interface Glance {
   slug: string
   doc: string
   title: string
+  /** A paper, or a thesis handed back as a brief. */
+  mode: 'paper' | 'thesis'
   running: boolean
   outcome: string | null
+  /** Finished: a paper ready for submission, or a thesis whose brief is written. */
+  ready: boolean
   stage: { id: string, label: string }
   stages: { id: string, label: string, done: boolean }[]
   team: { seat: string, name: string, family: string | null, detail: string | null }[]
@@ -34,7 +38,7 @@ export async function fetchPapers(): Promise<Glance[]> {
   return ((await res.json()) as { papers: Glance[] }).papers
 }
 
-export const stateOf = (p: Glance): GlanceState => (p.outcome === 'ready_for_submission' ? 'ready' : !p.running ? 'stopped' : p.waiting ? 'waiting' : 'running')
+export const stateOf = (p: Glance): GlanceState => (p.ready ? 'ready' : !p.running ? 'stopped' : p.waiting ? 'waiting' : 'running')
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
@@ -83,6 +87,6 @@ export function entry(p: Glance, search = location.search): { href: string, labe
   keep.delete('view')
   const rest = keep.toString()
   if (p.document) return { href: `/?doc=${encodeURIComponent(p.doc)}&view=activity${rest ? `&${rest}` : ''}`, label: 'Open', external: false }
-  if (p.pdf) return { href: `/papers/${encodeURIComponent(p.doc)}/paper.pdf`, label: 'Open the PDF', external: true }
+  if (p.pdf) return { href: `/papers/${encodeURIComponent(p.doc)}/${p.mode === 'thesis' ? 'thesis' : 'paper'}.pdf`, label: 'Open the PDF', external: true }
   return null
 }
