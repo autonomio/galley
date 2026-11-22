@@ -11,7 +11,7 @@ import { applyExact, dropUnknownCitations, sameClaim, squash } from '../text.js'
 import type { Disposition, Family, Finding } from '../types.js'
 import { fillPlaceholders, productionRecord } from '../record.js'
 import { resolved } from '../findings.js'
-import { activeClaims, briefBlock, citableKeys, citationEvidenceBlock, claimsBlock, live, manuscriptBlock, nextClaimId, now, placeholderLegend, seatFamily, sectionText } from './common.js'
+import { activeClaims, briefBlock, citableKeys, citationEvidenceBlock, claimsBlock, live, manuscriptBlock, nextClaimId, now, placeholderLegend, seatFamily, sectionName, sectionText } from './common.js'
 import { setPassage } from './write.js'
 
 
@@ -161,7 +161,7 @@ export const respond: Behavior = {
       run: async () => {
         const family = seatFamily(paper, 'author')
         const section = s.outline?.sections.find((sec) => sec.id === sectionId)
-        const text = section ? `Section ${section.id} ${section.title}:\n"""\n${sectionText(paper, section.id)}\n"""` : `The whole manuscript:\n${manuscriptBlock(paper)}`
+        const text = section ? `Section ${sectionName(paper, section)}:\n"""\n${sectionText(paper, section.id)}\n"""` : `The whole manuscript:\n${manuscriptBlock(paper)}`
         const reply = await paper.ask<any>({
           // A first answer runs on lighter settings; once a referee has rejected one, the author answers at full effort.
           behavior: 'respond', light: findings.every((f) => !f.dispositions.length), target: findings.map((f) => f.id).join(','), seat: 'author', family,
@@ -177,6 +177,7 @@ You are the author. Referees from other model families raised the findings below
 Edits are exact replacements { old, new }: old is copied character for character from the current text and is unique; new is the replacement. Keep citations in [@key] form and use only keys already present. Add no new factual claims.
 Never weaken the thesis to satisfy a referee, and never answer with a hedge or a caveat in the text: if a finding would require that, rebut it or answer it as a limitation for the authors.
 When a finding asks for a fact that the material in this request gives (a system description, the claims and their evidence, the production record), answer it fixed: state the fact in the text instead of conceding a gap.
+An answer that changes what the paper says its data or an analysis shows keeps the text in line with the analysis record (the measurements above). Where the paper reads a result differently from what the analysis recorded, for example under a stricter definition, the text says so: what the record holds, and why the paper reads it as it does.
 Keep the paper's length: the section has a budget of about ${section?.words ?? 600} words. Prefer replacing a sentence to adding one, cut what a fix makes redundant, and add new text only where the finding requires it.
 
 ${briefBlock(paper)}

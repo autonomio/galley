@@ -9,7 +9,6 @@ import { figure } from '../../src/engine/behaviors/write.js'
 import { Paper } from '../../src/engine/paper.js'
 import { columnShares, contentHash, fitTables, numberEquations, printedQuotes, splitWideEquations } from '../../src/engine/render.js'
 import { ledgerAppendix } from '../../src/engine/behaviors/common.js'
-import { readableReason } from '../../src/engine/literature.js'
 
 let dir = ''
 afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }) })
@@ -28,10 +27,6 @@ describe('what must never be printed', () => {
     const paper = Paper.create(join(dir, 'p'), 'seed')
     paper.state.claims = [{ id: 'C1', kind: 'common_knowledge', status: 'assumed', text: 'Gradients flow backwards.' } as Paper['state']['claims'][number]]
     expect(ledgerAppendix(paper)).toContain('**C1** (common knowledge;')
-    // A review reason whose spaces were lost gives way to the one the selection gave for the same publication.
-    const bundle = { research: { paper_selection: { selection: { decisions: [{ work_id: 'W1', reason: 'Domestic storage FCR ICT architecture.' }] } } } }
-    expect(readableReason('FCRICTarchitectureanddelayinjections;storage', 'W1', bundle)).toBe('Domestic storage FCR ICT architecture.')
-    expect(readableReason('Measured hybrid hydro tracking.', 'W1', bundle)).toBe('Measured hybrid hydro tracking.')
   })
 
   it('numbers display equations and turns their labels into those numbers', () => {

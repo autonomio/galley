@@ -102,6 +102,19 @@ export function sectionText(paper: Paper, sectionId: string): string {
   return paper.state.passages[sectionId]?.text ?? ''
 }
 
+/** The number a section prints with, or null for one printed without a number (the Limitations section). */
+export function printedNumber(paper: Paper, sectionId: string): number | null {
+  const numbered = (paper.state.outline?.sections ?? []).filter((sec) => sec.role !== 'limitations')
+  const i = numbered.findIndex((sec) => sec.id === sectionId)
+  return i < 0 ? null : i + 1
+}
+
+/** How a section is named to a model: its id, its title and the number it prints with, so a cross-reference is right. */
+export function sectionName(paper: Paper, section: { id: string; title: string }): string {
+  const n = printedNumber(paper, section.id)
+  return `${section.id} ${section.title} (${n ? `printed as Section ${n}` : 'printed without a number'})`
+}
+
 /** The manuscript as the referees and the frame read it: sections tagged with their ids. */
 export function manuscriptBlock(paper: Paper, withAbstract = true, withLedger = true): string {
   const parts: string[] = []
@@ -110,7 +123,8 @@ export function manuscriptBlock(paper: Paper, withAbstract = true, withLedger = 
   const record = productionRecord(paper)
   if (frame && withAbstract) parts.push(`TITLE: ${paper.config.title || frame.title}\n\nABSTRACT: ${fillPlaceholders(frame.abstract, record).text}`)
   for (const section of outline?.sections ?? []) {
-    parts.push(`[${section.id}] # ${section.title}\n\n${fillPlaceholders(sectionText(paper, section.id), record).text}`)
+    const n = printedNumber(paper, section.id)
+    parts.push(`[${section.id}] # ${section.title} (${n ? `printed as Section ${n}` : 'printed without a number'})\n\n${fillPlaceholders(sectionText(paper, section.id), record).text}`)
   }
   if (outline && withLedger && paper.config.ledgerAppendix === true) parts.push(`[Appendix A, generated from the claim ledger at typesetting: it changes when claims change, and is not edited directly] # Claim ledger\n\n${fillPlaceholders(ledgerAppendix(paper), record).text}`)
   return parts.join('\n\n')
@@ -126,7 +140,7 @@ export function ledgerAppendix(paper: Paper): string {
   const lines = activeClaims(paper).map((c) => {
     const keys = verifiedCitations(paper, c.id).map((cite) => `@${keyFor(paper, paper.state.works[cite.workId])}`)
     const evidence = keys.length ? ` [${keys.join('; ')}]` : ''
-    return `- **${c.id}** (${c.kind.replace(/_/g, ' ')}${c.loadBearing ? ', load-bearing' : ''}; ${STATUS_WORDS[c.status] ?? c.status}${c.origin === 'review' ? `; from the systematic review, uncertainty ${c.uncertainty ?? 'moderate'}` : c.origin === 'system' ? '; added by the system' : '; from the seed'})${evidence}. ${c.text}`
+    return `- **${c.id}** (${c.kind.replace(/_/g, ' ')}${c.loadBearing ? ', load-bearing' : ''}; ${STATUS_WORDS[c.status] ?? c.status}${c.origin === 'review' ? `; from the literature review, uncertainty ${c.uncertainty ?? 'moderate'}` : c.origin === 'system' ? '; added by the system' : '; from the seed'})${evidence}. ${c.text}`
   })
   return `Every claim of the final argument, as the claim ledger holds it: its kind, its standing, where it came from, and the verified sources it rests on.\n\n${lines.join('\n')}`
 }

@@ -1,4 +1,4 @@
-// A systematic review of the literature, done by Canary. Galley writes the
+// A literature review, done by Canary. Galley writes the
 // review question; Canary plans the search, screens the candidates, reads the
 // full papers, ties every finding to verbatim passages and has an independent
 // model audit each one. Galley turns the finished research bundle into ledger
@@ -127,7 +127,7 @@ export function withReviewSection(sections: Section[], totalWords: number): Sect
   const review: Section = {
     // Named plainly, so it fits whichever designation the text and its referees settle on.
     id: REVIEW_SECTION, title: 'Literature Review', words: share, claimIds: [], figureIds: [],
-    purpose: 'Reports the systematic review of prior work carried out for this paper: how the literature was searched, screened and read, what it establishes, where studies disagree or are silent, and where this paper stands relative to it.',
+    purpose: 'Reports the literature review of prior work carried out for this paper: how the literature was searched, screened and read, what it establishes, where studies disagree or are silent, and where this paper stands relative to it.',
   }
   return [...scaled.slice(0, 1), review, ...scaled.slice(1)]
 }
@@ -196,7 +196,7 @@ export function importReview(paper: Paper, data: any, bundlePath: string): void 
       const citation: Citation = {
         id: nextId(s.citations.map((c) => c.id), 'K'), claimId: claim.id, workId: work.id, passage: passageOf(best.quotes),
         role: relation === 'contradicts' ? 'contrast' : 'support', status: 'verified', chosenBy: 'auto',
-        verdict: { outcome: claim.status === 'narrowed' ? 'narrower' : 'supported', reason: `Canary systematic review: ${tidy(best.interpretation) || 'verbatim passage from the full text'}`, family: 'gpt' },
+        verdict: { outcome: claim.status === 'narrowed' ? 'narrower' : 'supported', reason: `Canary literature review: ${tidy(best.interpretation) || 'verbatim passage from the full text'}`, family: 'gpt' },
       }
       s.citations.push(citation)
     }
@@ -270,7 +270,7 @@ export const LIT_PLACEHOLDERS: Record<string, string> = {
 export function literatureBlock(paper: Paper): string {
   const lit = paper.state.literature
   if (lit?.status !== 'done' || !lit.protocol) return ''
-  return `THE SYSTEMATIC REVIEW, carried out for this paper with Canary (searched ${lit.searchedOn}). Its method, disagreements and open questions below may be stated as facts of the review:
+  return `THE LITERATURE REVIEW, a targeted review and not a systematic review in the formal sense, carried out for this paper with Canary (searched ${lit.searchedOn}). Its method, disagreements and open questions below may be stated as facts of the review:
 Review question: ${lit.question}
 Source: OpenAlex (titles, abstracts and indexed full text); open-access full texts only.
 Concepts searched: ${lit.protocol.concepts.join('; ') || 'as in the question'}
@@ -289,8 +289,8 @@ ${Object.entries(LIT_PLACEHOLDERS).map(([key, meaning]) => `{{${key}}}: ${meanin
 }
 
 /** How the review section is written, on top of the rules every section follows. */
-export const REVIEW_SECTION_RULES = `This section reports the systematic review above. Write it in this order:
-1. How the review was done, in one paragraph: the question, the source and the queries, how records were chosen for screening, the eligibility criteria, the screening and full-text reading, the independent audit and why the search stopped, with every count as its placeholder; then that the appendix gives the full protocol, every query and every included publication. Call it a systematic review throughout, and never by another name.
+export const REVIEW_SECTION_RULES = `This section reports the literature review above. Write it in this order:
+1. How the review was done, in one paragraph: the question, the source and the queries, how records were chosen for screening, the eligibility criteria, the screening and full-text reading, the independent audit and why the search stopped, with every count as its placeholder; then that the appendix gives the full protocol, every query and every included publication. Call it a literature review throughout, and never a systematic review: it is a targeted review, not a systematic review in the formal sense.
 2. What the reviewed studies establish, organised by theme rather than study by study: each finding above with its citations, stated plainly with its citations; where a finding's evidence is thin, say so in a note for the authors, not in the text.
 3. Where the studies disagree and what they leave open, from the review above.
 4. One short paragraph relating this paper's contribution to what the review found, claiming no more than the paper's own claims.
@@ -327,27 +327,14 @@ export function reviewFlowTypst(lit: LiteratureReview): string | null {
  * cited so that it appears in the references.
  */
 /** Words run together with their spaces lost ("FCRICTarchitectureanddelayinjections"), links aside. */
-const runOn = (text: string) => /[A-Za-z;,]{30,}/.test(text.replace(/https?:\/\/\S+/g, ''))
-
-/**
- * Why a publication was included, readable: Canary's screening sometimes writes a reason with its spaces lost, and then
- * the reason its selection gave for the same publication stands in; with neither readable, none is printed.
- */
-export function readableReason(reason: string, workId: string, bundle: any): string {
-  if (!runOn(reason)) return reason
-  const decision = (bundle?.research?.paper_selection?.selection?.decisions ?? []).find((d: any) => d?.work_id === workId)
-  return [decision?.reason, decision?.coverage_contribution].map((t) => tidy(String(t ?? ''))).find((t) => t && !runOn(t)) ?? ''
-}
-
 export function reviewAppendix(paper: Paper, cite: (workId: string) => string, flowFigure: string | null, numbers = { figure: 1, table: 1 }): string {
   const lit = paper.state.literature
   if (lit?.status !== 'done' || !lit.protocol || !lit.counts) return ''
   const c = lit.counts
   const included = lit.included ?? []
   const order = (role: string) => role === 'core' ? 0 : 1
-  let bundle: unknown = null
-  try { if (lit.bundle && existsSync(paper.path(lit.bundle))) bundle = JSON.parse(readFileSync(paper.path(lit.bundle), 'utf8')) } catch { /* the reasons stand as they were kept */ }
-  const rows = [...included].sort((a, b) => order(a.role) - order(b.role)).map((i) => `| ${cite(i.workId)} | ${i.role} | ${cell(readableReason(i.reason, i.workId, bundle)) || '—'} |`)
+  // Each publication with its role. The screening's reasons are its working notes, written for the review, and stay out.
+  const rows = [...included].sort((a, b) => order(a.role) - order(b.role)).map((i) => `| ${cite(i.workId)} | ${i.role} |`)
   return [
     // What the review is, plainly: it screens the records that cover most of its question, so it is not a systematic
     // review in the formal sense, however much the paper rests on it.
@@ -362,7 +349,6 @@ export function reviewAppendix(paper: Paper, cite: (workId: string) => string, f
     flowFigure ? `![How the review narrowed its records: ${thousands(c.discovered)} found, ${thousands(c.screened)} screened, ${thousands(c.retrieved)} read in full, ${thousands(c.reviewed)} included.](${flowFigure}){#fig-review-flow width=85%}` : '',
     `| Stage | Records |\n|:---|---:|\n| Found by the searches | ${thousands(c.discovered)} |\n| Chosen and screened by title and abstract | ${thousands(c.screened)} |\n| Excluded on title and abstract | ${thousands(c.excludedScreening ?? Math.max(0, c.screened - c.retrieved))} |\n| Open-access full texts retrieved and read | ${thousands(c.retrieved)} |\n| Excluded after reading the full text | ${thousands(c.excludedFullText ?? Math.max(0, c.retrieved - c.reviewed))} |\n| Included | ${thousands(c.reviewed)} (${c.core} core, ${c.supporting} supporting) |\n\n: Records at each stage of the review.`,
     `**The ${lit.protocol.queries.length} queries.**\n\n${lit.protocol.queries.map((q, i) => `${i + 1}. ${q}`).join('\n')}`,
-    // The rule's dashes set the column widths: the reason gets most of the line.
-    rows.length ? `**The ${rows.length} included publications.** Table ${numbers.table + 1} lists them. Core studies answer the question directly; supporting studies inform it.\n\n| Publication | Role | Why it was included |\n|:--------------|:---------|:---------------------------|\n${rows.join('\n')}\n\n: The publications the review included.` : '',
+    rows.length ? `**The ${rows.length} included publications.** Table ${numbers.table + 1} lists them. Core studies answer the question directly; supporting studies inform it.\n\n| Publication | Role |\n|:-----------------------|:---------|\n${rows.join('\n')}\n\n: The publications the review included.` : '',
   ].filter(Boolean).join('\n\n')
 }
