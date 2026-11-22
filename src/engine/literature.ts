@@ -5,6 +5,7 @@
 // claims with verified citations and a section of the paper.
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
+import { blockText, type PrintedBlock } from './blocks.js'
 import { canaryPython, openalexKey } from './evidence.js'
 import type { Paper } from './paper.js'
 import type { Citation, Claim, LiteratureReview, Section, Work } from './types.js'
@@ -327,9 +328,27 @@ export function reviewFlowTypst(lit: LiteratureReview): string | null {
  * cited so that it appears in the references.
  */
 /** Words run together with their spaces lost ("FCRICTarchitectureanddelayinjections"), links aside. */
+/**
+ * The parts of the review's appendix written from Canary's records: its question, its eligibility rules and why its
+ * search stopped. Canary writes them for its own agents, so they can read as instructions; a reading that finds one
+ * printed so has it written again from the same records (blocks.ts).
+ */
+export function reviewBlocks(paper: Paper): PrintedBlock[] {
+  const lit = paper.state.literature
+  if (lit?.status !== 'done' || !lit.protocol) return []
+  const e = lit.protocol.eligibility
+  return [
+    { id: 'review-question', label: 'the question of the literature review, in its appendix', text: `**Question.** ${lit.question}`, source: { question: lit.question } },
+    { id: 'review-eligibility', label: 'the eligibility rules of the literature review, in its appendix', text: `**Eligibility.** Core studies: ${e.core || 'as the question defines them'} Supporting studies: ${e.supporting || 'studies that inform the question'} Excluded: ${e.exclusion || 'studies outside the question'}`, source: { question: lit.question, eligibility: e } },
+    ...(lit.stopping ? [{ id: 'review-stopping', label: 'why the search of the literature review stopped, in its appendix', text: `**Why the search stopped.** ${lit.stopping}`, source: { stopping: lit.stopping, counts: lit.counts ?? null } }] : []),
+  ]
+}
+
 export function reviewAppendix(paper: Paper, cite: (workId: string) => string, flowFigure: string | null, numbers = { figure: 1, table: 1 }): string {
   const lit = paper.state.literature
   if (lit?.status !== 'done' || !lit.protocol || !lit.counts) return ''
+  const blocks = reviewBlocks(paper)
+  const part = (id: string) => { const block = blocks.find((b) => b.id === id); return block ? blockText(paper, block) : '' }
   const c = lit.counts
   const included = lit.included ?? []
   const order = (role: string) => role === 'core' ? 0 : 1
@@ -339,11 +358,11 @@ export function reviewAppendix(paper: Paper, cite: (workId: string) => string, f
     // What the review is, plainly: it screens the records that cover most of its question, so it is not a systematic
     // review in the formal sense, however much the paper rests on it.
     `The literature review reported in this paper searched OpenAlex on ${lit.searchedOn}. It is a targeted review, not a systematic review in the formal sense: it screened the records that covered most of its question rather than every record its searches found${lit.stopping ? ', and stopped by the rule given below' : ''}. This appendix gives its protocol, how its records were narrowed, every query it ran and every publication it included, so that it can be checked and repeated.`,
-    `**Question.** ${lit.question}`,
+    part('review-question'),
     `**Source.** OpenAlex: titles, abstracts and indexed full text, limited to publications with an open-access full text.`,
-    `**Eligibility.** Core studies: ${lit.protocol.eligibility.core || 'as the question defines them'} Supporting studies: ${lit.protocol.eligibility.supporting || 'studies that inform the question'} Excluded: ${lit.protocol.eligibility.exclusion || 'studies outside the question'}`,
+    part('review-eligibility'),
     `**Screening, reading and audit.** Records were chosen for screening by how much of the question each would cover, screened by title and abstract and read in full, and each finding was extracted with the verbatim passages it rests on. An independent audit checked every finding against those passages.`,
-    lit.stopping ? `**Why the search stopped.** ${lit.stopping}` : '',
+    part('review-stopping'),
     // Each figure and table is referred to by the number it prints with.
     `**How the records were narrowed.** ${flowFigure ? `Figure ${numbers.figure} shows the flow of records, and Table ${numbers.table}` : `Table ${numbers.table}`} gives the count at each stage.`,
     flowFigure ? `![How the review narrowed its records: ${thousands(c.discovered)} found, ${thousands(c.screened)} screened, ${thousands(c.retrieved)} read in full, ${thousands(c.reviewed)} included.](${flowFigure}){#fig-review-flow width=85%}` : '',

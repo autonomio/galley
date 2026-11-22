@@ -11,8 +11,10 @@ export interface Glance {
   mode: 'paper' | 'thesis'
   running: boolean
   outcome: string | null
-  /** Finished: a paper ready for submission, or a thesis whose brief is written. */
+  /** Finished: a paper ready for submission or finished with defects open, or a thesis whose brief is written. */
   ready: boolean
+  /** Defects a reader would see that a finished paper's last reading left open. */
+  open?: number
   stage: { id: string, label: string }
   stages: { id: string, label: string, done: boolean }[]
   team: { seat: string, name: string, family: string | null, detail: string | null }[]
@@ -64,7 +66,7 @@ export function working(p: Glance): (Working & { count: number })[] {
 /** What there is to say when no one is at work. */
 export function quiet(p: Glance): string {
   const state = stateOf(p)
-  if (state === 'ready') return p.mode === 'thesis' ? `The brief is in the document${p.pdf ? ', with a PDF beside it' : ''}.` : 'Ready for submission. The sign-off is yours.'
+  if (state === 'ready') return p.mode === 'thesis' ? `The brief is in the document${p.pdf ? ', with a PDF beside it' : ''}.` : p.open ? `Finished, with ${plural(p.open, 'defect')} a reader would see still open. The sign-off lists them.` : 'Ready for submission. The sign-off is yours.'
   if (state === 'stopped') return 'The run has stopped; run it again to resume.'
   if (state === 'waiting') return `Waiting for ${p.waiting!.name} until ${new Date(p.waiting!.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`
   return 'Between steps.'

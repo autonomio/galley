@@ -29,6 +29,8 @@ interface Live {
   running: boolean
   outcome: string | null
   ready: boolean
+  /** Defects a reader would see that a finished paper's last reading left open. */
+  open?: number
   stage: { id: string, label: string }
   team: Member[]
   sections: { id: string, title: string, written: boolean }[]
@@ -327,7 +329,7 @@ export function livingPaper(store: DocumentStore, link?: Router): EditorPlugin {
       barDrawn = true
       const state = stateOf(l)
       stage.dataset.state = state
-      setText(stage, state === 'ready' ? (l.mode === 'thesis' ? 'Brief ready' : 'Ready for submission') : state === 'paused' ? 'Paused' : state === 'waiting' ? `Waiting until ${clock(l.waiting!.until)}` : l.stage.label)
+      setText(stage, state === 'ready' ? (l.mode === 'thesis' ? 'Brief ready' : l.open ? `Finished · ${l.open} open` : 'Ready for submission') : state === 'paused' ? 'Paused' : state === 'waiting' ? `Waiting until ${clock(l.waiting!.until)}` : l.stage.label)
       stage.title = state === 'running' ? `Writing · ${l.stage.label}` : stage.textContent ?? ''
       const fresh = l.activity.filter((e) => isNew(e, seen())).length
       setText(badge, fresh ? String(fresh) : '')
@@ -422,7 +424,7 @@ export function livingPaper(store: DocumentStore, link?: Router): EditorPlugin {
         setText(row.querySelector('p > span')!, n.doing)
         setText(row.querySelector('time')!, elapsed(n.seconds))
       }, how)
-      setText(quiet, state === 'ready' ? (l.mode === 'thesis' ? 'The brief is in the document.' : 'Ready for submission.') : state === 'paused' ? 'Not running.' : state === 'waiting' ? `Waiting for ${l.waiting!.name} until ${clock(l.waiting!.until)}.` : 'Between steps.')
+      setText(quiet, state === 'ready' ? (l.mode === 'thesis' ? 'The brief is in the document.' : l.open ? `Finished, with ${l.open} defect${l.open === 1 ? '' : 's'} open. The sign-off lists them.` : 'Ready for submission.') : state === 'paused' ? 'Not running.' : state === 'waiting' ? `Waiting for ${l.waiting!.name} until ${clock(l.waiting!.until)}.` : 'Between steps.')
 
       // Runs of one stage, numbered from the oldest so a run keeps its key as entries arrive; shown newest first.
       const runs: { key: string, stage: string, entries: Entry[] }[] = []

@@ -12,7 +12,11 @@ import { worldModelBlock } from '../worldmodel.js'
 
 export const now = () => new Date().toISOString()
 
-export const live = (paper: Paper) => !paper.state.outcome || paper.state.outcome === 'ready_for_submission'
+export const live = (paper: Paper) => !paper.state.outcome || finishedPaper(paper.state.outcome)
+/** A paper that ran to its end: ready, or finished with defects a reader would see still open. */
+export const finishedPaper = (outcome: string | null | undefined) => outcome === 'ready_for_submission' || outcome === 'finished_with_open_defects'
+/** A defect a reader would see as an error: P0 or P1, or one an earlier engine recorded without a severity. */
+export const serious = (d: { severity?: string }) => d.severity !== 'P2' && d.severity !== 'P3'
 
 export function seatFamily(paper: Paper, seat: Exclude<Seat, 'referee' | 'adjudicator'>): Family {
   return paper.config.seats[seat]

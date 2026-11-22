@@ -51,8 +51,10 @@ export interface LiveView {
   mode: 'paper' | 'thesis'
   running: boolean
   outcome: string | null
-  /** Finished: a paper ready for submission, or a thesis whose brief is written. */
+  /** Finished: a paper ready for submission or finished with defects open, or a thesis whose brief is written. */
   ready: boolean
+  /** Defects a reader would see that the last reading of a finished paper left open; 0 when it is ready. */
+  open: number
   stage: { id: string, label: string }
   stages: { id: string, label: string, done: boolean }[]
   /** Everyone at work on the paper, in a stable order, with the family behind each seat when known. */
@@ -224,7 +226,7 @@ function activity(s: PaperState, events: JournalEvent[], mode: 'paper' | 'thesis
       case 'reconcile': say(e, seat, 'read the final text against every claim.'); break
       case 'reprofile': say(e, seat, 'profiled the finished paper.'); break
       case 'typeset': say(e, 'galley', 'typeset the paper: PDF, LaTeX, Word, evidence package and sign-off sheet.'); break
-      case 'ready': say(e, 'galley', 'marked the paper ready for submission. The sign-off is yours.'); break
+      case 'ready': say(e, 'galley', s.outcome === 'finished_with_open_defects' ? `finished the paper with ${plural(openDefects(s), 'defect')} a reader would see still open. The sign-off lists them.` : 'marked the paper ready for submission. The sign-off is yours.'); break
       case 'formulate': say(e, seat, target.startsWith('revision') ? 'formulated the thesis again after its test.' : 'formulated the thesis.'); break
       case 'test-thesis': say(e, seat, 'tested the thesis against the literature, for its direction.'); break
       case 'thesis-brief': say(e, 'galley', pdf ? 'wrote the brief into the document, with a PDF beside it.' : 'wrote the brief into the document.'); break
@@ -275,13 +277,16 @@ function workingNotes(s: PaperState, config: { rounds?: number, literatureReview
   const test = s.thesis?.test
   if (s.thesis) note('thesis', 'Thesis', `${config.title || s.thesis.title || s.thesis.statement}${test ? ` · ${test.passes ? 'meets its test' : 'does not yet meet its test'}${test.searched === null ? ', without a novelty search' : ''}` : (config.off ?? []).includes('test-thesis') ? ' · not tested: the test is off for this run' : ' · being tested'}`, 'author')
   if (s.outcome === 'ready_for_submission') note('ready', 'Ready', 'Every gate holds on one revision. The sign-off is yours.', 'galley')
+  if (s.outcome === 'finished_with_open_defects') note('ready', 'Finished', `The last reading of the typeset paper left ${plural(openDefects(s), 'defect')} a reader would see that it could not fix. The sign-off lists them.`, 'galley')
   if (s.outcome === 'thesis_ready') note('ready', 'Ready', pdf ? 'The brief is in the document, with a PDF beside it.' : 'The brief is in the document; its PDF was not made.', 'galley')
   return notes
 }
 
 /** The title the seed gives itself, in its first heading, before the run has one of its own. */
 const seedTitle = (text: string | undefined) => text?.match(/^#{1,2}\s+(.+?)\s*#*\s*$/m)?.[1]?.trim() || null
-const finished = (outcome: string | null | undefined) => outcome === 'ready_for_submission' || outcome === 'thesis_ready'
+const finished = (outcome: string | null | undefined) => outcome === 'ready_for_submission' || outcome === 'finished_with_open_defects' || outcome === 'thesis_ready'
+/** What the last reading of a finished paper left open that a reader would see. */
+const openDefects = (s: PaperState) => s.outcome === 'finished_with_open_defects' ? (s.proof?.left ?? []).filter((d) => d.severity !== 'P2' && d.severity !== 'P3').length : 0
 
 /** Everything a host draws about a paper in progress. */
 export function liveView(dir: string, options: { limit?: number } = {}): LiveView | null {
@@ -334,7 +339,7 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
     { id: 'evidence', label: 'Evidence', done: done.has('calibrate') || (!!s.outline && Object.keys(s.passages).length > 0) },
     { id: 'draft', label: 'Draft', done: !!s.frame },
     { id: 'review', label: 'Review', done: done.has('reconcile') || !!s.outcome },
-    { id: 'finish', label: 'Finish', done: s.outcome === 'ready_for_submission' },
+    { id: 'finish', label: 'Finish', done: s.outcome === 'ready_for_submission' || s.outcome === 'finished_with_open_defects' },
   ]
   // A finished run stands at its last stage, whatever an earlier one recorded.
   const current = (finished(s.outcome) ? undefined : stages.find((x) => !x.done)) ?? stages[stages.length - 1]
@@ -366,6 +371,7 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
     running,
     outcome: s.outcome ?? null,
     ready: finished(s.outcome),
+    open: openDefects(s),
     stage: { id: current.id, label: mode === 'thesis' ? current.label : STAGE_LABEL[current.id] ?? current.label },
     stages,
     team,

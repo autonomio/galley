@@ -31,7 +31,7 @@ function together(names: string[]): string {
 
 function where(p: Glance): string {
   const state = stateOf(p)
-  if (state === 'ready') return p.mode === 'thesis' ? 'Brief ready' : 'Ready for submission'
+  if (state === 'ready') return p.mode === 'thesis' ? 'Brief ready' : p.open ? `Finished · ${p.open} open` : 'Ready for submission'
   const round = p.progress.review ? ` · Round ${p.progress.review.round} of ${p.progress.review.rounds}` : ''
   return `${state === 'stopped' ? 'Stopped · ' : state === 'waiting' ? 'Waiting · ' : ''}${p.stage.label}${round}`
 }

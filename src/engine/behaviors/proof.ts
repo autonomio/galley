@@ -9,14 +9,16 @@
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { blockText, sourceDigest, type PrintedBlock } from '../blocks.js'
+import { reviewBlocks } from '../literature.js'
 import type { Paper } from '../paper.js'
 import { HOUSE } from '../prompts.js'
 import { fillPlaceholders, productionRecord, type Record_ } from '../record.js'
-import { contentHash, writeSignoff } from '../render.js'
+import { availabilityBlock, contentHash, FIGURE_WIDTHS, TABLE_LEVELS, tableKey, writeSignoff } from '../render.js'
 import type { Behavior } from '../scheduler.js'
-import { arr, enm, int, nstr, obj, str } from '../schema.js'
+import { arr, bool, enm, int, nstr, obj, str } from '../schema.js'
 import { applyExact, citedKeys, squash } from '../text.js'
-import type { ProofDefect } from '../types.js'
+import type { ProofDefect, Work } from '../types.js'
 import { reviewDone } from './close.js'
 import { activeClaims, live, manuscriptBlock, noteForAuthors, seatFamily, sectionText, setClaim } from './common.js'
 import { storyReadDone } from './story.js'
@@ -75,8 +77,16 @@ async function pagesOf(paper: Paper): Promise<{ text: string[]; images: string[]
 }
 
 const WHERE = ['section text', 'figure', 'table', 'equation', 'references', 'front matter', 'appendix', 'other'] as const
-/** Who can fix a defect: the words of a section, the figure itself, the claim ledger, or none of the agents (layout, references, the generated parts). */
-const FIX_IN = ['prose', 'figure', 'ledger', 'other'] as const
+/**
+ * Who can fix a defect: the words of a section, the figure itself, how a table or figure is set on its page, a part the
+ * system writes from its records (the review's protocol, the availability statement), the claim ledger, or else none.
+ */
+const FIX_IN = ['prose', 'figure', 'layout', 'generated', 'ledger', 'other'] as const
+const SEVERITY = ['P0', 'P1', 'P2', 'P3'] as const
+/** Where a defect is not in the body's text: no section's words are on its page. */
+const BACK = ['appendix', 'references', 'front matter']
+/** A defect in how a table or a figure sits on its page, however a reader classed it. */
+const LAYOUT = /overlap|overprint|collid|cut off|clipped|overflow|overrun|runs? (?:off|past|into)|(?:past|beyond) the (?:page|margin|edge|bottom)|separated from|stranded|apart from/i
 
 /** The section whose printed text holds a quote: matched on the text as printed, with its numbers filled in. */
 function sectionOf(paper: Paper, quote: string, record: Record_): string | null {
@@ -87,22 +97,41 @@ function sectionOf(paper: Paper, quote: string, record: Record_): string | null 
     if (squash(section.filled).includes(q) || squash(section.raw).includes(q)) return section.id
   }
   // A quote from the printed page differs from the source where a citation, a cross-reference or mathematics is
-  // printed: it comes from the section that holds the longest run of its words, when that run is long enough to tell
-  // and no other section holds one as long.
+  // printed: it comes from the section that holds the longest run of its words.
+  return longestRun(quote, sections.map((section) => ({ id: section.id, text: section.filled })))
+}
+
+/** Of several texts, the one holding the longest run of a quote's words, when that run is long enough to tell and no other text holds one as long. */
+function longestRun(quote: string, texts: { id: string; text: string }[]): string | null {
   const words = plainWords(quote)
   let best: { id: string | null; run: number } = { id: null, run: 0 }
-  for (const section of sections) {
-    const hay = ` ${plainWords(section.filled).join(' ')} `
+  for (const candidate of texts) {
+    const hay = ` ${plainWords(candidate.text).join(' ')} `
     let run = 0
     for (let i = 0; i < words.length && words.length - i > run; i++) {
       let j = i
       while (j < words.length && hay.includes(` ${words.slice(i, j + 1).join(' ')} `)) j++
       run = Math.max(run, j - i)
     }
-    if (run > best.run) best = { id: section.id, run }
+    if (run > best.run) best = { id: candidate.id, run }
     else if (run === best.run) best = { id: null, run }
   }
   return best.run >= Math.min(6, Math.max(3, Math.ceil(words.length * 0.6))) ? best.id : null
+}
+
+/** The parts the system prints from its records, as this paper prints them. */
+export function printedBlocks(paper: Paper): PrintedBlock[] {
+  // The availability statement the authors declared themselves is theirs, not the system's.
+  return [...reviewBlocks(paper), ...(paper.config.declarations?.availability?.trim() ? [] : [availabilityBlock(paper)])]
+}
+
+/** The part a quote is printed in, by its words. */
+function blockOf(paper: Paper, blocks: PrintedBlock[], quote: string): PrintedBlock | null {
+  const q = squash(quote)
+  if (!q) return null
+  const texts = blocks.map((block) => ({ id: block.id, text: blockText(paper, block) }))
+  const id = texts.find((t) => squash(t.text).includes(q))?.id ?? longestRun(quote, texts)
+  return blocks.find((block) => block.id === id) ?? null
 }
 
 /** A text's words, as a reader sees them: no citation keys, no mathematics, no markup or punctuation. */
@@ -235,27 +264,29 @@ You are the production editor. Below is the typeset paper as a reader will see i
 - tables that overflow the page or break apart;
 - an entry of the claim ledger appendix that says something the printed text does not (a result it does not report, a method it does not carry out);
 - missing, duplicated or misnumbered headings; a reference list with broken entries.
-Do not judge the science, the argument or the prose style; other steps do that. A figure or table set at the top or bottom of a page, with the text running on around it and past it, sits where typeset papers place them: do not report its position. The byline, affiliations and date are as the authors gave them: do not report them. For each defect give page, where (${WHERE.join(', ')}), quote (the exact printed text it concerns, or the figure's number), problem, fix (what the printed page should show instead), and fix_in: prose when the words of a section must change, figure when the figure itself must be drawn again, ledger for an entry of the claim ledger, other for anything else (layout, references, front matter, the production record). If the paper prints cleanly, return no defects.
+Do not judge the science, the argument or the prose style; other steps do that. A figure or table set at the top or bottom of a page, with the text running on around it and past it, sits where typeset papers place them: do not report its position. The byline, affiliations and date are as the authors gave them: do not report them. For each defect give page, where (${WHERE.join(', ')}), quote (the exact printed text it concerns, or the figure's or the table's number), problem, fix (what the printed page should show instead), severity and fix_in.
+severity: P0 when the page prints what must never be printed (an instruction, a working note, a placeholder, a raw label) or states something wrong; P1 when a reader would see an error: text overprinted or cut off, a table or a caption apart from its body, a broken cross-reference, a garbled reference entry, an author's name printed wrongly or in two forms, a statement at odds with a table or figure of the paper; P2 for what a careful copy editor would fix; P3 for a matter of taste. A paragraph, a table or a reference entry that runs on onto the next page is printed as typeset papers are: P3 at most.
+fix_in: prose when the words of a section must change, also when what a section says disagrees with a table or figure it describes; figure when the figure itself must be drawn again; layout when a table, a figure or its caption does not fit its page (overprinted, cut off, run past the page, apart from its caption); generated for the words of a part the system writes from its records (the literature review's protocol, the data and code availability statement, the production record); ledger for an entry of the claim ledger; other for anything else (references, front matter). If the paper prints cleanly, return no defects.
 
 ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page}`).join('\n\n') : source}`,
-          schema: obj({ defects: arr(obj({ page: int(), where: enm([...WHERE]), quote: str(), problem: str(), fix: str(), fix_in: enm([...FIX_IN]) })) }),
+          schema: obj({ defects: arr(obj({ page: int(), where: enm([...WHERE]), quote: str(), problem: str(), fix: str(), severity: enm([...SEVERITY]), fix_in: enm([...FIX_IN]) })) }),
         })
-        const defects: Found[] = (reply.defects ?? []).map((d: any) => ({ page: Number(d.page) || null, where: d.where, quote: String(d.quote ?? ''), problem: String(d.problem ?? ''), fix: String(d.fix ?? ''), by: 'reader' as const, fixIn: FIX_IN.includes(d.fix_in) ? d.fix_in : 'other' }))
+        const defects: Found[] = (reply.defects ?? []).map((d: any) => ({ page: Number(d.page) || null, where: d.where, quote: String(d.quote ?? ''), problem: String(d.problem ?? ''), fix: String(d.fix ?? ''), by: 'reader' as const, severity: SEVERITY.includes(d.severity) ? d.severity : 'P1', fixIn: FIX_IN.includes(d.fix_in) ? d.fix_in : 'other' }))
         // What no page may show is checked mechanically too, in the printed text and in every figure's source.
         const printed = pages.text.length ? pages.text.join('\n') : source
         for (const d of printedDefects(printed)) {
           if (defects.some((x) => x.quote.includes(d.quote))) continue
           const inProse = !!sectionOf(paper, d.context, record)
-          defects.push({ page: null, where: inProse ? 'section text' : 'other', quote: d.context, problem: d.problem, fix: 'remove it, or write what it stands for', by: 'check', fixIn: inProse ? 'prose' : 'other' })
+          defects.push({ page: null, where: inProse ? 'section text' : 'other', quote: d.context, problem: d.problem, fix: 'remove it, or write what it stands for', by: 'check', severity: 'P0', fixIn: inProse ? 'prose' : 'other' })
         }
         for (const fig of s.figures.filter((f) => f.status === 'rendered' && f.source)) {
-          for (const d of printedDefects(fig.source!)) defects.push({ page: null, where: 'figure', quote: fig.caption.slice(0, 80), problem: `${d.problem} in the figure: ${d.quote}`, fix: 'draw the figure with the value itself', by: 'check', figureId: fig.id, fixIn: 'figure' })
+          for (const d of printedDefects(fig.source!)) defects.push({ page: null, where: 'figure', quote: fig.caption.slice(0, 80), problem: `${d.problem} in the figure: ${d.quote}`, fix: 'draw the figure with the value itself', by: 'check', severity: 'P0', figureId: fig.id, fixIn: 'figure' })
         }
         // The text never doubts itself or talks about its own making: each such sentence goes, and what it said is kept
         // for the authors beside the text.
         for (const sec of s.outline?.sections ?? []) {
           for (const sentence of selfTalk(sectionText(paper, sec.id), !!s.brief?.aboutSystem)) {
-            defects.push({ page: null, where: 'section text', quote: sentence, problem: 'The text doubts itself or remarks on how it was produced or reviewed.', fix: 'Remove the sentence, or state the point it makes about the work plainly without the remark.', by: 'check', fixIn: 'prose' })
+            defects.push({ page: null, where: 'section text', quote: sentence, problem: 'The text doubts itself or remarks on how it was produced or reviewed.', fix: 'Remove the sentence, or state the point it makes about the work plainly without the remark.', by: 'check', severity: 'P1', fixIn: 'prose' })
             noteForAuthors(paper, { sectionId: sec.id, quote: '', text: `Taken out of the text: "${sentence}"`, kind: 'caution', seat: 'checker', family: checker, behavior: 'proof' })
           }
         }
@@ -266,13 +297,13 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
         // leaves the reader of that section without it.
         shown.forEach((fig, i) => {
           if (calledOut(sectionText(paper, fig.sectionId), i + 1) || defects.some((d) => CALLOUT.test(d.problem) && figureOf(paper, d, shown) === fig.id)) return
-          defects.push({ page: null, where: 'figure', quote: `Figure ${i + 1}`, problem: `Figure ${i + 1} is never referred to in the section that discusses what it shows.`, fix: `Refer to it as Figure ${i + 1} in the sentence of that section that discusses what it shows.`, by: 'check', figureId: fig.id, fixIn: 'prose' })
+          defects.push({ page: null, where: 'figure', quote: `Figure ${i + 1}`, problem: `Figure ${i + 1} is never referred to in the section that discusses what it shows.`, fix: `Refer to it as Figure ${i + 1} in the sentence of that section that discusses what it shows.`, by: 'check', severity: 'P2', figureId: fig.id, fixIn: 'prose' })
         })
         // So is a table the sections print: it is numbered in the order the sections print them.
         const tables = printedTables(paper)
         tables.forEach((table, i) => {
           if (calledOut(sectionText(paper, table.sectionId), i + 1, 'table') || defects.some((d) => CALLOUT.test(d.problem) && /\btable\b/i.test(`${d.quote} ${d.problem}`) && tableOf(d) === i)) return
-          defects.push({ page: null, where: 'table', quote: `Table ${i + 1}`, problem: `Table ${i + 1}${table.caption ? ` (${table.caption.slice(0, 80)})` : ''} is never referred to in the section it is printed in.`, fix: `Refer to it as Table ${i + 1} in the sentence that introduces what it shows.`, by: 'check', tableSection: table.sectionId, fixIn: 'prose' })
+          defects.push({ page: null, where: 'table', quote: `Table ${i + 1}`, problem: `Table ${i + 1}${table.caption ? ` (${table.caption.slice(0, 80)})` : ''} is never referred to in the section it is printed in.`, fix: `Refer to it as Table ${i + 1} in the sentence that introduces what it shows.`, by: 'check', severity: 'P2', tableSection: table.sectionId, fixIn: 'prose' })
         })
 
         const rounds = (s.proof?.rounds ?? 0) + 1
@@ -284,6 +315,12 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
           const prose = new Map<string, Found[]>()
           const ledger: Found[] = []
           const references: Found[] = []
+          // The parts the system prints from its records, each found by the words a reader quotes from it, and what
+          // this reading sends back to be written again from them.
+          const blocks = printedBlocks(paper)
+          const generated = new Map<string, Found[]>()
+          // A table or figure set one step further to fit its page is set so once in a reading, however many defects name it.
+          const refit = new Set<string>()
           for (const d of defects) {
             const fig = d.fixIn === 'figure' || d.where === 'figure' ? figureOf(paper, d, shown) : null
             // A figure is drawn again on any reading that can still fix things: the reading after it, the recording one at
@@ -296,9 +333,25 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
               if (figure.status !== 'planned') figure.redraws = (figure.redraws ?? 0) + 1
               figure.status = 'planned'
               fixed++
-            } else if (d.fixIn === 'ledger') ledger.push(d)
-            else if (d.where === 'references') references.push(d)
-            else if (d.fixIn === 'prose' || d.where === 'equation') {
+              continue
+            }
+            if (d.fixIn === 'ledger') { ledger.push(d); continue }
+            if (d.where === 'references') { references.push(d); continue }
+            // How a table or a figure sits on its page is the typesetting's to fix: it is set one step further to fit.
+            if (d.fixIn === 'layout' || (d.fixIn === 'other' && (d.where === 'table' || d.where === 'figure') && LAYOUT.test(d.problem))) {
+              if (setToFit(paper, d, fig, pages.text, refit)) fixed++
+              else left.push(keep(d))
+              continue
+            }
+            // Words the system printed from its records are written again from those records; a section's words are its
+            // author's.
+            const inSection = sectionOf(paper, d.quote, record)
+            const block = inSection ? null : blockOf(paper, blocks, d.quote)
+            if (block && d.fixIn !== 'figure') {
+              generated.set(block.id, [...(generated.get(block.id) ?? []), d])
+              continue
+            }
+            if (d.fixIn === 'prose' || d.where === 'equation') {
               // A missing callout or a wrong cross-reference has no quote in the prose: it belongs to the figure's or the
               // table's own section. A display equation is the section's own source, though printed it reads unlike it:
               // it is found by the page it is printed on.
@@ -307,8 +360,9 @@ ${pages.text.length ? pages.text.map((page, i) => `--- page ${i + 1} ---\n${page
               // number is printed: such a defect, a missing callout above all, goes to the figure's or the table's own section.
               const bare = /^(?:fig(?:ure)?|table)\.?\s*\d+\.?$/i.test(d.quote.trim())
               const own = d.tableSection ?? table ?? (fig ? s.figures.find((f) => f.id === fig)?.sectionId ?? null : null)
-              const section = (bare ? null : sectionOf(paper, d.quote, record)) ?? own
-                ?? sectionsOnPage(paper, pages.text, d.page).find((id) => d.where !== 'equation' || sectionText(paper, id).includes('$$')) ?? null
+              // The page tells the section only in the body: an appendix's or the references' page holds no section's words.
+              const onPage = BACK.includes(d.where) ? [] : sectionsOnPage(paper, pages.text, d.page)
+              const section = (bare ? null : inSection) ?? own ?? onPage.find((id) => d.where !== 'equation' || sectionText(paper, id).includes('$$')) ?? null
               if (section) prose.set(section, [...(prose.get(section) ?? []), d])
               else left.push(keep(d))
             } else left.push(keep(d))
@@ -357,6 +411,7 @@ ${text}
           }
           if (ledger.length) fixed += await restateLedger(paper, hash, ledger, record, left)
           if (references.length) fixed += await correctReferences(paper, hash, references, left)
+          if (generated.size) fixed += await rewriteBlocks(paper, hash, generated, blocks, left)
         }
         s.proof = { rounds, hash, defects: defects.map(keep), fixed: (s.proof?.fixed ?? 0) + fixed, left }
         paper.journal({ event: 'proof', hash, round: rounds, defects: defects.length, fixed, left: left.length, images: seesImages ? pages.images.length : 0 })
@@ -366,6 +421,128 @@ ${text}
       },
     }]
   },
+}
+
+/** The tables the typeset paper printed, in the order they are numbered, each by its header row: only a table with a caption is numbered. */
+function printedTableKeys(paper: Paper): string[] {
+  const path = paper.path('out', 'manuscript.md')
+  if (!existsSync(path)) return []
+  const lines = readFileSync(path, 'utf8').split('\n')
+  const row = /^\|.*\|\s*$/
+  const caption = /^(?:Table)?:\s/
+  const keys: string[] = []
+  for (let i = 0; i < lines.length; i++) {
+    if (!row.test(lines[i]) || !/^\|(?:\s*:?-+:?\s*\|)+\s*$/.test(lines[i + 1] ?? '') || row.test(lines[i - 1] ?? '')) continue
+    let after = i + 2
+    while (after < lines.length && row.test(lines[after])) after++
+    while (after < lines.length && !lines[after].trim()) after++
+    let before = i - 1
+    while (before >= 0 && !lines[before].trim()) before--
+    if (caption.test(lines[after] ?? '') || caption.test(lines[before] ?? '')) keys.push(tableKey(lines[i]))
+  }
+  return keys
+}
+
+/** The table whose caption a page prints, when a reader names none: on that page, or on the one after or before it. */
+function tableOnPage(pages: string[], page: number | null): number {
+  for (const p of page ? [page, page + 1, page - 1] : []) {
+    const m = pages[p - 1]?.match(/^\s*Table\s+(\d+)\s*[:.]/m)
+    if (m) return Number(m[1]) - 1
+  }
+  return -1
+}
+
+/**
+ * Sets a table or a figure a reading found not to fit its page one step further: a table in smaller type, then on a
+ * page turned to landscape, then both; a figure narrower, so it and its caption fit. False when there is no step left.
+ */
+function setToFit(paper: Paper, d: Found, fig: string | null, pages: string[], refit: Set<string>): boolean {
+  const s = paper.state
+  if (d.where === 'figure') {
+    if (!fig) return false
+    if (refit.has(`figure:${fig}`)) return true
+    const level = s.layout?.figures?.[fig] ?? 0
+    if (level >= FIGURE_WIDTHS.length - 1) return false
+    s.layout = { ...s.layout, figures: { ...s.layout?.figures, [fig]: level + 1 } }
+    refit.add(`figure:${fig}`)
+    return true
+  }
+  const n = tableOf(d) >= 0 ? tableOf(d) : tableOnPage(pages, d.page)
+  const key = printedTableKeys(paper)[n]
+  if (!key) return false
+  if (refit.has(`table:${key}`)) return true
+  const level = s.layout?.tables?.[key] ?? 0
+  if (level >= TABLE_LEVELS.length) return false
+  s.layout = { ...s.layout, tables: { ...s.layout?.tables, [key]: level + 1 } }
+  refit.add(`table:${key}`)
+  return true
+}
+
+/**
+ * Parts the system printed from its records that a reader found printed wrongly are written again by the author family
+ * from the same records, as the paper's own text, and another family checks the new text against them. Returns how
+ * many defects the accepted texts fix; the rest are left for the authors.
+ */
+async function rewriteBlocks(paper: Paper, hash: string, found: Map<string, Found[]>, blocks: PrintedBlock[], left: ProofDefect[]): Promise<number> {
+  const strip = ({ fixIn: _, tableSection: __, ...d }: Found): ProofDefect => d
+  const author = seatFamily(paper, 'author')
+  const checker = seatFamily(paper, 'checker')
+  let fixed = 0
+  for (const [id, defects] of found) {
+    const block = blocks.find((b) => b.id === id)
+    if (!block) { left.push(...defects.map(strip)); continue }
+    const current = blockText(paper, block)
+    const listed = defects.map((d, i) => `${i + 1}. "${d.quote}": ${d.problem} Fix: ${d.fix}`).join('\n')
+    const records = JSON.stringify(block.source, null, 2)
+    const answer = await paper.ask<any>({
+      behavior: 'proof', target: `${hash}:block:${id}`, seat: 'author', family: author,
+      prompt: `${HOUSE}
+
+The system prints ${block.label} from the records below. A reader of the typeset paper found these defects in it:
+${listed}
+
+Write it again from its records, as the paper's own text in the register of the rest of the paper. State what the records say, in sentences a reader of the paper understands. Records written for the agents that did the work (an instruction to them, a working note, a log, shorthand) are reported as what was done or decided, never as an instruction. Keep every fact of the current text that the records hold, and add none they do not hold. Keep its bold lead-in, and every citation exactly as it is written ([@key]).
+
+CURRENT TEXT:
+"""
+${current}
+"""
+
+RECORDS:
+${records}`,
+      schema: obj({ text: str() }),
+    })
+    const text = String(answer.text ?? '').trim()
+    const keys = new Set(citedKeys(current))
+    if (!text || text === current || citedKeys(text).some((k) => !keys.has(k))) { left.push(...defects.map(strip)); continue }
+    const check = await paper.ask<any>({
+      behavior: 'proof', target: `${hash}:block:${id}:check`, seat: 'checker', family: checker,
+      prompt: `${HOUSE}
+
+The system printed ${block.label} as the current text below, from the records below. A reader found these defects in it:
+${listed}
+
+The author has written it again as the new text. Is the new text faithful: does it state only what the records hold, keep every fact of the current text that the records hold, and fix each defect? If not, say what is wrong.
+
+CURRENT TEXT:
+"""
+${current}
+"""
+
+NEW TEXT:
+"""
+${text}
+"""
+
+RECORDS:
+${records}`,
+      schema: obj({ faithful: bool(), problem: str() }),
+    })
+    if (check.faithful !== true) { left.push(...defects.map(strip)); continue }
+    paper.state.blocks = { ...paper.state.blocks, [id]: { text, source: sourceDigest(block.source), family: author } }
+    fixed += defects.length
+  }
+  return fixed
 }
 
 /**
@@ -435,17 +612,21 @@ async function correctReferences(paper: Paper, hash: string, found: Found[], lef
     prompt: `${HOUSE}
 
 A reader of the typeset paper found these entries of its reference list printed wrongly. The list is typeset in Chicago author-date style from the citation records below. For each defect, give the record it concerns (id) and how to correct that record so its entry prints as the publication it is: fields to set and fields to remove. A value you set must already be in that record, moved from another field, copied from a field the style does not print, or taken from what the index says of a work that has no registry record (its index: the opening of its abstract and its author's institution, as where a thesis was written); only type may take any of these values: ${CSL_TYPES.join(', ')}. Never invent a title, volume, page, editor, publisher or venue. Where the record does not hold what is missing, remove what prints wrongly. Fields you may set or remove: ${RECORD_FIELDS.join(', ')}. A defect no record can fix gets no correction.
+An author's name printed wrongly (given and family names swapped, a name cut short, one person printed in two forms in different entries) is corrected by giving all of that record's authors, in order, each as family and given, with name parts that already appear: in that record, in the authors its index lists (index_authors), or in another entry of this list for the same person. Give authors only to correct a name; otherwise leave them empty.
 
 DEFECTS:
 ${found.map((d, i) => `${i + 1}. "${d.quote}": ${d.problem}`).join('\n')}
 
 RECORDS:
-${printed.map((r) => { const raw = works.get(String(r.id))?.csl; const index = indexed(r.id); return JSON.stringify({ ...r, ...(raw ? { registry: published(raw) } : {}), ...(index ? { index } : {}) }) }).join('\n')}`,
-    schema: obj({ corrections: arr(obj({ defect: int(), id: str(), set: arr(obj({ field: str(), value: str() })), remove: arr(str()) })) }),
+${printed.map((r) => { const work = works.get(String(r.id)); const raw = work?.csl; const index = indexed(r.id); return JSON.stringify({ ...r, ...(raw ? { registry: published(raw) } : {}), ...(index ? { index } : {}), ...(work?.authors.length ? { index_authors: work.authors } : {}) }) }).join('\n')}`,
+    schema: obj({ corrections: arr(obj({ defect: int(), id: str(), set: arr(obj({ field: str(), value: str() })), remove: arr(str()), authors: arr(obj({ family: str(), given: str() })) })) }),
   })
   const corrected = new Set<number>()
   // What the index says of each work, as the reader was shown it before any record changed.
   const shownIndex = new Map(printed.map((r) => [String(r.id), indexed(r.id)]))
+  // Every name part the paper's records hold, as each was shown before any record changed: an author's name is
+  // corrected only with these, so no name is invented.
+  const names = namesHeld(printed, [...works.values()])
   for (const fix of reply.corrections ?? []) {
     const n = Number(fix.defect)
     const work = works.get(String(fix.id))
@@ -465,6 +646,15 @@ ${printed.map((r) => { const raw = works.get(String(r.id))?.csl; const index = i
       delete record[field]
       changes.push(`remove ${field}`)
     }
+    // The same people, in the same order, each named only with parts the records hold.
+    const authors: { family: string; given: string }[] = (fix.authors ?? []).map((a: any) => ({ family: String(a?.family ?? '').trim(), given: String(a?.given ?? '').trim() }))
+    const people = Array.isArray(record.author) ? record.author as Record<string, unknown>[] : []
+    const held = (part: string) => part.split(/\s+/).every((word) => names.has(nameKey(word))) || names.has(nameKey(part))
+    if (authors.length && authors.length === people.length && authors.every((a) => a.family && held(a.family) && (!a.given || held(a.given)))
+      && authors.some((a, i) => a.family !== people[i].family || a.given !== (people[i].given ?? ''))) {
+      record.author = authors.map((a) => (a.given ? { family: a.family, given: a.given } : { family: a.family }))
+      changes.push('set author')
+    }
     if (!changes.length) continue
     work.csl = record
     work.corrected = [...(work.corrected ?? []), ...changes]
@@ -472,4 +662,26 @@ ${printed.map((r) => { const raw = works.get(String(r.id))?.csl; const index = i
   }
   found.forEach((d, i) => { if (!corrected.has(i + 1)) left.push(strip(d)) })
   return corrected.size
+}
+
+/** A name part as the records are compared: its letters, without case or spacing. */
+const nameKey = (part: string) => squash(part).toLowerCase()
+
+/** Every name part the reference list and the paper's records hold: each family and given name, and each word of them, with every two words side by side. */
+function namesHeld(printed: Record<string, unknown>[], works: Work[]): Set<string> {
+  const held = new Set<string>()
+  const add = (text: unknown) => {
+    const name = nameKey(String(text ?? ''))
+    if (!name) return
+    held.add(name)
+    const words = name.split(/\s+/)
+    words.forEach((word, i) => { held.add(word); if (words[i + 1]) held.add(`${word} ${words[i + 1]}`) })
+  }
+  const people = (list: unknown) => (Array.isArray(list) ? list : []) as Record<string, unknown>[]
+  for (const entry of printed) for (const p of people(entry.author)) { add(p.family); add(p.given); add(p.literal) }
+  for (const work of works) {
+    for (const p of people(work.csl?.author)) { add(p.family); add(p.given) }
+    for (const name of work.authors ?? []) add(name)
+  }
+  return held
 }

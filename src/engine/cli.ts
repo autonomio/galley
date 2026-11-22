@@ -32,6 +32,7 @@ import { discover, parseConnectionLine, publicConnection, readConnections, type 
 import { datasetFromRecord, isDatasetRecord, readRecord } from './records.js'
 import { keepWorldModel, loadWorldModelFile, worldModelName, worldModelSummary } from './worldmodel.js'
 import { reviewDone } from './behaviors/close.js'
+import { finishedPaper, serious } from './behaviors/common.js'
 import { REVIEW_SETTINGS } from './literature.js'
 import type { Family } from './types.js'
 
@@ -123,7 +124,7 @@ function statusData(paper: Paper): Record<string, unknown> {
     ...(paper.config.literatureReview ? [['literature', 'Literature', s.literature?.status === 'done' || s.literature?.status === 'failed'] as [string, string, boolean]] : []),
     ['draft', 'Draft', !!s.frame],
     ['review', 'Review', !!s.frame && reviewDone(paper)],
-    ['finish', 'Finish', s.outcome === 'ready_for_submission'],
+    ['finish', 'Finish', finishedPaper(s.outcome)],
   ]
   let running = false
   let now: { doing: string; who: string; seconds: number }[] = []
@@ -156,6 +157,8 @@ function statusData(paper: Paper): Record<string, unknown> {
     mode: paper.config.mode ?? 'paper',
     ...(paper.config.mode === 'thesis' ? { stance: paper.config.stance ?? 'extend', thesis: s.thesis ? { statement: s.thesis.statement, passes: s.thesis.test?.passes ?? null, searched: s.thesis.test?.searched, testOff: paper.config.off.includes('test-thesis') } : null } : {}),
     outcome: s.outcome ?? null,
+    // What the last reading of a finished paper left open that a reader would see.
+    open: s.outcome === 'finished_with_open_defects' ? (s.proof?.left ?? []).filter(serious).length : 0,
     running,
     startedAt: s.createdAt,
     stages: stages.map(([id, label, done]) => ({ id, label, done })),

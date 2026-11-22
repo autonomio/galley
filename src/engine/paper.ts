@@ -139,7 +139,7 @@ export class Paper {
     // An earlier engine marked a finding "noted" when its referee still disagreed. No finding is dropped now, so in a
     // paper that is still being worked on such a finding is open again, for escalation, adjudication or a stated
     // limitation to settle. A finding a person set aside stays theirs.
-    if (!state.outcome || state.outcome === 'ready_for_submission') {
+    if (!state.outcome || state.outcome === 'ready_for_submission' || state.outcome === 'finished_with_open_defects') {
       for (const f of state.findings ?? []) if (f.status === 'noted' && f.assignee !== 'humans') f.status = 'open'
     }
     // An earlier engine sent a figure back to be drawn again under its first drawing's step, which was settled, so it

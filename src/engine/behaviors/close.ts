@@ -6,7 +6,7 @@ import { contentHash, typeset as render } from '../render.js'
 import type { Behavior, Target } from '../scheduler.js'
 import { arr, enm, int, nstr, obj, str } from '../schema.js'
 import type { Calibration, Citation } from '../types.js'
-import { activeClaims, claim, live, manuscriptBlock, seatFamily, setClaim } from './common.js'
+import { activeClaims, claim, live, manuscriptBlock, seatFamily, serious, setClaim } from './common.js'
 import { isNarrowing } from './truth.js'
 import { toReview } from './front.js'
 import { resolved } from './review.js'
@@ -275,8 +275,11 @@ export const ready: Behavior = {
     return [{
       key: 'ready:paper', label: 'every gate on one revision',
       run: async () => {
-        s.outcome = 'ready_for_submission'
-        paper.journal({ event: 'outcome', outcome: s.outcome })
+        // Ready only when the last reading of the typeset paper left nothing a reader would see as an error. Otherwise
+        // the run still ends, and says so: what is still open is on the sign-off sheet.
+        const open = paper.config.off.includes('proof') ? [] : (s.proof?.left ?? []).filter(serious)
+        s.outcome = open.length ? 'finished_with_open_defects' : 'ready_for_submission'
+        paper.journal({ event: 'outcome', outcome: s.outcome, ...(open.length ? { open: open.length } : {}) })
         paper.save()
       },
     }]

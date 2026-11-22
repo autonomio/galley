@@ -290,7 +290,7 @@ export interface Calibration {
   details: { kind: string; caught: boolean; family: Family }[]
 }
 
-export type Outcome = 'ready_for_submission' | 'no_subject' | 'no_contribution' | 'thesis_not_supported' | 'thesis_ready'
+export type Outcome = 'ready_for_submission' | 'finished_with_open_defects' | 'no_subject' | 'no_contribution' | 'thesis_not_supported' | 'thesis_ready'
 
 /** An agent's change that waits for a person: shown in the editor with Accept and Decline. */
 export interface Proposal {
@@ -372,6 +372,9 @@ export interface DataAnalysis {
 }
 
 /** A printing defect found in the typeset paper: by the reader (a model reading the pages) or by the mechanical check. */
+/** How much a defect matters to a reader: P0 and P1 are errors a reader would see, P2 and P3 are for a copy editor. */
+export type Severity = 'P0' | 'P1' | 'P2' | 'P3'
+
 export interface ProofDefect {
   page: number | null
   where: 'section text' | 'figure' | 'table' | 'equation' | 'references' | 'front matter' | 'appendix' | 'other'
@@ -379,6 +382,8 @@ export interface ProofDefect {
   problem: string
   fix: string
   by: 'reader' | 'check'
+  /** How much it matters. A defect an earlier engine recorded has none, and counts as serious. */
+  severity?: Severity
   /** The figure it was found in, when the check read that figure's own source. */
   figureId?: string
 }
@@ -470,6 +475,13 @@ export interface PaperState {
   editorResolved?: string[]
   /** The typeset review: how many readings, what the last one found, how many defects were fixed and what is left for a person. */
   proof?: { rounds: number; hash: string; defects: ProofDefect[]; fixed: number; left: ProofDefect[] }
+  /**
+   * A part the system prints from its records (the review's protocol, the availability statement), written again by the
+   * author family after a reading found it printed wrongly: kept for the records it was written from.
+   */
+  blocks?: Record<string, { text: string; source: string; family: Family }>
+  /** How a table (by its header row) or a figure (by its id) is set, once a reading found it did not fit the page. */
+  layout?: { tables?: Record<string, number>; figures?: Record<string, number> }
   /** Works the text names, cited where they are named (placed), or listed without a place when the quote was not found. */
   named?: { workId: string; quote: string; sectionId: string; placed: boolean }[]
   /** Names of works the text gives that no source could be found for: on the sign-off sheet. */

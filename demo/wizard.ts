@@ -677,6 +677,8 @@ interface StatusData {
   title: string | null
   seedTitle: string
   outcome: string | null
+  /** Defects a reader would see that a finished paper's last reading left open. */
+  open?: number
   running: boolean
   startedAt: string
   stages: { id: string; label: string; done: boolean }[]
@@ -759,8 +761,12 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
     const current = d.stages.findIndex((s) => !s.done)
     const isThesis = d.mode === 'thesis'
     const done = d.outcome === 'ready_for_submission' || d.outcome === 'thesis_ready'
+    // A paper that finished with defects a reader would see still open says so, and how many.
+    const withOpen = d.outcome === 'finished_with_open_defects'
     const state = done
       ? h('p', { class: 'gw-state is-done' }, h('span', { class: 'gw-state-mark', 'aria-hidden': 'true', text: '✓' }), isThesis ? 'Ready: the brief is in this document' : 'Ready for submission')
+      : withOpen
+      ? h('p', { class: 'gw-state is-stopped' }, h('span', { class: 'gw-state-mark', 'aria-hidden': 'true', text: '!' }), `Finished, with ${d.open ?? 0} defect${d.open === 1 ? '' : 's'} open: the sign-off lists them`)
       : d.running
         ? h('p', { class: 'gw-state' }, h('span', { class: 'gw-lamp', 'aria-hidden': 'true' }), `Running · ${d.stages[current]?.label ?? 'Finishing'}`)
         : h('p', { class: 'gw-state is-stopped' }, h('span', { class: 'gw-state-mark', 'aria-hidden': 'true', text: '‖' }), d.outcome ? `Ended: ${d.outcome.replace(/_/g, ' ')}` : 'Not running')

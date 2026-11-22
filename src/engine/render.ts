@@ -7,6 +7,7 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, s
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { claim, keyFor, ledgerAppendix } from './behaviors/common.js'
+import { blockText, type PrintedBlock } from './blocks.js'
 import { FAMILY_NAMES, lightName, lightSpecFor } from './config.js'
 import { bareTitle, cleanCsl, completeByTitle, cslForDoi, cslFromWork, titleWords } from './evidence.js'
 import type { Paper } from './paper.js'
@@ -244,6 +245,13 @@ export function conventions(text: string): string {
 // A table taller than this, as estimated from its cells, breaks across pages instead of floating whole.
 const TALL_TABLE_CM = 17
 
+/** How a table is set once a reading finds it does not fit its page, level by level. */
+export const TABLE_LEVELS = [{ size: '7.5pt', landscape: false }, { size: '7.5pt', landscape: true }, { size: '6.5pt', landscape: true }] as const
+/** The width a figure prints at, at each level, once a reading finds it and its caption do not fit their page. */
+export const FIGURE_WIDTHS = ['95%', '80%', '65%', '50%'] as const
+/** A table's name for its layout: its header row, which keeps it as tables before it come and go. */
+export const tableKey = (header: string) => createHash('sha256').update(squash(header).toLowerCase()).digest('hex').slice(0, 12)
+
 /**
  * Pipe tables as the typesetter should lay them out. Pandoc gives each column the share of the width its dashes have in
  * the separator line, so the dashes are drawn in proportion to what each column holds: a column of symbols stays
@@ -279,7 +287,7 @@ export function columnShares(widths: number[]): number[] {
   return room.map((r) => Math.max(0.08, r / used))
 }
 
-export function fitTables(markdown: string): string {
+export function fitTables(markdown: string, layout: Record<string, number> = {}): string {
   const row = /^\|.*\|\s*$/
   const separator = /^\|(?:\s*:?-+:?\s*\|)+\s*$/
   const cells = (line: string) => line.trim().replace(/^\||\|$/g, '').split(/(?<!\\)\|/)
@@ -299,11 +307,15 @@ export function fitTables(markdown: string): string {
     const sum = shares.reduce((a, b) => a + b, 0)
     const height = rows.reduce((h, r) => h + 0.42 * (1 + Math.max(1, ...r.map((cell, c) => Math.ceil(printedLength(cell) / Math.max(4, 95 * shares[c] / sum))))), 0)
     const table = [lines[i], rule, ...lines.slice(i + 2, end)]
+    // A table a reading found did not fit its page is set as its level says: in smaller type, then on a page turned
+    // to landscape, then both.
+    const level = Math.min(TABLE_LEVELS.length, layout[tableKey(lines[i])] ?? 0)
+    const set = level ? TABLE_LEVELS[level - 1] : null
     // The caption, after the table or before it, stays with it.
     let after = end
     while (after < lines.length && !lines[after].trim()) after++
     const captionAfter = /^(?:Table)?:\s/.test(lines[after] ?? '')
-    if (height <= TALL_TABLE_CM) {
+    if (height <= TALL_TABLE_CM && !set) {
       out.push(...table)
       i = end - 1
       continue
@@ -314,14 +326,14 @@ export function fitTables(markdown: string): string {
     while (start > 0 && out[start - 1].trim()) start--
     const captionBefore = !captionAfter && /^(?:Table)?:\s/.test(out[start] ?? '')
     const lead = captionBefore ? out.splice(start) : []
-    out.push('```{=typst}', '#[', '#show figure: set figure(placement: none)', '#show figure: set block(breakable: true)', '```', '', ...lead, ...table)
+    out.push('```{=typst}', ...(set?.landscape ? ['#page(flipped: true)['] : []), '#[', ...(set ? [`#show table: set text(size: ${set.size})`] : []), '#show figure: set figure(placement: none)', '#show figure: set block(breakable: true)', '```', '', ...lead, ...table)
     if (captionAfter) {
       let last = after
       while (last < lines.length && lines[last].trim()) last++
       out.push(...lines.slice(end, last))
       end = last
     }
-    out.push('', '```{=typst}', ']', '```')
+    out.push('', '```{=typst}', ']', ...(set?.landscape ? [']'] : []), '```')
     i = end - 1
   }
   return out.join('\n')
@@ -432,6 +444,33 @@ export function handLinks(text: string, known: Set<string>): string {
     .replace(/\[([^\]]+)\]\(#ref-([^)\s]+)\)/g, (_m, words: string, key: string) => known.has(key) ? `@${key}` : words)
 }
 
+/**
+ * The data and code availability statement, from what accompanies the paper: the data and where they are, the evidence
+ * package, the code of each analysis with the software it ran on, and the simulations' reproduction package.
+ */
+export function availabilityBlock(paper: Paper): PrintedBlock {
+  const s = paper.state
+  const data = availabilityStatement(paper)
+  const a = s.analysis
+  const analyses = a?.mode === 'code' && a.runs ? Object.entries(a.runs).filter(([, run]) => run.ok).map(([id]) => id) : []
+  const runs = runsOf(paper)
+  const evidence = 'The claims of this manuscript, the evidence each rests on and the verbatim passages of its sources accompany it as a supplementary evidence package.'
+  const analysis = analyses.length ? ' The code of each analysis of the data accompanies it as it ran, with the versions of the software it ran on (analysis/: one folder for each analysis, run with `python analysis.py data.json`).' : ''
+  const reproduction = runs.length ? ' The simulations can be rerun, and every simulated number checked against this manuscript, with the reproduction package that accompanies it (simulation/: `node simulate.mjs --verify`, or index.html in a browser).' : ''
+  return {
+    id: 'availability',
+    label: 'the data and code availability statement',
+    text: `${data ? `${data} ` : ''}${s.brief?.aboutSystem ? `${sourceStatement()} ` : ''}${evidence}${analysis}${reproduction}`,
+    source: {
+      data: data || null,
+      ...(s.brief?.aboutSystem ? { software: sourceStatement() } : {}),
+      evidencePackage: 'the claims of the manuscript, the evidence each rests on and the verbatim passages of its sources',
+      analysis: analyses.length ? { folder: 'analysis/', analyses, run: 'python analysis.py data.json', software: a?.environment ?? null } : null,
+      simulation: runs.length ? { folder: 'simulation/', verify: 'node simulate.mjs --verify, or index.html in a browser', runs: runs.map((r) => ({ id: r.id, seed: r.result.provenance.seed })) } : null,
+    },
+  }
+}
+
 export async function buildManuscript(paper: Paper): Promise<{ markdown: string; refs: Record<string, unknown>[]; record: Record_ }> {
   const s = paper.state
   const record = productionRecord(paper)
@@ -470,7 +509,7 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
     body.push(`# ${section.title}${section.role === 'limitations' ? ' {.unnumbered}' : ''}\n\n${splitWideEquations(conventions(unindent(filled.text)))}`)
     for (const fig of s.figures.filter((f) => f.sectionId === section.id && f.status === 'rendered' && f.file)) {
       // A caption can state a measured or simulated number, so it is filled like the text it sits in.
-      body.push(`![${conventions(fillPlaceholders(fig.caption, record).text).replace(/\n/g, ' ')}](${fig.file}){#fig-${fig.id} width=95%}`)
+      body.push(`![${conventions(fillPlaceholders(fig.caption, record).text).replace(/\n/g, ' ')}](${fig.file}){#fig-${fig.id} width=${FIGURE_WIDTHS[Math.min(FIGURE_WIDTHS.length - 1, s.layout?.figures?.[fig.id] ?? 0)]}}`)
     }
   }
   // Every figure and table of the body is printed before the back matter begins, and the back matter's own stand where
@@ -491,17 +530,15 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   const heading = (title: string) => inTitleCase(sections.map((sec) => sec.title)) ? titleCased(title) : title
   appendices.forEach(([title, text], i) => body.push(`# ${heading(`Appendix ${String.fromCharCode(65 + i)}: ${title}`)} {.unnumbered}\n\n${text}`))
   body.push(`# ${heading('Use of AI and production record')} {.unnumbered}\n\n${disclosure(paper, record, tablesIn(body.join('\n\n')) + 1)}`)
-  const evidencePackage = 'The claims of this manuscript, the evidence each rests on and the verbatim passages of its sources accompany it as a supplementary evidence package.'
-  const reproduction = runsOf(paper).length ? ` The simulations can be rerun, and every simulated number checked against this manuscript, with the reproduction package that accompanies it (simulation/: \`node simulate.mjs --verify\`, or index.html in a browser).` : ''
-  const data = availabilityStatement(paper)
-  body.push(`# ${heading('Data and code availability')} {.unnumbered}\n\n${decl.availability || `${data ? `${data} ` : ''}${s.brief?.aboutSystem ? `${sourceStatement()} ` : ''}${evidencePackage}${reproduction}`}`)
+  // What accompanies the paper, unless the authors declared it themselves.
+  body.push(`# ${heading('Data and code availability')} {.unnumbered}\n\n${decl.availability || blockText(paper, availabilityBlock(paper))}`)
   // A declaration only the author can make is printed once they have made it; until then the sign-off asks for it.
   if (decl.competing_interests?.trim()) body.push(`# ${heading('Competing interests')} {.unnumbered}\n\n${decl.competing_interests.trim()}`)
   if (decl.funding?.trim()) body.push(`# Funding {.unnumbered}\n\n${decl.funding.trim()}`)
   if (decl.acknowledgements?.trim()) body.push(`# Acknowledgements {.unnumbered}\n\n${decl.acknowledgements.trim()}`)
   body.push('# References {.unnumbered}\n\n::: {#refs}\n:::')
   if (unknown.length) paper.note('typeset', `Unknown placeholders left as "[not recorded]": ${[...new Set(unknown)].join(', ')}`)
-  const printed = printedQuotes(fitTables(body.join('\n\n')))
+  const printed = printedQuotes(fitTables(body.join('\n\n'), s.layout?.tables))
   return { markdown: `${head}\n\n${escapeUnknownCitations(handLinks(cited(printed), known), known)}\n`, refs, record }
 }
 
@@ -1084,7 +1121,7 @@ function signoff(paper: Paper, record: Record_): string {
   ].filter(Boolean)
   return `# Sign-off: ${title}
 
-Outcome: **${s.outcome ?? 'in progress'}**. ${s.outcome === 'ready_for_submission' ? 'Every step the system can take is done. What follows is yours.' : ''}
+Outcome: **${s.outcome ?? 'in progress'}**. ${s.outcome === 'ready_for_submission' ? 'Every step the system can take is done. What follows is yours.' : s.outcome === 'finished_with_open_defects' ? 'Every step the system can take is done, but the last reading of the typeset paper found defects a reader would see that it could not fix: they are listed under the reading below, each with its severity.' : ''}
 
 ## Declarations only you can make
 ${list(declare, 'All declared.')}
@@ -1118,7 +1155,7 @@ ${list(s.findings.filter((f) => f.adjudication?.fallback).map((f) => `${f.id}: $
 
 ## Typeset review
 ${s.proof ? `Read ${s.proof.rounds === 1 ? 'once' : `${s.proof.rounds} times`} as a reader sees it; ${s.proof.fixed} defect${s.proof.fixed === 1 ? '' : 's'} sent back and fixed. ${s.proof.left.length ? `Still to fix before submission (${s.proof.left.length}):` : 'The last reading found nothing left to fix.'}` : 'Not run.'}
-${s.proof?.left.length ? list(s.proof.left.map((d) => `page ${d.page ?? '?'}, ${d.where}: "${d.quote}". ${d.problem} Fix: ${d.fix}`), 'None.') : ''}
+${s.proof?.left.length ? list(s.proof.left.map((d) => `${d.severity ? `${d.severity}, ` : ''}page ${d.page ?? '?'}, ${d.where}: "${d.quote}". ${d.problem} Fix: ${d.fix}`), 'None.') : ''}
 
 ## Threads assigned to people
 ${list(s.findings.filter((f) => f.assignee === 'humans' && f.status === 'open').map((f) => `${f.id}: ${f.question}`), 'None.')}
@@ -1253,6 +1290,8 @@ export function contentHash(paper: Paper): string {
   const corrected = Object.values(s.works).filter((w) => w.corrected?.length).map((w) => [w.id, w.corrected])
   return createHash('sha256').update(JSON.stringify({
     ...(corrected.length ? { corrected } : {}),
+    // A part written again from its records, and a table or figure set to fit its page, print a new revision too.
+    ...(s.blocks ? { blocks: s.blocks } : {}), ...(s.layout ? { layout: s.layout } : {}),
     passages: Object.values(s.passages).map((p) => p.text), frame: s.frame, outcome: s.outcome,
     // The claim ledger is printed as an appendix, so a restated claim is a new revision too.
     claims: s.claims.map((c) => [c.id, c.status, c.text]),
