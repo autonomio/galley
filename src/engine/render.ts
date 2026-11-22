@@ -804,14 +804,40 @@ export async function writeThesisBrief(paper: Paper): Promise<void> {
   writeThesisToEditor(paper, markdown)
 }
 
-/** The document the run started from becomes the brief, as a paper's document becomes the paper. */
+/**
+ * The document the run started from becomes the brief, as a paper's document becomes the paper. Each brief is written
+ * there once: from then on the document is the person's, and a brief that replaces a document they changed keeps
+ * their version beside the run.
+ */
 function writeThesisToEditor(paper: Paper, markdown: string): void {
-  if (!markdown) return
+  const s = paper.state
+  if (!markdown || digest(markdown) === s.editorWritten?.doc) return
   const dir = editorDir(paper)
   mkdirSync(dir, { recursive: true })
   const docPath = join(dir, `${editorSlug(paper)}.md`)
-  if (fileText(docPath) !== markdown) writeReplacing(docPath, markdown)
-  paper.state.editorWritten = { doc: digest(markdown), notes: paper.state.editorWritten?.notes ?? '' }
+  const held = fileText(docPath)
+  if (held?.trim() && ![markdown, s.seed.text].some((text) => squash(text) === squash(held)) && digest(held) !== s.editorWritten?.doc) {
+    writeFileSync(paper.path('document.before-brief.md'), held)
+    paper.note('thesis-brief', 'The brief replaced a document you had changed; your version is kept beside the run as document.before-brief.md.')
+  }
+  keepSeedThreads(paper)
+  if (held !== markdown) writeReplacing(docPath, markdown)
+  s.editorWritten = { doc: digest(markdown), notes: s.editorWritten?.notes ?? '' }
+}
+
+/**
+ * On galley's first write the document still holds the seed: its notes and proposals belong to the seed, so they move
+ * into the project with it, and the first write carries only its own threads.
+ */
+function keepSeedThreads(paper: Paper): void {
+  if (paper.state.editorWritten) return
+  const dir = editorDir(paper)
+  for (const [file, kept] of [[join(dir, `${editorSlug(paper)}.annotations.json`), 'seed.annotations.json'], [join(dir, `${editorSlug(paper)}.proposals.json`), 'seed.proposals.json']] as const) {
+    const held = fileText(file)
+    if (held === null) continue
+    writeFileSync(paper.path(kept), held)
+    rmSync(file, { force: true })
+  }
 }
 
 /**
@@ -824,21 +850,13 @@ export function syncEditor(paper: Paper): { edits: string[], notes: number, deci
   const dir = editorDir(paper)
   const docPath = join(dir, `${editorSlug(paper)}.md`)
   const notesPath = join(dir, `${editorSlug(paper)}.annotations.json`)
-  // On the first pass the document still holds the seed: its notes and proposals belong to the seed, so they move
-  // into the project with it, and the paper's first write carries only its own threads.
-  if (!s.editorWritten) {
-    for (const [file, kept] of [[notesPath, 'seed.annotations.json'], [join(dir, `${editorSlug(paper)}.proposals.json`), 'seed.proposals.json']] as const) {
-      const held = fileText(file)
-      if (held === null) continue
-      writeFileSync(paper.path(kept), held)
-      rmSync(file, { force: true })
-    }
-  }
-  // A thesis run writes its document once, when the brief is ready; until then the document keeps the seed.
+  // A thesis run leaves the document, and the seed's notes, as they are until the brief is ready; then the brief is
+  // written there once, and the document is the person's again.
   if (paper.config.mode === 'thesis') {
     if (s.outcome === 'thesis_ready') writeThesisToEditor(paper, fileText(paper.path('out', 'thesis.md')) ?? '')
     return { edits: [], notes: 0, decisions: 0 }
   }
+  keepSeedThreads(paper)
   const seen = { doc: fileText(docPath), notes: fileText(notesPath) }
   const docChanged = seen.doc !== null && digest(seen.doc) !== s.editorWritten?.doc
   const notesChanged = seen.notes !== null && digest(seen.notes) !== s.editorWritten?.notes

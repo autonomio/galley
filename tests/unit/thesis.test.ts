@@ -1,7 +1,7 @@
 // One ladder, two branches: a thesis run takes the rungs it shares with a paper and its own three; from the stance the
 // person chose it formulates a thesis once the literature is in, tests it, formulates it again once if it misses, and
 // writes the brief into the document it started from.
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -10,6 +10,7 @@ import { aimSettled } from '../../src/engine/behaviors/front.js'
 import { LADDER } from '../../src/engine/behaviors/index.js'
 import { formulateThesis, testThesis, thesisBrief } from '../../src/engine/behaviors/thesis.js'
 import { Paper } from '../../src/engine/paper.js'
+import { syncEditor } from '../../src/engine/render.js'
 import { branch } from '../../src/engine/scheduler.js'
 
 let dir = ''
@@ -82,5 +83,32 @@ describe('the thesis branch', () => {
     expect(brief).toContain('- TreeLab (2025). Root survey of one street. https://doi.org/10.5281/zenodo.1')
     expect(brief).toContain('not a systematic review in the formal sense')
     expect(readFileSync(join(dir, 'editor', 'trees.md'), 'utf8')).toBe(brief)
+  })
+
+  it('writes the brief into the document once: the seed and its notes stay until then, and what the person changes is never lost', () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const editor = join(dir, 'editor')
+    const doc = join(editor, 'trees.md')
+    const notes = '{"annotations":[{"id":"n1"}]}'
+    mkdirSync(editor)
+    writeFileSync(doc, 'City trees die young.')
+    writeFileSync(join(editor, 'trees.annotations.json'), notes)
+    const paper = Paper.create(join(dir, 'p'), 'City trees die young.', { mode: 'thesis', stance: 'extend', literatureReview: true, editorDir: editor, editorDoc: 'trees', authors: [{ name: 'Ada Lovelace' }] })
+    syncEditor(paper)
+    expect(readFileSync(join(editor, 'trees.annotations.json'), 'utf8')).toBe(notes)
+    // The person changes the seed while the thesis is formulated: the brief replaces it, and their version is kept.
+    writeFileSync(doc, 'City trees die young, and fast.')
+    mkdirSync(paper.path('out'))
+    writeFileSync(paper.path('out', 'thesis.md'), '# Street trees as one network\n')
+    paper.state.outcome = 'thesis_ready'
+    syncEditor(paper)
+    expect(readFileSync(doc, 'utf8')).toBe('# Street trees as one network\n')
+    expect(readFileSync(paper.path('document.before-brief.md'), 'utf8')).toBe('City trees die young, and fast.')
+    expect(readFileSync(paper.path('seed.annotations.json'), 'utf8')).toBe(notes)
+    expect(existsSync(join(editor, 'trees.annotations.json'))).toBe(false)
+    // Once delivered, the brief is the person's: a later run leaves their edits as they are.
+    writeFileSync(doc, '# Street trees as one shared network\n')
+    syncEditor(paper)
+    expect(readFileSync(doc, 'utf8')).toBe('# Street trees as one shared network\n')
   })
 })
