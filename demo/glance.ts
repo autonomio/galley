@@ -64,7 +64,7 @@ export function working(p: Glance): (Working & { count: number })[] {
 /** What there is to say when no one is at work. */
 export function quiet(p: Glance): string {
   const state = stateOf(p)
-  if (state === 'ready') return p.mode === 'thesis' ? 'The brief is in the document, with a PDF beside it.' : 'Ready for submission. The sign-off is yours.'
+  if (state === 'ready') return p.mode === 'thesis' ? `The brief is in the document${p.pdf ? ', with a PDF beside it' : ''}.` : 'Ready for submission. The sign-off is yours.'
   if (state === 'stopped') return 'The run has stopped; run it again to resume.'
   if (state === 'waiting') return `Waiting for ${p.waiting!.name} until ${new Date(p.waiting!.until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`
   return 'Between steps.'

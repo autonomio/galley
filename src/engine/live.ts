@@ -158,7 +158,7 @@ interface JournalEvent { at: string, event: string, [key: string]: any }
 
 /** The journal as sentences, oldest first. */
 /** The journal as sentences, oldest first. Each reads after its actor's name: "Author drafted Introduction." */
-function activity(s: PaperState, events: JournalEvent[], mode: 'paper' | 'thesis' = 'paper'): LiveEntry[] {
+function activity(s: PaperState, events: JournalEvent[], mode: 'paper' | 'thesis' = 'paper', pdf = false): LiveEntry[] {
   const out: LiveEntry[] = []
   const lastFamily: Record<string, Family> = {}
   let stage = 'seed'
@@ -227,7 +227,7 @@ function activity(s: PaperState, events: JournalEvent[], mode: 'paper' | 'thesis
       case 'ready': say(e, 'galley', 'marked the paper ready for submission. The sign-off is yours.'); break
       case 'formulate': say(e, seat, target.startsWith('revision') ? 'formulated the thesis again after its test.' : 'formulated the thesis.'); break
       case 'test-thesis': say(e, seat, 'tested the thesis against the literature, for its direction.'); break
-      case 'thesis-brief': say(e, 'galley', 'wrote the brief into the document, with a PDF beside it.'); break
+      case 'thesis-brief': say(e, 'galley', pdf ? 'wrote the brief into the document, with a PDF beside it.' : 'wrote the brief into the document.'); break
       case 'referee': break
       default: say(e, seat, `finished ${behavior}.`, where)
     }
@@ -235,7 +235,7 @@ function activity(s: PaperState, events: JournalEvent[], mode: 'paper' | 'thesis
   return out
 }
 
-function workingNotes(s: PaperState, config: { rounds?: number, literatureReview?: unknown, simulation?: unknown, datasets?: unknown[], materials?: { kind?: string }[] }): WorkingNote[] {
+function workingNotes(s: PaperState, config: { rounds?: number, literatureReview?: unknown, simulation?: unknown, datasets?: unknown[], materials?: { kind?: string }[] }, pdf = false): WorkingNote[] {
   const notes: WorkingNote[] = []
   const note = (key: string, label: string, text: string, seat: string, family: Family | null = null) => notes.push({ key, label, text, seat, family })
   if (!s.brief) note('start', 'Starting', 'The Author is reading your seed.', 'author')
@@ -274,7 +274,7 @@ function workingNotes(s: PaperState, config: { rounds?: number, literatureReview
   }
   if (s.thesis) note('thesis', 'Thesis', `${s.thesis.title || s.thesis.statement}${s.thesis.test ? ` · ${s.thesis.test.passes ? 'meets its test' : 'does not yet meet its test'}` : ' · being tested'}`, 'author')
   if (s.outcome === 'ready_for_submission') note('ready', 'Ready', 'Every gate holds on one revision. The sign-off is yours.', 'galley')
-  if (s.outcome === 'thesis_ready') note('ready', 'Ready', 'The brief is in the document, with a PDF beside it.', 'galley')
+  if (s.outcome === 'thesis_ready') note('ready', 'Ready', pdf ? 'The brief is in the document, with a PDF beside it.' : 'The brief is in the document; its PDF was not made.', 'galley')
   return notes
 }
 
@@ -286,8 +286,10 @@ const finished = (outcome: string | null | undefined) => outcome === 'ready_for_
 export function liveView(dir: string, options: { limit?: number } = {}): LiveView | null {
   const s = readJson<PaperState>(join(dir, 'state.json'))
   if (!s) return null
-  const config = readJson<{ title?: string, mode?: 'paper' | 'thesis', rounds?: number, literatureReview?: unknown, simulation?: unknown, seats?: Record<string, Family>, referees?: { seat: string }[], editorDoc?: string }>(join(dir, 'paper.json')) ?? {}
+  const config = readJson<{ title?: string, mode?: 'paper' | 'thesis', rounds?: number, literatureReview?: unknown, simulation?: unknown, seats?: Record<string, Family>, referees?: { seat: string }[], editorDoc?: string, off?: string[] }>(join(dir, 'paper.json')) ?? {}
   const mode = config.mode === 'thesis' ? 'thesis' as const : 'paper' as const
+  // The brief's PDF is made when it can be; a brief can be ready without one.
+  const pdf = existsSync(join(dir, 'out', 'thesis.pdf'))
   const progress = readJson<{ pid: number, outcome: string | null, inFlight?: { behavior: string, target: string, what: string, started: string }[] }>(join(dir, 'progress.json'))
   let running = false
   if (progress && !progress.outcome && !s.outcome) {
@@ -319,7 +321,8 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
   const stages = mode === 'thesis' ? [
     { id: 'seed', label: 'Seed', done: !!s.brief },
     { id: 'aim', label: 'Place the idea', done: done.has('position') },
-    { id: 'literature', label: 'Literature', done: s.literature?.status === 'done' || s.literature?.status === 'failed' },
+    // Settled as the thesis takes it: in, ended, or not part of this run.
+    { id: 'literature', label: 'Literature', done: !config.literatureReview || (config.off ?? []).includes('literature-review') || (!!s.literature && s.literature.status !== 'running') },
     { id: 'thesis', label: 'Thesis', done: !!s.thesis },
     { id: 'test', label: 'Test', done: !!s.thesis?.test },
     { id: 'brief', label: 'Brief', done: s.outcome === 'thesis_ready' },
@@ -334,7 +337,7 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
   ]
   // A finished run stands at its last stage, whatever an earlier one recorded.
   const current = (finished(s.outcome) ? undefined : stages.find((x) => !x.done)) ?? stages[stages.length - 1]
-  const all = activity(s, events, mode)
+  const all = activity(s, events, mode, pdf)
   // Referees rotate families between rounds: each shows the family it last worked as.
   const defaults = defaultConfig()
   const seats = { ...defaults.seats, ...(config.seats ?? {}) } as Record<string, Family>
@@ -368,7 +371,7 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
     sections,
     now,
     waiting,
-    notes: [...workingNotes(s, { ...config, rounds }), lastActivity(dir, running, now, s.outcome ?? null)],
+    notes: [...workingNotes(s, { ...config, rounds }, pdf), lastActivity(dir, running, now, s.outcome ?? null)],
     activity: all.slice(-(options.limit ?? 400)),
     updated: updatedAt(dir),
     started: s.createdAt ?? null,

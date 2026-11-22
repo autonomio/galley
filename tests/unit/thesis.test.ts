@@ -17,7 +17,7 @@ vi.mock('../../src/engine/evidence.js', async (original) => ({
   ...(await original<typeof import('../../src/engine/evidence.js')>()),
   canarySearch: vi.fn(async () => ({ t0q1: { results: [{ id: 'W9', doi: '10.1/roots', title: 'Roots cross pavements', year: 2019, venue: null, type: null, authors: ['Ann Root'], abstract: 'Roots of street trees cross under pavements.', oa: null, url: null }] } })),
 }))
-import { syncEditor } from '../../src/engine/render.js'
+import { syncEditor, thesisMarkdown } from '../../src/engine/render.js'
 import { branch } from '../../src/engine/scheduler.js'
 
 let dir = ''
@@ -99,7 +99,8 @@ describe('the thesis branch', () => {
     expect(asked[0].prompt).toContain('never the seed\'s question or aim restated')
     expect(brief).toContain('not a systematic review in the formal sense')
     expect(readFileSync(join(dir, 'editor', 'trees.md'), 'utf8')).toBe(brief)
-  })
+  // The brief's PDF is typeset by pandoc and Typst, which take longer than a unit test's usual limit on a busy machine.
+  }, 60_000)
 
   it('shows a thesis beside the page as a thesis: named from its seed, then by its own title, and ready once its brief is written', () => {
     dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
@@ -113,8 +114,36 @@ describe('the thesis branch', () => {
     paper.save()
     const view = liveView(join(dir, 'p'))!
     expect(view).toMatchObject({ title: 'Street trees as one network', ready: true, stage: { id: 'brief', label: 'Brief' } })
-    expect(view.notes.find((n) => n.key === 'ready')?.text).toBe('The brief is in the document, with a PDF beside it.')
+    // A brief can be ready without its PDF: the note says which.
+    expect(view.notes.find((n) => n.key === 'ready')?.text).toBe('The brief is in the document; its PDF was not made.')
     expect(view.notes.at(-1)?.text).not.toContain('run it again')
+    mkdirSync(paper.path('out'))
+    writeFileSync(paper.path('out', 'thesis.pdf'), '%PDF-1.4\n')
+    expect(liveView(join(dir, 'p'))!.notes.find((n) => n.key === 'ready')?.text).toBe('The brief is in the document, with a PDF beside it.')
+  })
+
+  it('says what did not happen: no literature review keeps no stage waiting, and a test with no search says its novelty was judged without one', () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const paper = Paper.create(join(dir, 'p'), '# Street trees\n\nCity trees die young.', { mode: 'thesis', stance: 'extend', literatureReview: false })
+    const s = paper.state
+    s.brief = { hasSubject: true, concern: 'Street trees die young.', contribution: '', objectType: 'finding', field: 'urban forestry', audience: '', aboutSystem: false }
+    paper.settle('position:seed', 'done')
+    paper.save()
+    expect(liveView(join(dir, 'p'))!.stage).toEqual({ id: 'thesis', label: 'Thesis' })
+    // A key in the thesis itself, and in its first reading, reads as authors and year too.
+    s.works.W1 = { id: 'W1', doi: '10.1/pits', title: 'Narrow pits shorten tree lives', authors: ['Jane Roe'], year: 2020, venue: null, abstract: '', citedBy: null, url: null }
+    const key = keyFor(paper, s.works.W1)
+    s.thesis = {
+      stance: 'extend', statement: `Street trees live or die as one shared root network (@${key}).`, title: 'Street trees as one network', relation: '', positions: [], sharedAssumption: '', setAside: '',
+      conditions: [], dependsOn: [], decides: '', opens: '', residue: '', noveltyQueries: [], revision: 1,
+      test: { passes: true, objections: [], already: [], family: 'gemini', searched: null, revisedFrom: `Street trees are a network, as ${key} hints.` },
+    }
+    const brief = thesisMarkdown(paper)
+    expect(brief).toContain('**Thesis.** Street trees live or die as one shared root network (Roe 2020).')
+    expect(brief).toContain('It first read: Street trees are a network, as (Roe 2020) hints.')
+    expect(brief).toContain('No search for work already stating it ran, so its novelty was judged from the literature review alone.')
+    expect(brief).toContain('- Jane Roe (2020). Narrow pits shorten tree lives.')
+    expect(brief).not.toContain(key)
   })
 
   it('writes the brief into the document once: the seed and its notes stay until then, and what the person changes is never lost', () => {
