@@ -781,9 +781,9 @@ export function thesisMarkdown(paper: Paper): string {
   const lit = s.literature?.status === 'done' ? s.literature : null
   const test = t.test
   const parts = [
-    `# ${t.title || 'Thesis'}`,
+    `# ${prose(t.title) || 'Thesis'}`,
     [authors, date].filter(Boolean).join(' · '),
-    `**Thesis.** ${t.statement}`,
+    `**Thesis.** ${prose(t.statement)}`,
     `**Stance.** ${stance}`,
     `## How it stands to the field\n\n${prose(t.relation)}`,
     t.positions.length ? `The positions that draw most of the work on this subject:\n\n${t.positions.map((p) => `- **${p.name}.** ${prose(p.holds)} It rests on the assumption that ${prose(continuing(p.restsOn.replace(/\.$/, ''), context))}${cite(p.sources)}.`).join('\n')}` : '',
@@ -800,9 +800,10 @@ export function thesisMarkdown(paper: Paper): string {
       test.objections.length ? test.objections.map((o) => `- ${prose(o)}`).join('\n') : '',
       // What its novelty was checked against: the nearest work a search found, and what the thesis claims that it does not.
       test.closest?.length ? `The closest work the search found, and how the thesis differs from it:\n\n${test.closest.map((c) => `- ${c.title} (${c.year ?? 'n.d.'}). ${prose(c.differs)}${c.doi ? ` https://doi.org/${c.doi}` : ''}`).join('\n')}`
-        : test.searched === 0 ? 'The search for work already stating it found none to compare.' : '',
+        : test.searched === 0 ? 'The search for work already stating it found none to compare.'
+          : test.searched === null ? 'No search for work already stating it ran, so its novelty was judged from the literature review alone.' : '',
       test.already.length ? `Already stated in: ${test.already.join('; ')}.` : '',
-      test.revisedFrom ? `The thesis was formulated again after a first test. It first read: ${test.revisedFrom}` : '',
+      test.revisedFrom ? `The thesis was formulated again after a first test. It first read: ${prose(test.revisedFrom)}` : '',
     ].filter(Boolean).join('\n\n') : '',
     lit ? `## The literature it draws on\n\nA literature review run with Canary on ${lit.searchedOn} asked: "${lit.question}" Of ${thousands(lit.counts?.discovered ?? 0)} records found, ${thousands(lit.counts?.screened ?? 0)} were screened, ${thousands(lit.counts?.retrieved ?? 0)} read in full and ${thousands(lit.counts?.reviewed ?? 0)} included. It is a targeted review, not a systematic review in the formal sense.` : '',
     used.size ? `## Sources\n\n${[...used].map((k) => source(byKey.get(k)!)).join('\n')}` : '',

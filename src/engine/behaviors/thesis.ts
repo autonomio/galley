@@ -152,9 +152,9 @@ export const formulateThesis: Behavior = {
   },
 }
 
-/** The closest work a search finds for the thesis, so a reader can say whether it is already stated. */
-async function closestWork(paper: Paper, thesis: Thesis): Promise<SearchHit[]> {
-  if (paper.config.worldModel?.only || !thesis.noveltyQueries.length) return []
+/** The closest work a search finds for the thesis, so a reader can say whether it is already stated; null when no search ran. */
+async function closestWork(paper: Paper, thesis: Thesis): Promise<SearchHit[] | null> {
+  if (paper.config.worldModel?.only || !thesis.noveltyQueries.length) return null
   const queries = thesis.noveltyQueries.map((search, i) => ({ id: `t${thesis.revision}q${i + 1}`, search }))
   try {
     const results = await canarySearch(paper.path('canary', 'thesis'), `galley:${paper.state.slug}:thesis`, queries, 8,
@@ -163,13 +163,14 @@ async function closestWork(paper: Paper, thesis: Thesis): Promise<SearchHit[]> {
     return Object.values(results).flatMap((r) => r.results).filter((hit) => !seen.has(hit.id) && seen.add(hit.id)).slice(0, 20)
   } catch (error) {
     paper.note('test-thesis', `The search for work already stating the thesis did not run: ${(error as Error).message}`, true)
-    return []
+    return null
   }
 }
 
 async function judge(paper: Paper, thesis: Thesis): Promise<NonNullable<Thesis['test']>> {
   const stance = STANCES[thesis.stance]
-  const hits = await closestWork(paper, thesis)
+  const searched = await closestWork(paper, thesis)
+  const hits = searched ?? []
   const family = seatFamily(paper, 'challenger')
   const reply = await paper.ask<any>({
     behavior: 'test-thesis', target: `revision-${thesis.revision}`, seat: 'challenger', family,
@@ -189,7 +190,7 @@ ${thesis.sharedAssumption ? `Shared by all of them: ${thesis.sharedAssumption}\n
 ${literatureBlock(paper)}
 
 THE CLOSEST WORK A SEARCH FOUND:
-${hits.length ? hits.map((h) => `- ${h.title} (${h.year ?? 'n.d.'}). ${h.abstract.slice(0, 600)}`).join('\n') : '(the search found none, or did not run)'}`,
+${hits.length ? hits.map((h) => `- ${h.title} (${h.year ?? 'n.d.'}). ${h.abstract.slice(0, 600)}`).join('\n') : searched ? '(the search found none)' : '(no search ran)'}`,
     schema: obj({ passes: bool(), objections: arr(str()), already: arr(str()), closest: arr(obj({ title: str(), differs: str() })) }),
   })
   // A work the verdict names is the search's own record, so the brief can date and link it; one it cannot find is left out.
@@ -199,7 +200,7 @@ ${hits.length ? hits.map((h) => `- ${h.title} (${h.year ?? 'n.d.'}). ${h.abstrac
     const differs = String(c.differs ?? '').trim()
     return hit && differs ? [{ title: hit.title, year: hit.year, doi: hit.doi, differs }] : []
   })
-  return { passes: !!reply.passes, objections: (reply.objections ?? []).map(String).filter(Boolean), already: (reply.already ?? []).map(String).filter(Boolean), family, closest, searched: hits.length }
+  return { passes: !!reply.passes, objections: (reply.objections ?? []).map(String).filter(Boolean), already: (reply.already ?? []).map(String).filter(Boolean), family, closest, searched: searched ? hits.length : null }
 }
 
 export const testThesis: Behavior = {

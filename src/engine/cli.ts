@@ -109,7 +109,7 @@ function statusData(paper: Paper): Record<string, unknown> {
   const stages: [string, string, boolean][] = paper.config.mode === 'thesis' ? [
     ['seed', 'Seed', !!s.brief],
     ['aim', 'Place the idea', paper.isSettled('position:seed')],
-    ['literature', 'Literature', s.literature?.status === 'done' || s.literature?.status === 'failed'],
+    ['literature', 'Literature', !paper.config.literatureReview || paper.config.off.includes('literature-review') || (!!s.literature && s.literature.status !== 'running')],
     ['thesis', 'Thesis', !!s.thesis],
     ['test', 'Test', !!s.thesis?.test],
     ['brief', 'Brief', s.outcome === 'thesis_ready'],

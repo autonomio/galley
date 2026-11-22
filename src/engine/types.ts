@@ -418,8 +418,8 @@ export interface Thesis {
     passes: boolean; objections: string[]; already: string[]; family: string; revisedFrom?: string
     /** The closest work the search found, and how the thesis differs from each: what its novelty was checked against. */
     closest?: { title: string; year: number | null; doi: string | null; differs: string }[]
-    /** How many works the search for work already stating the thesis found. */
-    searched?: number
+    /** How many works the search for work already stating the thesis found; null when no search ran. */
+    searched?: number | null
   }
 }
 
