@@ -422,7 +422,7 @@ export function livingPaper(store: DocumentStore, link?: Router): EditorPlugin {
         setText(row.querySelector('p > span')!, n.doing)
         setText(row.querySelector('time')!, elapsed(n.seconds))
       }, how)
-      setText(quiet, state === 'ready' ? 'Ready for submission.' : state === 'paused' ? 'Not running.' : state === 'waiting' ? `Waiting for ${l.waiting!.name} until ${clock(l.waiting!.until)}.` : 'Between steps.')
+      setText(quiet, state === 'ready' ? (l.mode === 'thesis' ? 'The brief is in the document.' : 'Ready for submission.') : state === 'paused' ? 'Not running.' : state === 'waiting' ? `Waiting for ${l.waiting!.name} until ${clock(l.waiting!.until)}.` : 'Between steps.')
 
       // Runs of one stage, numbered from the oldest so a run keeps its key as entries arrive; shown newest first.
       const runs: { key: string, stage: string, entries: Entry[] }[] = []
