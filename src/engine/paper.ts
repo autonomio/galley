@@ -241,6 +241,7 @@ export class Paper {
       writeJsonAtomic(this.path('calls', file), {
         behavior: options.behavior, target: options.target, seat: options.seat, spec,
         prompt: options.prompt, output: result.data, usage: result.usage, ms: result.ms, cached: result.cached,
+        ...(result.delivery ? { delivery: result.delivery } : {}),
       })
       this.journal({
         event: 'call', behavior: options.behavior, target: options.target, seat: options.seat, family: options.family,
