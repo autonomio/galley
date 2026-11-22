@@ -90,6 +90,18 @@ test('a document opened while its delete is asked is deleted as the open one, an
   await page.waitForFunction((s) => !!window.galley.slug && window.galley.slug !== s, target)
 })
 
+test('when what goes with a document cannot be checked, the dialog says so instead of promising only the document goes', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => !!window.galley?.slug)
+  await newDocument(page, 'Unchecked')
+  await page.route('**/api/galley-live', (route) => route.fulfill({ status: 500, body: '' }))
+  await page.locator('[data-action="delete"]').click()
+  const dialog = page.locator('dialog.galley-dialog')
+  await expect(dialog).toContainText('with anything kept with it; what that includes could not be checked.')
+  await expect(dialog).not.toContainText('The document and its notes are deleted.This')
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+})
+
 test('deleting a document deletes the project made from it, and stops a run still going for it first', async ({ page }) => {
   const paper = writePaper(docs(), papers(), { title: 'Delete me' })
   const dir = join(papers(), paper.slug)

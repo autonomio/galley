@@ -70,10 +70,14 @@ export function createDocPicker(handlers: { select(slug: string): void, opening(
       next = parts.join('')
     }
     if (next === markup) return
-    const focused = (document.activeElement as HTMLElement | null)?.dataset?.slug
+    // Keyboard focus stays where it was across a redraw: on a document, or on the button that deletes one.
+    const active = document.activeElement as HTMLElement | null
+    const focused = !active || !menu.contains(active) ? null
+      : active.dataset.slug ? `[data-slug="${CSS.escape(active.dataset.slug)}"]`
+        : active.dataset.delete ? `[data-delete="${CSS.escape(active.dataset.delete)}"]` : null
     markup = next
     menu.innerHTML = next
-    if (focused) menu.querySelector<HTMLElement>(`[data-slug="${CSS.escape(focused)}"]`)?.focus()
+    if (focused) menu.querySelector<HTMLElement>(focused)?.focus()
   }
 
   function renderTitle(): void {

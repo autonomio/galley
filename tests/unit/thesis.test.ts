@@ -9,6 +9,7 @@ import { keyFor } from '../../src/engine/behaviors/common.js'
 import { aimSettled } from '../../src/engine/behaviors/front.js'
 import { LADDER } from '../../src/engine/behaviors/index.js'
 import { formulateThesis, testThesis, thesisBrief } from '../../src/engine/behaviors/thesis.js'
+import { canarySearch } from '../../src/engine/evidence.js'
 import { liveView } from '../../src/engine/live.js'
 import { Paper } from '../../src/engine/paper.js'
 
@@ -75,6 +76,8 @@ describe('the thesis branch', () => {
 
     await testThesis.ready(paper)[0].run()
     expect(asked.map((a) => `${a.behavior}:${a.target}`)).toEqual(['formulate:thesis', 'test-thesis:revision-0', 'formulate:revision-1', 'test-thesis:revision-1'])
+    // The test sees what would decide the thesis, which a contest's test asks for.
+    expect(asked[1].prompt).toContain('What would decide it: A survey of roots under one street.')
     expect(asked[2].prompt).toContain('It is the opposite of pit engineering.')
     expect(s.thesis).toMatchObject({ statement: 'Street trees live or die as one shared root network.', revision: 1, setAside: 'Smaller pits save trees.', test: { passes: true, revisedFrom: 'Street trees are best treated as a network.' } })
 
@@ -145,6 +148,44 @@ describe('the thesis branch', () => {
     expect(brief).toContain('- Jane Roe (2020). Narrow pits shorten tree lives.')
     expect(brief).not.toContain(key)
   })
+
+  it('does not pass a thesis whose search failed: the test is tried again instead', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const paper = Paper.create(join(dir, 'p'), 'City trees die young.', { mode: 'thesis', stance: 'reframe', literatureReview: true })
+    paper.state.thesis = {
+      stance: 'reframe', statement: 'Street trees live or die as one shared root network.', title: 'Street trees as one network', relation: '', positions: [], sharedAssumption: '', setAside: '',
+      conditions: [], dependsOn: [], decides: '', opens: '', residue: '', noveltyQueries: ['roots across pits'], revision: 0,
+    }
+    vi.mocked(canarySearch).mockRejectedValueOnce(new Error('Canary is down'))
+    await expect(testThesis.ready(paper)[0].run()).rejects.toThrow('the search for work already stating the thesis failed: Canary is down')
+    expect(paper.state.thesis.test).toBeUndefined()
+  })
+
+  it('briefs a thesis whose test is turned off, under the person\'s own title, and is not ready until its PDF is made', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const paper = Paper.create(join(dir, 'p'), 'City trees die young.', { mode: 'thesis', stance: 'extend', literatureReview: false, off: ['test-thesis'], title: 'Roots under one street', editorDir: join(dir, 'editor'), editorDoc: 'trees' })
+    paper.state.thesis = {
+      stance: 'extend', statement: 'Street trees live or die as one shared root network.', title: 'Street trees as one network', relation: '', positions: [], sharedAssumption: '', setAside: '',
+      conditions: [], dependsOn: [], decides: '', opens: '', residue: '', noveltyQueries: [], revision: 0,
+    }
+    expect(thesisBrief.ready(paper)).toHaveLength(1)
+    // Without pandoc there is no PDF: the brief is written, but the step is not done and the thesis is not ready.
+    const path = process.env.PATH
+    process.env.PATH = '/nonexistent'
+    try {
+      await expect(thesisBrief.ready(paper)[0].run()).rejects.toThrow('the brief\'s PDF was not made')
+    } finally {
+      process.env.PATH = path
+    }
+    expect(paper.state.outcome).toBeUndefined()
+    const brief = readFileSync(paper.path('out', 'thesis.md'), 'utf8')
+    expect(brief).toMatch(/^# Roots under one street\n/)
+    expect(brief).toContain('The test was turned off for this run, so the thesis was not tested.')
+    expect(readFileSync(join(dir, 'editor', 'trees.md'), 'utf8')).toBe(brief)
+    await thesisBrief.ready(paper)[0].run()
+    expect(paper.state.outcome).toBe('thesis_ready')
+    expect(existsSync(paper.path('out', 'thesis.pdf'))).toBe(true)
+  }, 60_000)
 
   it('writes the brief into the document once: the seed and its notes stay until then, and what the person changes is never lost', () => {
     dir = mkdtempSync(join(tmpdir(), 'galley-test-'))

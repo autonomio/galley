@@ -111,7 +111,7 @@ function statusData(paper: Paper): Record<string, unknown> {
     ['aim', 'Place the idea', paper.isSettled('position:seed')],
     ['literature', 'Literature', !paper.config.literatureReview || paper.config.off.includes('literature-review') || (!!s.literature && s.literature.status !== 'running')],
     ['thesis', 'Thesis', !!s.thesis],
-    ['test', 'Test', !!s.thesis?.test],
+    ['test', 'Test', !!s.thesis?.test || paper.config.off.includes('test-thesis')],
     ['brief', 'Brief', s.outcome === 'thesis_ready'],
   ] : [
     ['seed', 'Seed', !!s.brief],
@@ -154,7 +154,7 @@ function statusData(paper: Paper): Record<string, unknown> {
     title: titleOf(paper),
     seedTitle: firstLine.slice(0, 120),
     mode: paper.config.mode ?? 'paper',
-    ...(paper.config.mode === 'thesis' ? { stance: paper.config.stance ?? 'extend', thesis: s.thesis ? { statement: s.thesis.statement, passes: s.thesis.test?.passes ?? null } : null } : {}),
+    ...(paper.config.mode === 'thesis' ? { stance: paper.config.stance ?? 'extend', thesis: s.thesis ? { statement: s.thesis.statement, passes: s.thesis.test?.passes ?? null, searched: s.thesis.test?.searched } : null } : {}),
     outcome: s.outcome ?? null,
     running,
     startedAt: s.createdAt,
@@ -197,7 +197,8 @@ function status(paper: Paper): void {
   console.log(`${s.slug}: ${s.outcome ?? 'in progress'}`)
   console.log(`  title    ${titleOf(paper) ?? '(not yet)'}`)
   if (thesis) {
-    console.log(`  thesis   ${s.thesis ? s.thesis.statement : '(not yet)'} [${paper.config.stance ?? 'extend'}${s.thesis?.test ? `; ${s.thesis.test.passes ? 'meets its test' : 'does not yet meet its test'}` : ''}]`)
+    const test = s.thesis?.test
+    console.log(`  thesis   ${s.thesis ? s.thesis.statement : '(not yet)'} [${paper.config.stance ?? 'extend'}${test ? `; ${test.passes ? 'meets its test' : 'does not yet meet its test'}${test.searched === null ? ', without a novelty search' : ''}` : ''}]`)
     if (existsSync(paper.path('out', 'thesis.md'))) console.log(`  brief    ${paper.path('out', 'thesis.md')}`)
   } else {
     if (s.ideaReview) console.log(`  idea     ${s.ideaReview.verdict}, weakest ${s.ideaReview.weakest}`)

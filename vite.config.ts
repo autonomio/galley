@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 import { livePapers, liveView } from './src/engine/live.js'
+import { stopRun } from './src/engine/stop.js'
 import { galleyVitePlugin } from './src/server/vite.js'
 
 const dir = resolve(process.env.GALLEY_DIR || '.galley-data')
@@ -25,32 +26,6 @@ function paperForDocument(doc: string): string | null {
     if (name.toLowerCase().replace(/[^a-z0-9-]+/g, '-') === doc.toLowerCase() && existsSync(join(papers, name, 'state.json'))) return join(papers, name)
   }
   return null
-}
-
-const pause = (ms: number) => new Promise((done) => setTimeout(done, ms))
-
-// The run still going for a paper, stopped: true once nothing runs for it. The
-// process in its progress file is taken for its run only if the process's
-// command names the paper's folder, so a pid since reused by another process
-// is left alone. A run started here leads its own process group, and the model
-// calls it made stop with it.
-async function stopRun(paperDir: string): Promise<boolean> {
-  let pid = 0
-  try { pid = Number(JSON.parse(readFileSync(join(paperDir, 'progress.json'), 'utf8')).pid) } catch { return true }
-  const alive = () => { try { process.kill(pid, 0); return true } catch { return false } }
-  if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid || !alive()) return true
-  let line = ''
-  try { line = execFileSync('ps', ['-o', 'pgid=,command=', '-p', String(pid)]).toString().trim() } catch { return true }
-  const [group, ...command] = line.split(/\s+/)
-  const names = (path: string) => command.some((arg) => arg === path || arg === `${path}/`)
-  if (!names(paperDir) && !names(realpathSync(paperDir))) return true
-  const target = Number(group) === pid ? -pid : pid
-  for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
-    try { process.kill(target, signal) } catch { /* already gone */ }
-    for (let waited = 0; waited < 5000 && alive(); waited += 100) await pause(100)
-    if (!alive()) return true
-  }
-  return false
 }
 
 // Deleting a document deletes the project made from it: a run still going is
