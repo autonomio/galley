@@ -447,6 +447,9 @@ export const shouting = (name: string, letters: number) => name === name.toUpper
 /** A capitalized name in name case: each word, and each part after a hyphen or apostrophe, starts with a capital. */
 export const nameCase = (name: string) => name.toLowerCase().replace(/(^|[\s\-'’])(\p{L})/gu, (_, before: string, letter: string) => before + letter.toUpperCase())
 
+/** A title without the footnote mark a publisher's page put after it, pointing to a note no reference carries. */
+export const bareTitle = (title: string) => title.replace(/\s*[†‡§¶]+$/u, '').trim()
+
 /** Keep only standard CSL variables in their standard shapes: registries add lists and extras that citation processors reject. */
 export function cleanCsl(raw: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
@@ -457,8 +460,7 @@ export function cleanCsl(raw: Record<string, unknown>): Record<string, unknown> 
     if (typeof text === 'string' && text.trim()) out[key] = decodeEntities(text.replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim()
     else if (typeof text === 'number') out[key] = String(text)
   }
-  // A footnote mark the publisher's page put after the title points to a note no reference carries.
-  if (typeof out.title === 'string') out.title = out.title.replace(/\s*[†‡§¶]+$/u, '').trim()
+  if (typeof out.title === 'string') out.title = bareTitle(out.title)
   // A title with a subtitle prints whole ("Pebbles, Graphs, and a Pinch of Combinatorics: Towards Tight I/O Lower Bounds").
   const subtitle = Array.isArray(raw.subtitle) ? raw.subtitle.find((v) => typeof v === 'string' && v.trim()) : raw.subtitle
   if (typeof subtitle === 'string' && subtitle.trim() && typeof out.title === 'string') {

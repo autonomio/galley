@@ -8,7 +8,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { claim, keyFor, ledgerAppendix } from './behaviors/common.js'
 import { FAMILY_NAMES, lightName, lightSpecFor } from './config.js'
-import { cleanCsl, completeByTitle, cslForDoi, cslFromWork, titleWords } from './evidence.js'
+import { bareTitle, cleanCsl, completeByTitle, cslForDoi, cslFromWork, titleWords } from './evidence.js'
 import type { Paper } from './paper.js'
 import { LIT_PLACEHOLDERS, modelName, reviewAppendix, reviewFlowTypst } from './literature.js'
 import { worldModelOf } from './worldmodel.js'
@@ -708,24 +708,60 @@ function writeEditorDocument(paper: Paper, seen?: { doc: string | null, notes: s
 // A note half typed is not yet a note: galley reads a person's changes once they pause.
 const PAUSE_MS = 4_000
 
-/**
- * Keep the editor's copy in step with the paper, while it is being written:
- * take in what a person changed there (edits, notes, replies, decisions on
- * proposed changes), then write what the paper now says.
- */
 const thousands = (n: number) => n.toLocaleString('en-US')
+
+/**
+ * A work as the brief names it: its authors and year from its record, or else from the citation data it came with (a
+ * deposited dataset has them only there), and its title without a footnote mark.
+ */
+function asNamed(w: Work): Work {
+  const csl = w.csl ?? {}
+  const people = Array.isArray(csl.author) ? csl.author as { given?: string; family?: string; literal?: string }[] : []
+  const authors = w.authors.length ? w.authors : people.map((p) => p.literal ?? [p.given, p.family].filter(Boolean).join(' '))
+  const issued = Number((csl.issued as { 'date-parts'?: unknown[][] } | undefined)?.['date-parts']?.[0]?.[0])
+  return { ...w, authors: authors.map((a) => a.replace(/\s+/g, ' ').trim()).filter(Boolean), year: w.year ?? (Number.isInteger(issued) ? issued : null), title: bareTitle(w.title) }
+}
+
+/** How the brief cites a work in its text: author and year, or a work without authors by the start of its title. */
+function citeName(w: Work): string {
+  if (w.authors.length) return authorYear(w)
+  const words = w.title.split(/\s+/)
+  return `${words.slice(0, 4).join(' ')}${words.length > 4 ? '…' : ''} ${w.year ?? 'n.d.'}`
+}
+
+/**
+ * A clause the model wrote as a sentence, made to read on after "that": its first letter lowered, unless its first
+ * word is a name or an acronym, which the brief also writes with a capital where no sentence starts.
+ */
+function continuing(clause: string, context: string): string {
+  const word = clause.match(/^(?:A(?= )|\p{Lu}\p{Ll}+(?![\p{L}\p{N}]))/u)?.[0]
+  if (!word || word !== 'A' && new RegExp(`[\\p{Ll}\\p{N},;:]\\s+${word}(?![\\p{L}\\p{N}])`, 'u').test(context)) return clause
+  return clause[0].toLowerCase() + clause.slice(1)
+}
+
+/** The authors as a list of sources names them: up to three in full, more as the first and et al. */
+function sourceAuthors(authors: string[]): string {
+  if (authors.length > 3) return `${authors[0]} et al.`
+  return authors.length === 3 ? `${authors[0]}, ${authors[1]} and ${authors[2]}` : authors.join(' and ')
+}
 
 /** The thesis as a brief: the thesis, how it stands to the field, what it holds under, depends on and opens, and its test. */
 export function thesisMarkdown(paper: Paper): string {
   const s = paper.state
   const t = s.thesis
   if (!t) return ''
-  const byKey = new Map(Object.values(s.works).filter((w) => w.bibKey).map((w) => [w.bibKey!, w]))
+  const byKey = new Map(Object.values(s.works).filter((w) => w.bibKey).map((w) => [w.bibKey!, asNamed(w)]))
   const used = new Set<string>()
   const cite = (keys: string[]) => {
     const works = keys.map((k) => byKey.get(k)).filter((w): w is Work => !!w)
     works.forEach((w) => used.add(w.bibKey!))
-    return works.length ? ` (${works.map((w) => authorYear(w)).join('; ')})` : ''
+    return works.length ? ` (${works.map(citeName).join('; ')})` : ''
+  }
+  const context = [t.statement, t.relation, t.sharedAssumption, t.setAside, ...t.positions.flatMap((p) => [p.holds, p.restsOn])].join(' ')
+  const source = (w: Work) => {
+    const title = `${w.title}${/[.?!]$/.test(w.title) ? '' : '.'}`
+    const head = w.authors.length ? `${sourceAuthors(w.authors)} (${w.year ?? 'n.d.'}). ${title}` : `${title} (${w.year ?? 'n.d.'}).`
+    return `- ${head}${w.venue ? ` ${w.venue}.` : ''}${w.doi ? ` https://doi.org/${w.doi}` : ''}`
   }
   const stance = ({ extend: 'Extend: it builds on what the field holds.', contest: 'Contest: it goes against what the field holds.', reframe: 'Reframe: it goes beyond what the field holds, onto another axis.' } as const)[t.stance]
   const status = { given: 'given by the seed', assumed: 'assumed', supported: 'supported', unknown: 'not yet known' } as const
@@ -739,7 +775,7 @@ export function thesisMarkdown(paper: Paper): string {
     `**Thesis.** ${t.statement}`,
     `**Stance.** ${stance}`,
     `## How it stands to the field\n\n${t.relation}`,
-    t.positions.length ? `The positions that draw most of the work on this subject:\n\n${t.positions.map((p) => `- **${p.name}.** ${p.holds} It rests on ${p.restsOn.replace(/\.$/, '')}${cite(p.sources)}.`).join('\n')}` : '',
+    t.positions.length ? `The positions that draw most of the work on this subject:\n\n${t.positions.map((p) => `- **${p.name}.** ${p.holds} It rests on the assumption that ${continuing(p.restsOn.replace(/\.$/, ''), context)}${cite(p.sources)}.`).join('\n')}` : '',
     t.sharedAssumption ? `What every position takes for granted: ${t.sharedAssumption}` : '',
     t.setAside ? `The first idea, set aside: ${t.setAside}` : '',
     t.conditions.length ? `## What it holds under\n\n${t.conditions.map((c) => `- ${c.statement.replace(/\.$/, '')}${cite(c.sources)}. *${status[c.status]}*`).join('\n')}` : '',
@@ -749,7 +785,7 @@ export function thesisMarkdown(paper: Paper): string {
     t.residue ? `## What it leaves open\n\n${t.residue}` : '',
     test ? `## Tested against the literature\n\n${test.passes ? 'It meets the test for its stance.' : 'It does not yet meet the test for its stance.'}${test.objections.length ? `\n\n${test.objections.map((o) => `- ${o}`).join('\n')}` : ''}${test.already.length ? `\n\nAlready stated in: ${test.already.join('; ')}.` : ''}${test.revisedFrom ? `\n\nThe thesis was formulated again after a first test. It first read: ${test.revisedFrom}` : ''}` : '',
     lit ? `## The literature it draws on\n\nA literature review run with Canary on ${lit.searchedOn} asked: "${lit.question}" Of ${thousands(lit.counts?.discovered ?? 0)} records found, ${thousands(lit.counts?.screened ?? 0)} were screened, ${thousands(lit.counts?.retrieved ?? 0)} read in full and ${thousands(lit.counts?.reviewed ?? 0)} included. It is a targeted review, not a systematic review in the formal sense.` : '',
-    used.size ? `## Sources\n\n${[...used].map((k) => byKey.get(k)!).map((w) => `- ${w.authors.slice(0, 6).join(', ')}${w.authors.length > 6 ? ' et al.' : ''} (${w.year ?? 'n.d.'}). ${w.title}.${w.venue ? ` ${w.venue}.` : ''}${w.doi ? ` https://doi.org/${w.doi}` : ''}`).join('\n')}` : '',
+    used.size ? `## Sources\n\n${[...used].map((k) => source(byKey.get(k)!)).join('\n')}` : '',
   ]
   return `${parts.filter(Boolean).join('\n\n')}\n`
 }
@@ -778,6 +814,11 @@ function writeThesisToEditor(paper: Paper, markdown: string): void {
   paper.state.editorWritten = { doc: digest(markdown), notes: paper.state.editorWritten?.notes ?? '' }
 }
 
+/**
+ * Keep the editor's copy in step with the paper, while it is being written:
+ * take in what a person changed there (edits, notes, replies, decisions on
+ * proposed changes), then write what the paper now says.
+ */
 export function syncEditor(paper: Paper): { edits: string[], notes: number, decisions: number } {
   const s = paper.state
   const dir = editorDir(paper)

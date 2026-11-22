@@ -72,7 +72,7 @@ function formulatePrompt(paper: Paper, revise?: { thesis: Thesis; objections: st
 
 You are formulating a thesis, not writing a paper: one proposition worth exploring, which takes a clear stance toward what the field holds. It is speculation to be explored further, not a claim to prove now, so it needs no evidence of its own yet; what it needs is a clear stance, the conditions it holds under, what it depends on and what would decide it.
 
-First map the field from the review's findings and the prior-art search: the 2 to 6 positions that draw most of the work on this subject. For each give what it holds, and rests_on: the assumption it rests on, without which it would fall, with the sources that show it (their keys, as listed below, without the @). Then shared_assumption: an assumption every position shares and none examines, or empty if there is none.
+First map the field from the review's findings and the prior-art search: the 2 to 6 positions that draw most of the work on this subject. For each give what it holds, and rests_on: the assumption it rests on, without which it would fall, written as a clause that reads on after "It rests on the assumption that", with the sources that show it (their keys, as listed below, without the @). Then shared_assumption: an assumption every position shares and none examines, or empty if there is none.
 
 ${stance.task}
 

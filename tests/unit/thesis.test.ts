@@ -40,17 +40,20 @@ describe('the thesis branch', () => {
     s.works.W1 = { id: 'W1', doi: '10.1/pits', title: 'Narrow pits shorten tree lives', authors: ['Jane Roe'], year: 2020, venue: 'Urban Forestry', abstract: '', citedBy: null, url: null }
     s.claims.push({ id: 'C1', text: 'Narrow pits shorten the lives of street trees.', kind: 'background', seedQuote: '', origin: 'review', need: 'external', loadBearing: false, dependsOn: [], status: 'supported', history: [] })
     s.citations.push({ id: 'K1', claimId: 'C1', workId: 'W1', passage: 'Trees in narrow pits died sooner.', role: 'support', status: 'verified', chosenBy: 'auto' })
+    // A deposited dataset carries its authors and year only in its citation data, and a title can end in a footnote mark.
+    s.works.D1 = { id: 'D1', doi: '10.5281/zenodo.1', title: 'Root survey of one street †', authors: [], year: null, venue: null, abstract: '', citedBy: null, url: null, csl: { author: [{ family: 'TreeLab' }], issued: { 'date-parts': [[2025, 4]] } } }
     const key = keyFor(paper, s.works.W1)
+    const survey = keyFor(paper, s.works.D1)
     const asked: { behavior: string; target: string; prompt: string }[] = []
     const verdicts = [false, true]
     paper.ask = (async (options: { behavior: string; target: string; prompt: string }) => {
       asked.push(options)
       if (options.behavior === 'formulate') return {
-        positions: [{ name: 'Pit engineering', holds: 'Bigger pits save trees.', rests_on: 'the pit being the unit that matters', sources: [key] }],
+        positions: [{ name: 'Pit engineering', holds: 'Bigger pits save trees.', rests_on: 'The pit is the unit that matters.', sources: [key] }],
         shared_assumption: 'The single tree is the unit of care.', set_aside: 'Smaller pits save trees.',
         thesis: options.target === 'thesis' ? 'Street trees are best treated as a network.' : 'Street trees live or die as one shared root network.',
         title: 'Street trees as one network', relation: 'It leaves the pit for the network the roots form.',
-        conditions: [{ statement: 'Roots cross from pit to pit', status: 'unknown', sources: [] }, { statement: 'Narrow pits shorten tree lives', status: 'supported', sources: [key] }],
+        conditions: [{ statement: 'Roots cross from pit to pit', status: 'unknown', sources: [survey] },{ statement: 'Narrow pits shorten tree lives', status: 'supported', sources: [key] }],
         depends_on: ['Roots reach across pavements.'], decides: 'A survey of roots under one street.', opens: 'Planting for the network.', residue: '', novelty_queries: [],
       }
       return { passes: verdicts.shift(), objections: ['It is the opposite of pit engineering.'], already: [] }
@@ -72,8 +75,11 @@ describe('the thesis branch', () => {
     expect(brief).toMatch(/^# Street trees as one network\n\nAda Lovelace · /)
     expect(brief).toContain('**Thesis.** Street trees live or die as one shared root network.')
     expect(brief).toContain('**Stance.** Reframe: it goes beyond what the field holds, onto another axis.')
+    expect(brief).toContain('- **Pit engineering.** Bigger pits save trees. It rests on the assumption that the pit is the unit that matters (Roe 2020).')
     expect(brief).toContain('- Narrow pits shorten tree lives (Roe 2020). *supported*')
+    expect(brief).toContain('- Roots cross from pit to pit (TreeLab 2025). *not yet known*')
     expect(brief).toContain('- Jane Roe (2020). Narrow pits shorten tree lives. Urban Forestry. https://doi.org/10.1/pits')
+    expect(brief).toContain('- TreeLab (2025). Root survey of one street. https://doi.org/10.5281/zenodo.1')
     expect(brief).toContain('not a systematic review in the formal sense')
     expect(readFileSync(join(dir, 'editor', 'trees.md'), 'utf8')).toBe(brief)
   })
