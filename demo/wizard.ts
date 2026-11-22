@@ -1,6 +1,8 @@
-// From a seed document to a paper, in four steps: the seed, the materials the
-// paper draws on, the settings that change the outcome, and an exact account of
-// what happens and what leaves this machine. Nothing starts until Start.
+// From a seed document to a thesis or a paper. The first step decides which. A paper then
+// goes through the seed, the materials it draws on, the settings that change the outcome,
+// and an exact account of what happens and what leaves this machine. A thesis first takes
+// its direction (extend, contest or reframe), then the seed, its few settings and the same
+// account. Nothing starts until Start.
 import type { EditorAction } from '../src/index.js'
 
 interface Seat { family: string; name: string; model: string }
@@ -47,7 +49,16 @@ function dealSeats(context: Context | null, on: string[]): Record<SeatName, Seat
 /** A link to a published dataset galley can read: a Zenodo record or its DOI. */
 const DATASET_RECORD = /zenodo\.org\/(api\/)?(records?|deposit|uploads)\/\d+|10\.5281\/zenodo\.\d+/i
 
-const STEPS = ['Seed', 'Materials', 'Settings', 'Start'] as const
+const PAPER_STEPS = ['Make', 'Seed', 'Materials', 'Settings', 'Start'] as const
+const THESIS_STEPS = ['Make', 'Direction', 'Seed', 'Settings', 'Start'] as const
+type Step = typeof PAPER_STEPS[number] | typeof THESIS_STEPS[number]
+
+/** A thesis's direction toward what the field holds. */
+const STANCES: [string, string, string, string][] = [
+  ['extend', 'Extend', 'With the flow', 'Builds on what the field holds: the next step its strongest position supports but has not yet taken.'],
+  ['contest', 'Contest', 'Against the flow', 'Goes against what the field holds: names the assumption it rests on that is wrong, and what would decide between the two.'],
+  ['reframe', 'Reframe', 'Beyond the flow', 'Leaves the field\'s positions for another axis: a framing or a question the field cannot ask today, checked against the literature to be new rather than merely contrarian.'],
+]
 const DATASET = /\.(csv|tsv|json|xlsx)$/i
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...children: (Node | string | null | false | undefined)[]): HTMLElementTagNameMap[K] {
@@ -111,13 +122,15 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   let worldModel: { file: string; state: 'reading' | 'read' | 'failed'; error?: string; token?: string; name?: string; claims?: number; evidence?: number; sources?: number; only: boolean } | null = null
   let step = 0
   let context: Context | null = null
-  const settings = { author: '', affiliation: '', funding: '', competingInterests: '', acknowledgements: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, reviewRole: 'supporting', simulation: false, simulationRole: 'supporting', webSources: true, families: [...FAMILY_ORDER] }
+  const settings = { mode: '' as '' | 'paper' | 'thesis', stance: '' as '' | 'extend' | 'contest' | 'reframe', author: '', affiliation: '', funding: '', competingInterests: '', acknowledgements: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, reviewRole: 'supporting', simulation: false, simulationRole: 'supporting', webSources: true, families: [...FAMILY_ORDER] }
 
   const dialog = h('dialog', { class: 'gw', 'aria-labelledby': 'gw-title' })
   const trail = h('ol', { class: 'gw-trail' })
   const body = h('div', { class: 'gw-body' })
   const back = h('button', { type: 'button', class: 'gw-btn', text: 'Back', onclick: () => go(step - 1) })
-  const next = h('button', { type: 'button', class: 'gw-btn gw-btn--primary', onclick: () => step < STEPS.length - 1 ? go(step + 1) : start() })
+  const next = h('button', { type: 'button', class: 'gw-btn gw-btn--primary', onclick: () => step < steps().length - 1 ? go(step + 1) : start() })
+  const steps = (): readonly Step[] => settings.mode === 'thesis' ? THESIS_STEPS : PAPER_STEPS
+  const thesis = () => settings.mode === 'thesis'
   const hint = h('span', { class: 'gw-hint', text: 'Esc closes. Nothing starts until you press Start.' })
   dialog.append(h('header', { class: 'gw-head' }, trail), body, h('footer', { class: 'gw-foot' }, hint, h('div', { class: 'gw-actions' }, back, next)))
   dialog.addEventListener('close', () => dialog.remove())
@@ -132,23 +145,63 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   }).catch(() => render())
 
   function go(to: number): void {
-    step = Math.max(0, Math.min(STEPS.length - 1, to))
+    step = Math.max(0, Math.min(steps().length - 1, to))
     render()
   }
 
   function render(): void {
-    trail.replaceChildren(...STEPS.map((name, i) => h('li', { class: i === step ? 'is-current' : i < step ? 'is-done' : '', 'aria-current': i === step ? 'step' : undefined },
+    const all = steps()
+    trail.replaceChildren(...all.map((name, i) => h('li', { class: i === step ? 'is-current' : i < step ? 'is-done' : '', 'aria-current': i === step ? 'step' : undefined },
       h('span', { class: 'gw-num', text: String(i + 1) }), name)))
     back.hidden = step === 0
-    next.textContent = step === STEPS.length - 1 ? 'Start the paper' : `Next: ${STEPS[step + 1]}`
-    body.replaceChildren(...[seedStep, materialsStep, settingsStep, startStep][step]().filter((x): x is Node => !!x))
+    next.textContent = step === all.length - 1 ? (thesis() ? 'Start the thesis' : 'Start the paper') : `Next: ${all[step + 1]}`
+    // The first step asks what to make, and a thesis its direction: neither has a default.
+    next.disabled = (all[step] === 'Make' && !settings.mode) || (all[step] === 'Direction' && !settings.stance)
+    const draw: Record<Step, () => (Node | null)[]> = { Make: makeStep, Direction: directionStep, Seed: seedStep, Materials: materialsStep, Settings: settingsStep, Start: startStep }
+    body.replaceChildren(...draw[all[step]]().filter((x): x is Node => !!x))
     body.scrollTop = 0
     const first = body.querySelector<HTMLElement>('input, button, select, textarea')
-    ;(step === 0 ? next : first ?? next).focus()
+    ;(steps()[step] === 'Seed' ? next : first ?? next).focus()
   }
 
-  // ---------------------------------------------------------------- 1. seed
+  // ---------------------------------------------------------------- what to make
+  /** A choice among options, as radio buttons; picking one redraws, since it changes the steps that follow. */
+  function pick(name: string, label: string, current: string, options: [string, string, string][], set: (value: string) => void): HTMLElement {
+    return h('div', { class: 'gw-choices', role: 'radiogroup', 'aria-label': label }, ...options.map(([value, text, help]) => {
+      const radio = h('input', { type: 'radio', name, value, checked: current === value })
+      radio.addEventListener('change', () => { set(value); render() })
+      return h('label', { class: 'gw-choice' }, radio, h('span', {}, h('span', { class: 'gw-choice-label', text }), h('span', { class: 'gw-help', text: help })))
+    }))
+  }
+
+  function makeStep(): (Node | null)[] {
+    return [
+      h('h2', { id: 'gw-title', class: 'gw-title', text: 'What to make' }),
+      h('p', { class: 'gw-lead', text: `From your words in “${title}”.` }),
+      pick('gw-mode', 'What to make', settings.mode, [
+        ['thesis', 'A thesis', 'One proposition worth exploring, formulated against what the literature holds and tested for its direction. About an hour. It comes back as a brief in this document, to explore further and later turn into a paper.'],
+        ['paper', 'A paper', 'A full manuscript, researched, drafted, refereed and typeset, ready for submission. Several hours.'],
+      ], (value) => { settings.mode = value as 'paper' | 'thesis' }),
+    ]
+  }
+
+  function directionStep(): (Node | null)[] {
+    return [
+      h('h2', { id: 'gw-title', class: 'gw-title', text: 'The thesis\'s direction' }),
+      h('p', { class: 'gw-lead', text: 'How the thesis stands to what the field already holds. It decides what the literature review looks for and the test the thesis has to meet.' }),
+      pick('gw-stance', 'Direction', settings.stance, STANCES.map(([value, name, flow, help]) => [value, `${name}: ${flow.toLowerCase()}`, help] as [string, string, string]), (value) => { settings.stance = value as 'extend' | 'contest' | 'reframe' }),
+    ]
+  }
+
+  // ---------------------------------------------------------------- seed
   function seedStep(): (Node | null)[] {
+    if (thesis()) return [
+      h('h2', { id: 'gw-title', class: 'gw-title', text: 'Your seed' }),
+      h('p', { class: 'gw-lead', text: `The thesis starts from your words in “${title}”. galley places the idea in the literature, has Canary review what the field holds, and formulates the thesis from both.` }),
+      h('p', { class: 'gw-facts' }, h('span', { class: 'gw-mono', text: n(words) }), ' words · ', h('span', { class: 'gw-mono', text: n(paragraphs) }), ` paragraph${paragraphs === 1 ? '' : 's'}`),
+      seedReference(text),
+      h('p', { class: 'gw-note', text: 'When the brief is ready it is written into this document; your words stay in the project\'s settings for reference.' }),
+    ]
     return [
       h('h2', { id: 'gw-title', class: 'gw-title', text: 'Your seed' }),
       h('p', { class: 'gw-lead', text: `The paper starts from your words in “${title}”. Nothing is added to them: galley challenges the idea, researches it and writes from them.` }),
@@ -412,6 +465,14 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       return h('label', { class: 'gw-check' }, box, h('span', { text: f.name }), h('span', { class: 'gw-mono gw-help', text: f.model }))
     }
     const families = context?.families ?? FAMILY_ORDER.map((family) => Object.values(context?.seats ?? {}).find((s) => s.family === family)).filter((s): s is Seat => !!s)
+    const literature = h('p', { class: 'gw-facts' }, 'Canary over OpenAlex · ', context ? (context.openalexKey ? h('span', { text: 'key found' }) : h('span', { class: 'gw-attention', text: 'no key: about 100 searches a day for everyone on this network' })) : 'checking…')
+    if (thesis()) return [
+      h('h2', { id: 'gw-title', class: 'gw-title', text: 'How the thesis is made' }),
+      field('Author', h('div', { class: 'gw-pair' }, input('author', 'Name'), input('affiliation', 'Affiliation')), 'Set in the brief\'s byline; never sent to a model.'),
+      field('Models', h('div', { class: 'gw-stack' }, ...families.map(familyBox)), 'Turn a family off and its seats pass to the others: with Claude off, GPT formulates. At least two stay on, so one formulates and another tests.'),
+      field('Seats', h('table', { class: 'gw-seats' }, h('tbody', {}, seatRow('author', seats.author), seatRow('challenger', seats.challenger))), 'The author formulates the thesis; the challenger, from another family, tests it for its direction.'),
+      field('Literature', literature, `A literature review by Canary, its question leaning toward the direction you chose: at least ${context?.review?.papers ?? 50} full papers read and every finding audited by a second model. A thesis is formulated from the literature only.`),
+    ]
     return [
       h('h2', { id: 'gw-title', class: 'gw-title', text: 'How the paper is made' }),
       field('Author', h('div', { class: 'gw-pair' }, input('author', 'Name'), input('affiliation', 'Affiliation')), 'Set in the byline when the paper is typeset; never sent to a model.'),
@@ -472,6 +533,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   function startStep(): (Node | null)[] {
     const s = dealSeats(context, settings.families)
     const m = (seat: SeatName) => s[seat]?.model ?? seat
+    if (thesis()) return thesisStart(m)
     const searches = context?.openalexKey ? 'two' : 'one'
     const onlyModel = !!worldModel?.only
     // A step that runs alongside the others shows its own time but adds little to the whole.
@@ -511,11 +573,40 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
     ]
   }
 
+  function thesisStart(m: (seat: SeatName) => string): (Node | null)[] {
+    const [, name, flow] = STANCES.find(([value]) => value === settings.stance) ?? STANCES[0]
+    const plan: [string, string, string, number][] = [
+      ['Read your seed', 'its concern, its subject and its field', m('author'), 1],
+      ['Place the idea', '7 literature searches through Canary: closest work, bottleneck, consensus', m('checker'), 3],
+      ['Literature review', `Canary, its question leaning ${flow.toLowerCase()}: search plan, screening, at least ${context?.review?.papers ?? 50} full papers read, every finding audited`, `${context?.review?.research ?? 'gpt-6.1-sol'} · ${context?.review?.audit ?? 'gpt-6-astra'}`, 40],
+      ['Formulate the thesis', `${name.toLowerCase()}: the field's positions mapped from the review, one thesis taken against them, what it holds under, depends on and opens`, m('author'), 5],
+      ['Test it', 'searches for work already stating it; another family\'s verdict for its direction; formulated again once if it misses', `${m('challenger')} · Canary`, 5],
+      ['Write the brief', 'into this document, with a PDF beside it', 'this machine', 1],
+    ]
+    const leaves = [
+      ['Your seed', 'goes to the providers of the model families (Anthropic, OpenAI, Google).'],
+      ['Search terms', 'go to OpenAlex through Canary.'],
+      ['Review question', 'goes to Canary\'s research and audit models (OpenAI) and to OpenAlex.'],
+      ['Your name', 'is never sent; it is set in the brief\'s byline.'],
+    ]
+    return [
+      h('h2', { id: 'gw-title', class: 'gw-title', text: 'What happens when you start' }),
+      h('ol', { class: 'gw-plan' }, ...plan.map(([what, detail, who, mins]) => h('li', {},
+        h('span', { class: 'gw-plan-what' }, h('strong', { text: what }), h('span', { class: 'gw-help', text: detail }), h('span', { class: 'gw-mono gw-plan-who', text: who })),
+        h('span', { class: 'gw-mono gw-plan-time', text: minutes(mins) })))),
+      h('p', { class: 'gw-facts' }, 'About ', h('strong', { text: minutes(plan.reduce((a, p) => a + p[3], 0)) }), '. Nothing needs you until the brief is ready.'),
+      h('div', { class: 'gw-box' }, h('div', { class: 'gw-label', text: 'What leaves this machine' }), h('dl', { class: 'gw-leaves' }, ...leaves.flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })]))),
+      h('p', { class: 'gw-note', text: 'When the brief is ready it replaces the seed in this document; the seed stays in the project\'s settings. Explore the thesis further, then start a paper from it.' }),
+    ]
+  }
+
   async function start(): Promise<void> {
     next.disabled = true
     next.textContent = 'Starting…'
     try {
       if (worldModel && worldModel.state !== 'read') throw new Error(worldModel.state === 'reading' ? 'The world model is still being read; start again in a moment.' : 'The world model could not be read; remove it or choose it again.')
+      // A thesis is formulated from the literature only: no materials go with it.
+      if (thesis()) { items.length = 0; datasets.length = 0 }
       const materials = await Promise.all(items.map(async (item) => item.kind === 'link'
         ? { name: item.name, url: item.url }
         : { name: item.name, private: item.private, data: await base64(item.file!) }))
@@ -543,9 +634,11 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       const at = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
       trail.querySelectorAll('li').forEach((li) => li.classList.add('is-done'))
       body.replaceChildren(
-        h('h2', { id: 'gw-title', class: 'gw-title' }, h('span', { class: 'gw-lamp', 'aria-hidden': 'true' }), 'Writing the paper'),
+        h('h2', { id: 'gw-title', class: 'gw-title' }, h('span', { class: 'gw-lamp', 'aria-hidden': 'true' }), thesis() ? 'Formulating the thesis' : 'Writing the paper'),
         h('p', { class: 'gw-lead' }, `Started at ${at}. `, h('span', { class: 'gw-mono', text: context?.seats.author.model ?? 'The author' }), ' is reading your seed.'),
-        h('p', { class: 'gw-note', text: 'This document is now the paper: the team writes it here, and you can edit and comment while they work. Your seed is kept in the paper\'s settings; press the paper button any time to see it and where the paper stands.' }),
+        h('p', { class: 'gw-note', text: thesis()
+          ? 'The brief is written into this document when it is ready, in about an hour. Your seed is kept in the project\'s settings; press the play button any time to see where the thesis stands.'
+          : 'This document is now the paper: the team writes it here, and you can edit and comment while they work. Your seed is kept in the paper\'s settings; press the paper button any time to see it and where the paper stands.' }),
         seedReference(text),
       )
       back.hidden = true
@@ -555,8 +648,8 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       hint.textContent = ''
     } catch (error) {
       next.disabled = false
-      next.textContent = 'Start the paper'
-      body.append(h('p', { class: 'gw-error', role: 'alert', text: `The paper did not start: ${(error as Error).message}` }))
+      next.textContent = thesis() ? 'Start the thesis' : 'Start the paper'
+      body.append(h('p', { class: 'gw-error', role: 'alert', text: `The ${thesis() ? 'thesis' : 'paper'} did not start: ${(error as Error).message}` }))
     }
   }
 
@@ -580,6 +673,10 @@ interface StatusData {
   cost: { calls: number; tokensInM: number; hours: number }
   typeset: boolean
   seed: string
+  /** A thesis run: its direction, and the thesis once formulated, with whether it met its test. */
+  mode?: 'paper' | 'thesis'
+  stance?: string
+  thesis?: { statement: string; passes: boolean | null } | null
   settings: { literatureReview: boolean | string; simulation: boolean | string; rounds: number; words: number; venue: string; authors: string[]; materials: string[]; families?: string[]; seats?: Record<string, string> }
 }
 
@@ -589,6 +686,11 @@ const ago = (seconds: number) => seconds < 90 ? `${seconds} s` : seconds < 5400 
 /** What the project was started with: its options, people and materials. */
 function settingRows(d: StatusData): [string, string][] {
   const part = (v: boolean | string) => v === 'load-bearing' ? 'yes, the main contribution' : v ? 'yes, supporting' : 'no'
+  const models: [string, string] = ['Models', `${(d.settings.families ?? FAMILY_ORDER).map((f) => FAMILY_LABEL[f] ?? f).join(', ')}${d.settings.seats ? ` · ${d.settings.seats.author} writes` : ''}`]
+  if (d.mode === 'thesis') {
+    const stance = STANCES.find(([value]) => value === d.stance)
+    return [['Direction', stance ? `${stance[1]}: ${stance[2].toLowerCase()}` : 'extend'], ['Authors', d.settings.authors.join('; ') || 'not set'], models]
+  }
   return [
     ['Literature review', part(d.settings.literatureReview)],
     ['Simulation', part(d.settings.simulation)],
@@ -639,14 +741,19 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
     const seedOpen = !!body.querySelector<HTMLDetailsElement>('details.gw-seed')?.open
     const scroll = body.scrollTop
     const current = d.stages.findIndex((s) => !s.done)
-    const done = d.outcome === 'ready_for_submission'
+    const isThesis = d.mode === 'thesis'
+    const done = d.outcome === 'ready_for_submission' || d.outcome === 'thesis_ready'
     const state = done
-      ? h('p', { class: 'gw-state is-done' }, h('span', { class: 'gw-state-mark', 'aria-hidden': 'true', text: '✓' }), 'Ready for submission')
+      ? h('p', { class: 'gw-state is-done' }, h('span', { class: 'gw-state-mark', 'aria-hidden': 'true', text: '✓' }), isThesis ? 'Ready: the brief is in this document' : 'Ready for submission')
       : d.running
         ? h('p', { class: 'gw-state' }, h('span', { class: 'gw-lamp', 'aria-hidden': 'true' }), `Running · ${d.stages[current]?.label ?? 'Finishing'}`)
         : h('p', { class: 'gw-state is-stopped' }, h('span', { class: 'gw-state-mark', 'aria-hidden': 'true', text: '‖' }), d.outcome ? `Ended: ${d.outcome.replace(/_/g, ' ')}` : 'Not running')
     const n = (x: number | null) => x === null ? '…' : x.toLocaleString('en-US')
-    const rows: [string, string][] = [
+    const rows: [string, string][] = isThesis ? [
+      ['Thesis', d.thesis?.statement ?? 'not formulated yet'],
+      ['Test', !d.thesis || d.thesis.passes === null ? 'not yet' : d.thesis.passes ? 'meets the test for its direction' : 'does not yet meet the test for its direction'],
+      ['So far', `${n(d.cost.calls)} model calls · ${d.cost.tokensInM} M tokens · ${d.cost.hours} h`],
+    ] : [
       ['Claims', `${n(d.claims.total)}: ${d.claims.supported + d.claims.narrowed} with verified sources, ${d.claims.own} your work, ${d.claims.premises} premises, ${d.claims.hypotheses} hypotheses, ${d.claims.open} still open`],
       ['Evidence', `${n(d.evidence.screened)} works screened · ${d.evidence.verified} citations verified · ${d.evidence.rejected} rejected`],
       ['Sections', d.sections.total === null ? 'not outlined yet' : `${d.sections.drafted} of ${d.sections.total} drafted`],
@@ -654,8 +761,8 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
       ['So far', `${n(d.cost.calls)} model calls · ${d.cost.tokensInM} M tokens · ${d.cost.hours} h`],
     ]
     body.replaceChildren(...[
-      h('div', { class: 'gw-label', text: 'Paper' }),
-      h('h2', { id: 'gw-title', class: 'gw-title', text: d.title ?? d.seedTitle ?? 'Untitled paper' }),
+      h('div', { class: 'gw-label', text: isThesis ? 'Thesis' : 'Paper' }),
+      h('h2', { id: 'gw-title', class: 'gw-title', text: d.title ?? d.seedTitle ?? (isThesis ? 'Untitled thesis' : 'Untitled paper') }),
       state,
       h('p', { class: 'gw-note', text: `Started ${clock(d.startedAt)}${d.title ? ` · from “${d.seedTitle.length > 70 ? `${d.seedTitle.slice(0, 70)}…` : d.seedTitle}”` : ''}` }),
       h('ol', { class: d.stages.length > 7 ? 'gw-stages gw-stages--dense' : 'gw-stages' }, ...d.stages.map((s, i) => h('li', { class: s.done ? 'is-done' : i === current && !done ? 'is-current' : '' },

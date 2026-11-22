@@ -8,7 +8,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { claim, keyFor, ledgerAppendix } from './behaviors/common.js'
 import { FAMILY_NAMES, lightName, lightSpecFor } from './config.js'
-import { cleanCsl, completeByTitle, cslForDoi, cslFromWork, titleWords } from './evidence.js'
+import { bareTitle, cleanCsl, completeByTitle, cslForDoi, cslFromWork, titleWords } from './evidence.js'
 import type { Paper } from './paper.js'
 import { LIT_PLACEHOLDERS, modelName, reviewAppendix, reviewFlowTypst } from './literature.js'
 import { worldModelOf } from './worldmodel.js'
@@ -18,7 +18,7 @@ import { writeReproduction } from './simulation/index.js'
 import { PLACEHOLDERS } from './prompts.js'
 import { fillPlaceholders, productionRecord, type Record_ } from './record.js'
 import { software, sourceStatement } from './self.js'
-import { authorsNamed, escapeUnknownCitations, squash } from './text.js'
+import { authorsNamed, authorYear, escapeUnknownCitations, squash } from './text.js'
 import type { Annotation, AnnotationAuthor, AnnotationLabel, AnnotationReply } from '../types.js'
 import type { AuthorNote, Claim, Family, Finding, Work } from './types.js'
 
@@ -708,6 +708,138 @@ function writeEditorDocument(paper: Paper, seen?: { doc: string | null, notes: s
 // A note half typed is not yet a note: galley reads a person's changes once they pause.
 const PAUSE_MS = 4_000
 
+const thousands = (n: number) => n.toLocaleString('en-US')
+
+/**
+ * A work as the brief names it: its authors and year from its record, or else from the citation data it came with (a
+ * deposited dataset has them only there), and its title without a footnote mark.
+ */
+function asNamed(w: Work): Work {
+  const csl = w.csl ?? {}
+  const people = Array.isArray(csl.author) ? csl.author as { given?: string; family?: string; literal?: string }[] : []
+  const authors = w.authors.length ? w.authors : people.map((p) => p.literal ?? [p.given, p.family].filter(Boolean).join(' '))
+  const issued = Number((csl.issued as { 'date-parts'?: unknown[][] } | undefined)?.['date-parts']?.[0]?.[0])
+  return { ...w, authors: authors.map((a) => a.replace(/\s+/g, ' ').trim()).filter(Boolean), year: w.year ?? (Number.isInteger(issued) ? issued : null), title: bareTitle(w.title) }
+}
+
+/** How the brief cites a work in its text: author and year, or a work without authors by the start of its title. */
+function citeName(w: Work): string {
+  if (w.authors.length) return authorYear(w)
+  const words = w.title.split(/\s+/)
+  return `${words.slice(0, 4).join(' ')}${words.length > 4 ? '…' : ''} ${w.year ?? 'n.d.'}`
+}
+
+/**
+ * A clause the model wrote as a sentence, made to read on after "that": its first letter lowered, unless its first
+ * word is a name or an acronym, which the brief also writes with a capital where no sentence starts.
+ */
+function continuing(clause: string, context: string): string {
+  const word = clause.match(/^(?:A(?= )|\p{Lu}\p{Ll}+(?![\p{L}\p{N}]))/u)?.[0]
+  if (!word || word !== 'A' && new RegExp(`[\\p{Ll}\\p{N},;:]\\s+${word}(?![\\p{L}\\p{N}])`, 'u').test(context)) return clause
+  return clause[0].toLowerCase() + clause.slice(1)
+}
+
+/** The authors as a list of sources names them: up to three in full, more as the first and et al. */
+function sourceAuthors(authors: string[]): string {
+  if (authors.length > 3) return `${authors[0]} et al.`
+  return authors.length === 3 ? `${authors[0]}, ${authors[1]} and ${authors[2]}` : authors.join(' and ')
+}
+
+/** The thesis as a brief: the thesis, how it stands to the field, what it holds under, depends on and opens, and its test. */
+export function thesisMarkdown(paper: Paper): string {
+  const s = paper.state
+  const t = s.thesis
+  if (!t) return ''
+  const byKey = new Map(Object.values(s.works).filter((w) => w.bibKey).map((w) => [w.bibKey!, asNamed(w)]))
+  const used = new Set<string>()
+  const cite = (keys: string[]) => {
+    const works = keys.map((k) => byKey.get(k)).filter((w): w is Work => !!w)
+    works.forEach((w) => used.add(w.bibKey!))
+    return works.length ? ` (${works.map(citeName).join('; ')})` : ''
+  }
+  const context = [t.statement, t.relation, t.sharedAssumption, t.setAside, ...t.positions.flatMap((p) => [p.holds, p.restsOn])].join(' ')
+  const source = (w: Work) => {
+    const title = `${w.title}${/[.?!]$/.test(w.title) ? '' : '.'}`
+    const head = w.authors.length ? `${sourceAuthors(w.authors)} (${w.year ?? 'n.d.'}). ${title}` : `${title} (${w.year ?? 'n.d.'}).`
+    return `- ${head}${w.venue ? ` ${w.venue}.` : ''}${w.doi ? ` https://doi.org/${w.doi}` : ''}`
+  }
+  const stance = ({ extend: 'Extend: it builds on what the field holds.', contest: 'Contest: it goes against what the field holds.', reframe: 'Reframe: it goes beyond what the field holds, onto another axis.' } as const)[t.stance]
+  const status = { given: 'given by the seed', assumed: 'assumed', supported: 'supported', unknown: 'not yet known' } as const
+  const authors = paper.config.authors.map((a) => a.affiliation ? `${a.name}, ${a.affiliation}` : a.name).join('; ')
+  const date = new Date(s.thesis?.test ? Date.now() : Date.parse(s.createdAt)).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  const lit = s.literature?.status === 'done' ? s.literature : null
+  const test = t.test
+  const parts = [
+    `# ${t.title || 'Thesis'}`,
+    [authors, date].filter(Boolean).join(' · '),
+    `**Thesis.** ${t.statement}`,
+    `**Stance.** ${stance}`,
+    `## How it stands to the field\n\n${t.relation}`,
+    t.positions.length ? `The positions that draw most of the work on this subject:\n\n${t.positions.map((p) => `- **${p.name}.** ${p.holds} It rests on the assumption that ${continuing(p.restsOn.replace(/\.$/, ''), context)}${cite(p.sources)}.`).join('\n')}` : '',
+    t.sharedAssumption ? `What every position takes for granted: ${t.sharedAssumption}` : '',
+    t.setAside ? `The first idea, set aside: ${t.setAside}` : '',
+    t.conditions.length ? `## What it holds under\n\n${t.conditions.map((c) => `- ${c.statement.replace(/\.$/, '')}${cite(c.sources)}. *${status[c.status]}*`).join('\n')}` : '',
+    t.dependsOn.length ? `## What it depends on\n\n${t.dependsOn.map((d) => `- ${d}`).join('\n')}` : '',
+    t.decides ? `## What would decide it\n\n${t.decides}` : '',
+    t.opens ? `## What it opens\n\n${t.opens}` : '',
+    t.residue ? `## What it leaves open\n\n${t.residue}` : '',
+    test ? `## Tested against the literature\n\n${test.passes ? 'It meets the test for its stance.' : 'It does not yet meet the test for its stance.'}${test.objections.length ? `\n\n${test.objections.map((o) => `- ${o}`).join('\n')}` : ''}${test.already.length ? `\n\nAlready stated in: ${test.already.join('; ')}.` : ''}${test.revisedFrom ? `\n\nThe thesis was formulated again after a first test. It first read: ${test.revisedFrom}` : ''}` : '',
+    lit ? `## The literature it draws on\n\nA literature review run with Canary on ${lit.searchedOn} asked: "${lit.question}" Of ${thousands(lit.counts?.discovered ?? 0)} records found, ${thousands(lit.counts?.screened ?? 0)} were screened, ${thousands(lit.counts?.retrieved ?? 0)} read in full and ${thousands(lit.counts?.reviewed ?? 0)} included. It is a targeted review, not a systematic review in the formal sense.` : '',
+    used.size ? `## Sources\n\n${[...used].map((k) => source(byKey.get(k)!)).join('\n')}` : '',
+  ]
+  return `${parts.filter(Boolean).join('\n\n')}\n`
+}
+
+/** Writes the brief beside the run (Markdown and PDF) and into the document the run started from. */
+export async function writeThesisBrief(paper: Paper): Promise<void> {
+  const markdown = thesisMarkdown(paper)
+  const out = paper.path('out')
+  mkdirSync(out, { recursive: true })
+  writeFileSync(join(out, 'thesis.md'), markdown)
+  try {
+    await exec('pandoc', ['thesis.md', '-f', 'markdown-citations', '-o', 'thesis.pdf', '--pdf-engine=typst', '-V', 'papersize=a4', '-V', 'fontsize=10.5pt', '-V', `header-includes=${TYPST_HEADER}`], out)
+  } catch (error) {
+    paper.note('thesis-brief', `The brief's PDF was not made: ${(error as Error).message.slice(0, 200)}`)
+  }
+  writeThesisToEditor(paper, markdown)
+}
+
+/**
+ * The document the run started from becomes the brief, as a paper's document becomes the paper. Each brief is written
+ * there once: from then on the document is the person's, and a brief that replaces a document they changed keeps
+ * their version beside the run.
+ */
+function writeThesisToEditor(paper: Paper, markdown: string): void {
+  const s = paper.state
+  if (!markdown || digest(markdown) === s.editorWritten?.doc) return
+  const dir = editorDir(paper)
+  mkdirSync(dir, { recursive: true })
+  const docPath = join(dir, `${editorSlug(paper)}.md`)
+  const held = fileText(docPath)
+  if (held?.trim() && ![markdown, s.seed.text].some((text) => squash(text) === squash(held)) && digest(held) !== s.editorWritten?.doc) {
+    writeFileSync(paper.path('document.before-brief.md'), held)
+    paper.note('thesis-brief', 'The brief replaced a document you had changed; your version is kept beside the run as document.before-brief.md.')
+  }
+  keepSeedThreads(paper)
+  if (held !== markdown) writeReplacing(docPath, markdown)
+  s.editorWritten = { doc: digest(markdown), notes: s.editorWritten?.notes ?? '' }
+}
+
+/**
+ * On galley's first write the document still holds the seed: its notes and proposals belong to the seed, so they move
+ * into the project with it, and the first write carries only its own threads.
+ */
+function keepSeedThreads(paper: Paper): void {
+  if (paper.state.editorWritten) return
+  const dir = editorDir(paper)
+  for (const [file, kept] of [[join(dir, `${editorSlug(paper)}.annotations.json`), 'seed.annotations.json'], [join(dir, `${editorSlug(paper)}.proposals.json`), 'seed.proposals.json']] as const) {
+    const held = fileText(file)
+    if (held === null) continue
+    writeFileSync(paper.path(kept), held)
+    rmSync(file, { force: true })
+  }
+}
+
 /**
  * Keep the editor's copy in step with the paper, while it is being written:
  * take in what a person changed there (edits, notes, replies, decisions on
@@ -718,16 +850,13 @@ export function syncEditor(paper: Paper): { edits: string[], notes: number, deci
   const dir = editorDir(paper)
   const docPath = join(dir, `${editorSlug(paper)}.md`)
   const notesPath = join(dir, `${editorSlug(paper)}.annotations.json`)
-  // On the first pass the document still holds the seed: its notes and proposals belong to the seed, so they move
-  // into the project with it, and the paper's first write carries only its own threads.
-  if (!s.editorWritten) {
-    for (const [file, kept] of [[notesPath, 'seed.annotations.json'], [join(dir, `${editorSlug(paper)}.proposals.json`), 'seed.proposals.json']] as const) {
-      const held = fileText(file)
-      if (held === null) continue
-      writeFileSync(paper.path(kept), held)
-      rmSync(file, { force: true })
-    }
+  // A thesis run leaves the document, and the seed's notes, as they are until the brief is ready; then the brief is
+  // written there once, and the document is the person's again.
+  if (paper.config.mode === 'thesis') {
+    if (s.outcome === 'thesis_ready') writeThesisToEditor(paper, fileText(paper.path('out', 'thesis.md')) ?? '')
+    return { edits: [], notes: 0, decisions: 0 }
   }
+  keepSeedThreads(paper)
   const seen = { doc: fileText(docPath), notes: fileText(notesPath) }
   const docChanged = seen.doc !== null && digest(seen.doc) !== s.editorWritten?.doc
   const notesChanged = seen.notes !== null && digest(seen.notes) !== s.editorWritten?.notes

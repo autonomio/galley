@@ -290,7 +290,7 @@ export interface Calibration {
   details: { kind: string; caught: boolean; family: Family }[]
 }
 
-export type Outcome = 'ready_for_submission' | 'no_subject' | 'no_contribution' | 'thesis_not_supported'
+export type Outcome = 'ready_for_submission' | 'no_subject' | 'no_contribution' | 'thesis_not_supported' | 'thesis_ready'
 
 /** An agent's change that waits for a person: shown in the editor with Accept and Decline. */
 export interface Proposal {
@@ -383,6 +383,40 @@ export interface ProofDefect {
   figureId?: string
 }
 
+/** One position the field holds, as the literature shows it: what it holds and the assumption it rests on. */
+export interface ThesisPosition { name: string; holds: string; restsOn: string; sources: string[] }
+
+/** A condition the thesis holds under, marked by what supports it: the seed gives it, the thesis assumes it, a source supports it, or nobody knows yet. */
+export interface ThesisCondition { statement: string; status: 'given' | 'assumed' | 'supported' | 'unknown'; sources: string[] }
+
+/** A thesis formulated from the seed and the literature, from one stance toward what the field holds. */
+export interface Thesis {
+  stance: import('./config.js').Stance
+  statement: string
+  title: string
+  /** How it stands to the positions: which it builds on, contests or leaves for another axis, and why. */
+  relation: string
+  positions: ThesisPosition[]
+  /** An assumption every position shares and none examines; empty when there is none. */
+  sharedAssumption: string
+  /** For a reframe: the first idea that formed, named and set aside so the thesis is not merely its opposite. */
+  setAside: string
+  conditions: ThesisCondition[]
+  /** What the thesis depends on that it does not contain: the conditions under which it stops holding. */
+  dependsOn: string[]
+  /** What would decide it: the observation, comparison or argument that would settle it. */
+  decides: string
+  /** What a good answer would let someone understand, investigate or stop doing. */
+  opens: string
+  /** The tension the thesis leaves unresolved; empty when none is apparent. */
+  residue: string
+  /** Searches that would find work already stating it. */
+  noveltyQueries: string[]
+  revision: number
+  /** The test for its stance, by a family other than the author's. */
+  test?: { passes: boolean; objections: string[]; already: string[]; family: string; revisedFrom?: string }
+}
+
 export interface PaperState {
   version: 1
   slug: string
@@ -407,8 +441,10 @@ export interface PaperState {
   calibration?: Calibration
   /** What galley computed in the authors' datasets, by analysis id (A1, A2 …). */
   measurements?: Record<string, import('./materials.js').Measurement>
-  /** The systematic review of the literature, when the paper has one. */
+  /** The literature review, when the paper has one. */
   literature?: LiteratureReview
+  /** The thesis, when the run makes one instead of a paper. */
+  thesis?: Thesis
   /** The Monte Carlo simulations galley ran for the paper, by id (S1 …). */
   simulations?: Record<string, import('./simulations.js').SimulationRun>
   profileAfter?: IdeaReview

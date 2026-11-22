@@ -260,9 +260,11 @@ function papersPlugin(): Plugin {
           add('rounds', s.rounds, (v) => /^[12]$/.test(v))
           add('dial', s.dial, (v) => ['autonomous', 'assisted', 'propose'].includes(v))
           add('citations', s.citations ?? citations, (v) => ['auto', 'choose', 'mixed'].includes(v))
+          // A thesis instead of a paper, from the stance the person chose; its run brings its own literature review.
+          if (s.mode === 'thesis') args.push('--mode', 'thesis', '--stance', ['extend', 'contest', 'reframe'].includes(String(s.stance)) ? String(s.stance) : 'extend')
           // An option the paper includes, in support or as what its main contribution rests on.
-          if (s.literatureReview === true) args.push('--literature-review', s.reviewRole === 'load-bearing' ? 'load-bearing' : 'yes')
-          if (s.simulation === true) args.push('--simulation', s.simulationRole === 'load-bearing' ? 'load-bearing' : 'yes')
+          else if (s.literatureReview === true) args.push('--literature-review', s.reviewRole === 'load-bearing' ? 'load-bearing' : 'yes')
+          if (s.mode !== 'thesis' && s.simulation === true) args.push('--simulation', s.simulationRole === 'load-bearing' ? 'load-bearing' : 'yes')
           // Primary sources from the web are on unless the person turned them off.
           if (s.webSources === false) args.push('--web-sources', 'no')
           // The model families the paper may use, when the person turned one off.

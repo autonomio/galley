@@ -17,7 +17,7 @@ const FACTORS = ['input_not_output', 'shared_bottleneck', 'conventional_body_one
 const needFor = (kind: ClaimKind): EvidenceNeed => kind === 'contribution' ? 'internal' : kind === 'common_knowledge' ? 'none' : 'external'
 
 export const extract: Behavior = {
-  id: 'extract', stage: 'skeleton', improver: false, title: 'Extract claims',
+  id: 'extract', stage: 'skeleton', modes: ['paper', 'thesis'], improver: false, title: 'Extract claims',
   ready: (paper) => paper.state.brief || paper.state.outcome ? [] : [{
     key: 'extract:seed', label: 'the seed',
     run: async () => {
@@ -71,7 +71,7 @@ function hitsBlock(results: Record<string, QueryResult>, queries: { id: string; 
 }
 
 export const position: Behavior = {
-  id: 'position', stage: 'aim', improver: true, title: 'Position against prior art, the bottleneck and the consensus',
+  id: 'position', stage: 'aim', modes: ['paper', 'thesis'], improver: true, title: 'Position against prior art, the bottleneck and the consensus',
   ready: (paper) => !live(paper) || !paper.state.brief?.hasSubject || paper.state.positioning.priorArt ? [] : [{
     key: 'position:seed', label: 'prior art, bottleneck and consensus',
     run: async () => {
@@ -145,7 +145,7 @@ ${hitsBlock(results, queries, 12)}`,
   }],
 }
 
-function positioningBlock(paper: Parameters<Behavior['ready']>[0]): string {
+export function positioningBlock(paper: Parameters<Behavior['ready']>[0]): string {
   const p = paper.state.positioning
   const name = (id: string) => { const w = paper.state.works[id]; return w ? `${w.title} (${w.year ?? 'n.d.'})` : id }
   return [
@@ -283,6 +283,8 @@ ${s.directions.map((d) => `${d.id}: ${d.title}\n  Question: ${d.question}\n  Shi
 export function aimSettled(paper: Parameters<Behavior['ready']>[0]): boolean {
   const s = paper.state
   if (!paper.isSettled('position:seed') && !paper.config.off.includes('position')) return false
+  // A thesis takes its direction from the stance the person chose, so its aim is settled once the idea is placed.
+  if (paper.config.mode === 'thesis') return true
   if (paper.config.off.includes('review-idea')) return true
   if (!paper.isSettled('review-idea:seed')) return false
   if (!s.ideaReview || s.ideaReview.verdict === 'worth_writing') return true

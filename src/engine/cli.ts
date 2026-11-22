@@ -2,6 +2,7 @@
 // galley: a seed in, a pre-publication manuscript out.
 //
 //   galley write <seed.md> [dir]     start a paper from a seed and run it to the end
+//       --mode thesis --stance <extend|contest|reframe>   formulate a thesis instead, handed back as a brief
 //   galley new <dir> <seed.md>       start a paper without running it
 //   galley run <dir> [--until id]    run (or resume) a paper; picks up notes you wrote in the editor
 //   galley status <dir>              where a paper stands
@@ -94,6 +95,7 @@ const DOING: Record<string, string> = {
   referee: 'Referee review', 'close-round': 'Closing the round', respond: 'Answering the referees', 'verify-disposition': 'Referees judging the answers',
   adjudicate: 'Settling disputes', 'handle-finding': 'Stating an unsettled finding as a limitation', reconcile: 'Reconciling the ledger with the text', reprofile: 'Profiling the finished paper', typeset: 'Typesetting',
   proof: 'Reading the typeset paper', 'web-sources': 'Finding primary sources on the web',
+  formulate: 'Formulating the thesis', 'test-thesis': 'Testing the thesis against the literature', 'thesis-brief': 'Writing the thesis brief',
 }
 
 /** Where a paper stands, as structured data for a host to show. */
@@ -104,7 +106,14 @@ function statusData(paper: Paper): Record<string, unknown> {
   const record = productionRecord(paper)
   const datasets = (paper.config.materials ?? []).some((m) => m.kind === 'dataset')
   const evidenceDone = !!s.outline && !s.citations.some((c) => c.status === 'selected') && !active.some((c) => c.need === 'external' && c.status === 'open')
-  const stages: [string, string, boolean][] = [
+  const stages: [string, string, boolean][] = paper.config.mode === 'thesis' ? [
+    ['seed', 'Seed', !!s.brief],
+    ['aim', 'Place the idea', paper.isSettled('position:seed')],
+    ['literature', 'Literature', s.literature?.status === 'done' || s.literature?.status === 'failed'],
+    ['thesis', 'Thesis', !!s.thesis],
+    ['test', 'Test', !!s.thesis?.test],
+    ['brief', 'Brief', s.outcome === 'thesis_ready'],
+  ] : [
     ['seed', 'Seed', !!s.brief],
     ['aim', 'Aim', !!s.plan || !!s.selectedDirection || s.ideaReview?.verdict === 'worth_writing'],
     ...(datasets ? [['data', 'Data', !!s.measurements] as [string, string, boolean]] : []),
@@ -142,8 +151,10 @@ function statusData(paper: Paper): Record<string, unknown> {
   const firstLine = s.seed.text.split('\n').find((l) => l.trim())?.replace(/^#+\s*/, '').trim() ?? ''
   return {
     slug: s.slug,
-    title: paper.config.title || s.frame?.title || s.plan?.workingTitle || null,
+    title: titleOf(paper),
     seedTitle: firstLine.slice(0, 120),
+    mode: paper.config.mode ?? 'paper',
+    ...(paper.config.mode === 'thesis' ? { stance: paper.config.stance ?? 'extend', thesis: s.thesis ? { statement: s.thesis.statement, passes: s.thesis.test?.passes ?? null } : null } : {}),
     outcome: s.outcome ?? null,
     running,
     startedAt: s.createdAt,
@@ -155,7 +166,7 @@ function statusData(paper: Paper): Record<string, unknown> {
     sections: { drafted: Object.keys(s.passages).length, total: s.outline?.sections.length ?? null },
     review: { round: s.round, rounds: paper.config.rounds, findings: s.findings.length, open: s.findings.filter((f) => f.status === 'open').length },
     cost: { calls: record['run.calls'], tokensInM: record['run.tokens_in_m'], hours: record['run.hours'] },
-    typeset: existsSync(paper.path('out', 'paper.pdf')),
+    typeset: existsSync(paper.path('out', paper.config.mode === 'thesis' ? 'thesis.pdf' : 'paper.pdf')),
     // What the project was started with, shown in its settings: the seed is kept here once the document becomes the paper.
     seed: s.seed.text,
     settings: {
@@ -170,18 +181,30 @@ function statusData(paper: Paper): Record<string, unknown> {
   }
 }
 
+/** The run's title so far: the one the person gave, else the thesis's own, or the paper's. */
+function titleOf(paper: Paper): string | null {
+  const s = paper.state
+  return paper.config.title || (paper.config.mode === 'thesis' ? s.thesis?.title : s.frame?.title || s.plan?.workingTitle) || null
+}
+
 function status(paper: Paper): void {
   const s = paper.state
   const active = s.claims.filter((c) => c.status !== 'dropped')
   const count = (status: string) => active.filter((c) => c.status === status).length
   const done = Object.values(s.settled).filter((v) => v === 'done').length
   const skipped = Object.values(s.settled).filter((v) => v === 'skipped').length
+  const thesis = paper.config.mode === 'thesis'
   console.log(`${s.slug}: ${s.outcome ?? 'in progress'}`)
-  console.log(`  title    ${paper.config.title || s.frame?.title || s.plan?.workingTitle || '(not yet)'}`)
-  if (s.ideaReview) console.log(`  idea     ${s.ideaReview.verdict}, weakest ${s.ideaReview.weakest}`)
-  console.log(`  claims   ${active.length}: ${count('supported')} supported, ${count('narrowed')} narrowed, ${count('internal')} own work, ${count('assumed')} premises, ${count('unsupported')} hypotheses, ${count('open')} open`)
-  console.log(`  evidence ${Object.keys(s.works).length} works screened, ${s.citations.filter((c) => c.status === 'verified').length} citations verified, ${s.citations.filter((c) => c.status === 'rejected').length} rejected`)
-  console.log(`  sections ${Object.keys(s.passages).length}/${s.outline?.sections.length ?? '?'} drafted; referee round ${s.round}; findings ${s.findings.length} (${s.findings.filter((f) => f.status === 'open').length} open)`)
+  console.log(`  title    ${titleOf(paper) ?? '(not yet)'}`)
+  if (thesis) {
+    console.log(`  thesis   ${s.thesis ? s.thesis.statement : '(not yet)'} [${paper.config.stance ?? 'extend'}${s.thesis?.test ? `; ${s.thesis.test.passes ? 'meets its test' : 'does not yet meet its test'}` : ''}]`)
+    if (existsSync(paper.path('out', 'thesis.md'))) console.log(`  brief    ${paper.path('out', 'thesis.md')}`)
+  } else {
+    if (s.ideaReview) console.log(`  idea     ${s.ideaReview.verdict}, weakest ${s.ideaReview.weakest}`)
+    console.log(`  claims   ${active.length}: ${count('supported')} supported, ${count('narrowed')} narrowed, ${count('internal')} own work, ${count('assumed')} premises, ${count('unsupported')} hypotheses, ${count('open')} open`)
+    console.log(`  evidence ${Object.keys(s.works).length} works screened, ${s.citations.filter((c) => c.status === 'verified').length} citations verified, ${s.citations.filter((c) => c.status === 'rejected').length} rejected`)
+    console.log(`  sections ${Object.keys(s.passages).length}/${s.outline?.sections.length ?? '?'} drafted; referee round ${s.round}; findings ${s.findings.length} (${s.findings.filter((f) => f.status === 'open').length} open)`)
+  }
   console.log(`  steps    ${done} done, ${skipped} skipped`)
   const record = productionRecord(paper)
   console.log(`  cost     ${record['run.calls']} calls, ${record['run.tokens_in_m']}M tokens in, ${record['run.hours']} h`)
@@ -199,7 +222,8 @@ function status(paper: Paper): void {
       }
     } else if (!alive && !s.outcome) console.log('  running now: nothing (resume with galley run)')
   }
-  if (existsSync(paper.path('out', 'paper.pdf'))) console.log(`  pdf      ${paper.path('out', 'paper.pdf')}`)
+  const pdf = paper.path('out', thesis ? 'thesis.pdf' : 'paper.pdf')
+  if (existsSync(pdf)) console.log(`  pdf      ${pdf}`)
 }
 
 async function run(dir: string): Promise<void> {
@@ -303,7 +327,12 @@ async function main(): Promise<void> {
       const materials = [...loose, ...units.materials]
       for (const m of materials) console.log(`Material ${m.id}: ${m.kind} ${m.url ?? m.name}${m.dataset ? ` in ${m.dataset}` : ''}${m.kind === 'dataset' ? (m.private ? ' (private)' : ' (shared)') : m.text ? '' : ' (its text could not be read)'}`)
       for (const u of units.datasets) console.log(`Dataset ${u.id}: ${u.name}, produced by ${u.producedBy}${u.doi ? `, DOI ${u.doi}` : u.url ? `, ${u.url}` : ''}${u.describedIn ? `, first reported in ${u.describedIn}` : ''}`)
+      // A thesis is formulated from the literature: its run always has the review, and no simulation.
+      const mode = flag('mode') === 'thesis' ? 'thesis' as const : undefined
+      const stance = flag('stance')
+      if (stance && !['extend', 'contest', 'reframe'].includes(stance)) throw new Error('--stance is extend, contest or reframe')
       Paper.create(dir, seed, {
+        ...(mode ? { mode, stance: (stance ?? 'extend') as 'extend' | 'contest' | 'reframe', literatureReview: true, simulation: false } : {}),
         ...(materials.length ? { materials } : {}),
         ...(units.datasets.length ? { datasets: units.datasets } : {}),
         ...(flag('rounds') ? { rounds: Math.max(1, Number(flag('rounds'))) } : {}),
@@ -378,7 +407,7 @@ async function main(): Promise<void> {
           running = progress.inFlight?.length ? `running: ${progress.inFlight.map((f: { behavior: string }) => f.behavior).join(', ')}` : 'running'
         } catch { /* not running */ }
         const stage = s.outcome ?? (running || `paused after ${Object.keys(s.settled).length} steps`)
-        console.log(`${name.padEnd(28)} ${String(stage).padEnd(36)} ${paper.config.title || s.frame?.title || s.plan?.workingTitle || ''}`)
+        console.log(`${name.padEnd(28)} ${String(stage).padEnd(36)} ${titleOf(paper) ?? ''}`)
       }
       return
     }
