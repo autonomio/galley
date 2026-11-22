@@ -189,8 +189,8 @@ test('undo history survives a reload', async ({ page }) => {
 
 test('delete asks first, then removes the document', async ({ page }) => {
   const slug = await newDocument(page)
-  page.once('dialog', (dialog) => dialog.accept())
   await page.locator('[data-action="delete"]').click()
+  await page.locator('dialog.galley-dialog').getByRole('button', { name: 'Delete' }).click()
   await page.waitForFunction((s) => !!window.galley.slug && window.galley.slug !== s, slug)
   expect((await page.request.get(`/api/galley/doc/${slug}`)).status()).toBe(404)
 })

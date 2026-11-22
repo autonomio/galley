@@ -22,6 +22,7 @@ import { createSurface, type Surface } from '../surface/surface.js'
 import type { DocumentStore } from '../stores/types.js'
 import type { Annotation, AnnotationRange, DocSummary, EditOutcome, EditProposal, Version } from '../types.js'
 import { Emitter, el } from './dom.js'
+import { confirmDialog } from './dialog.js'
 import { createDocPicker, type DocPicker } from './doc-picker.js'
 import { icons } from './icons.js'
 import { createMargin } from './margin.js'
@@ -92,8 +93,13 @@ export interface EditorOptions {
   }
   /** Show notices yourself instead of in the editor's own stack. */
   notify?: (notice: Notice) => void
-  /** Ask the writer a yes/no question. Default window.confirm. */
+  /** Ask the writer a yes/no question. Default window.confirm, and the editor's own dialog for a delete. */
   confirm?: (message: string) => boolean | Promise<boolean>
+  /**
+   * What deleting this document takes with it, in a sentence or two for the dialog that asks; null when only the
+   * document and its notes go. For a host that deletes more along with a document.
+   */
+  deleting?: (slug: string) => string | null | Promise<string | null>
   theme?: 'dark' | 'light'
   /** Shown in an empty document. */
   placeholder?: string
@@ -580,6 +586,7 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
   const picker: DocPicker | null = options.picker === false ? null : createDocPicker({
     select: (slug) => { void loadDoc(slug) },
     opening: () => { if (session.docsError) void session.fetchDocs() },
+    remove: (slug) => { void removeDocument(slug) },
   })
   if (picker) barRight.append(picker.element)
 
@@ -633,6 +640,8 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
   }
 
   async function loadDoc(slug: string): Promise<void> {
+    // A document being deleted is not opened again: once gone, nothing would keep its edits.
+    if (slug === session.deletingSlug) return
     const requestId = ++loadRequestId
     if (!(await flushBeforeLeaving('switch documents')) || requestId !== loadRequestId) return
     notes?.close()
@@ -754,13 +763,52 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     }
   }
 
+  /** Whether the writer confirms deleting this document, asked with what goes with it. */
+  async function confirmDelete(d: DocSummary): Promise<boolean> {
+    const title = d.title || UNTITLED
+    if (options.confirm) return !!(await options.confirm(`Delete "${title}"? This cannot be undone.`))
+    let goes: string | null = null
+    try { goes = (await options.deleting?.(d.slug)) ?? null } catch (error) {
+      console.error('[galley] what goes with the document could not be told:', error)
+    }
+    return confirmDialog(root, {
+      title: `Delete “${title}”?`,
+      details: [goes ?? 'The document and its notes are deleted.', 'This cannot be undone.'],
+      confirm: 'Delete',
+      danger: true,
+    })
+  }
+
+  // One delete at a time, in the order they were confirmed: each holds session.deletingSlug for as long as it runs.
+  let deletions: Promise<void> = Promise.resolve()
+
+  /** Delete the open document, asked first: the toolbar's delete. */
   async function remove(): Promise<void> {
-    const d = session.current()
-    if (!d) return
-    if (!(await ask(`Delete "${d.title || UNTITLED}"? This cannot be undone.`))) return
+    if (session.slug) await removeDocument(session.slug)
+  }
+
+  /**
+   * Delete a document, asked first. Asking takes time, and the writer may open
+   * another document meanwhile, or this one: whether it is the open document
+   * is decided only once they have answered.
+   */
+  async function removeDocument(slug: string): Promise<void> {
+    const d = session.slug === slug ? session.current() : session.docs.find((x) => x.slug === slug)
+    if (!d || !(await confirmDelete(d))) return
+    const run = deletions.then(() => deleteConfirmed(d))
+    deletions = run.catch(() => { /* reported where it failed */ })
+    await run
+  }
+
+  async function deleteConfirmed(d: DocSummary): Promise<void> {
+    // While it goes, the document takes no saves and cannot be opened (loadDoc).
     session.deletingSlug = d.slug
-    await session.discard()
-    loadRequestId += 1
+    if (session.slug === d.slug) {
+      // What is unsaved in it goes with it, and a switch already under way is called off.
+      surface.setEditable(false)
+      await session.discard()
+      loadRequestId += 1
+    }
     try {
       await session.store.remove(d.slug)
     } catch (error) {
@@ -768,16 +816,25 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
       notify({ source: 'documents', level: 'error', message: 'Could not delete the document' })
       session.deletingSlug = null
       if (session.slug === d.slug) {
+        surface.setEditable(!session.frozen)
         session.scheduleSave(surface.getText())
         session.scheduleAnnotationsSave()
       }
       return
     }
-    // The deleted document must stop being an editable target before the
-    // replacement's reads begin, or keystrokes in that gap could recreate it.
     try { historyStore?.removeItem(historyKey(d.slug)) } catch (error) {
       console.error('[galley] the deleted document\'s history could not be removed:', error)
     }
+    // A document no longer open leaves the list only: the page belongs to whatever the writer opened meanwhile.
+    if (session.slug !== d.slug) {
+      session.forget(d.slug)
+      session.deletingSlug = null
+      renderPicker()
+      void session.fetchDocs({ fresh: true })
+      return
+    }
+    // The deleted document must stop being an editable target before the
+    // replacement's reads begin, or keystrokes in that gap could recreate it.
     notes?.close()
     session.forget(d.slug)
     surface.setEditable(false)

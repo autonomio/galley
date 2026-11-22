@@ -27,6 +27,55 @@ function paperForDocument(doc: string): string | null {
   return null
 }
 
+const pause = (ms: number) => new Promise((done) => setTimeout(done, ms))
+
+// The run still going for a paper, stopped: true once nothing runs for it. The
+// process in its progress file is taken for its run only if the process's
+// command names the paper's folder, so a pid since reused by another process
+// is left alone. A run started here leads its own process group, and the model
+// calls it made stop with it.
+async function stopRun(paperDir: string): Promise<boolean> {
+  let pid = 0
+  try { pid = Number(JSON.parse(readFileSync(join(paperDir, 'progress.json'), 'utf8')).pid) } catch { return true }
+  const alive = () => { try { process.kill(pid, 0); return true } catch { return false } }
+  if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid || !alive()) return true
+  let line = ''
+  try { line = execFileSync('ps', ['-o', 'pgid=,command=', '-p', String(pid)]).toString().trim() } catch { return true }
+  const [group, ...command] = line.split(/\s+/)
+  const names = (path: string) => command.some((arg) => arg === path || arg === `${path}/`)
+  if (!names(paperDir) && !names(realpathSync(paperDir))) return true
+  const target = Number(group) === pid ? -pid : pid
+  for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
+    try { process.kill(target, signal) } catch { /* already gone */ }
+    for (let waited = 0; waited < 5000 && alive(); waited += 100) await pause(100)
+    if (!alive()) return true
+  }
+  return false
+}
+
+// Deleting a document deletes the project made from it: a run still going is
+// stopped, the project's folder goes, and then the document and its notes. A
+// project left without its document would stay beside every page.
+function deleteProjectPlugin(): Plugin {
+  return {
+    name: 'galley-delete-project',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const match = req.method === 'DELETE' ? (req.url || '').split('?')[0].match(/^\/api\/galley\/doc\/([^/]+)$/) : null
+        let doc = ''
+        try { doc = match ? decodeURIComponent(match[1]) : '' } catch { /* not a document's address */ }
+        const paperDir = /^[a-z0-9][a-z0-9-]*$/i.test(doc) ? paperForDocument(doc) : null
+        if (!paperDir) { next(); return }
+        void stopRun(paperDir).then((stopped) => {
+          if (!stopped) { res.statusCode = 409; res.end('the project\'s run could not be stopped'); return }
+          rmSync(paperDir, { recursive: true, force: true })
+          next()
+        }).catch((error: Error) => { res.statusCode = 500; res.end(`the project could not be deleted: ${error.message}`) })
+      })
+    },
+  }
+}
+
 // A paper being written, as the editor shows it beside the text: who is
 // working on what right now, its working notes and what has happened.
 // /api/galley-live alone is every paper at once, each with whether its
@@ -484,7 +533,8 @@ export default defineConfig(({ command }) => {
   }
   return {
     root: 'demo',
-    plugins: [galleyVitePlugin({ dir }), proposalsPlugin(), papersPlugin(), livePlugin(), paperFilesPlugin()],
+    // The project goes before the document: its plugin answers a document's delete first.
+    plugins: [deleteProjectPlugin(), galleyVitePlugin({ dir }), proposalsPlugin(), papersPlugin(), livePlugin(), paperFilesPlugin()],
     server: {
       port: Number(process.env.PORT || 5174),
       strictPort: !!process.env.PORT,
