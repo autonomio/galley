@@ -154,7 +154,7 @@ function statusData(paper: Paper): Record<string, unknown> {
     title: titleOf(paper),
     seedTitle: firstLine.slice(0, 120),
     mode: paper.config.mode ?? 'paper',
-    ...(paper.config.mode === 'thesis' ? { stance: paper.config.stance ?? 'extend', thesis: s.thesis ? { statement: s.thesis.statement, passes: s.thesis.test?.passes ?? null, searched: s.thesis.test?.searched } : null } : {}),
+    ...(paper.config.mode === 'thesis' ? { stance: paper.config.stance ?? 'extend', thesis: s.thesis ? { statement: s.thesis.statement, passes: s.thesis.test?.passes ?? null, searched: s.thesis.test?.searched, testOff: paper.config.off.includes('test-thesis') } : null } : {}),
     outcome: s.outcome ?? null,
     running,
     startedAt: s.createdAt,
@@ -198,7 +198,7 @@ function status(paper: Paper): void {
   console.log(`  title    ${titleOf(paper) ?? '(not yet)'}`)
   if (thesis) {
     const test = s.thesis?.test
-    console.log(`  thesis   ${s.thesis ? s.thesis.statement : '(not yet)'} [${paper.config.stance ?? 'extend'}${test ? `; ${test.passes ? 'meets its test' : 'does not yet meet its test'}${test.searched === null ? ', without a novelty search' : ''}` : ''}]`)
+    console.log(`  thesis   ${s.thesis ? s.thesis.statement : '(not yet)'} [${paper.config.stance ?? 'extend'}${test ? `; ${test.passes ? 'meets its test' : 'does not yet meet its test'}${test.searched === null ? ', without a novelty search' : ''}` : paper.config.off.includes('test-thesis') ? '; not tested: the test is off' : ''}]`)
     if (existsSync(paper.path('out', 'thesis.md'))) console.log(`  brief    ${paper.path('out', 'thesis.md')}`)
   } else {
     if (s.ideaReview) console.log(`  idea     ${s.ideaReview.verdict}, weakest ${s.ideaReview.weakest}`)

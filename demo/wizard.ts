@@ -118,9 +118,11 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   let foundLine = ''
   let allDatabases = false
   let saved: { name: string; via: string; host?: string; url?: string; container?: string; database: string }[] | null = null
-  // A world model the paper's sources come from: a Resolvent repository as a zip, read once on the machine running galley.
   // Set while the start request is out, so neither Back and Next nor a second press can send it twice.
   let starting = false
+  // Set once it has started: the dialog then shows the run, and nothing redraws the steps over it.
+  let started = false
+  // A world model the paper's sources come from: a Resolvent repository as a zip, read once on the machine running galley.
   let worldModel: { file: string; state: 'reading' | 'read' | 'failed'; error?: string; token?: string; name?: string; claims?: number; evidence?: number; sources?: number; only: boolean } | null = null
   let step = 0
   let context: Context | null = null
@@ -152,6 +154,8 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   }
 
   function render(): void {
+    // Settings that arrive after the start, or anything else, leave the started run's screen and its button alone.
+    if (started) return
     const all = steps()
     trail.replaceChildren(...all.map((name, i) => h('li', { class: i === step ? 'is-current' : i < step ? 'is-done' : '', 'aria-current': i === step ? 'step' : undefined },
       h('span', { class: 'gw-num', text: String(i + 1) }), name)))
@@ -640,6 +644,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
         }),
       })
       if (!response.ok) throw new Error(await response.text())
+      started = true
       const at = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
       trail.querySelectorAll('li').forEach((li) => li.classList.add('is-done'))
       body.replaceChildren(
@@ -687,7 +692,7 @@ interface StatusData {
   /** A thesis run: its direction, and the thesis once formulated, with whether it met its test. */
   mode?: 'paper' | 'thesis'
   stance?: string
-  thesis?: { statement: string; passes: boolean | null; searched?: number | null } | null
+  thesis?: { statement: string; passes: boolean | null; searched?: number | null; testOff?: boolean } | null
   settings: { literatureReview: boolean | string; simulation: boolean | string; rounds: number; words: number; venue: string; authors: string[]; materials: string[]; families?: string[]; seats?: Record<string, string> }
 }
 
@@ -762,7 +767,7 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
     const n = (x: number | null) => x === null ? '…' : x.toLocaleString('en-US')
     const rows: [string, string][] = isThesis ? [
       ['Thesis', d.thesis?.statement ?? 'not formulated yet'],
-      ['Test', !d.thesis || d.thesis.passes === null ? 'not yet' : `${d.thesis.passes ? 'meets the test for its direction' : 'does not yet meet the test for its direction'}${d.thesis.searched === null ? ', without a novelty search' : ''}`],
+      ['Test', !d.thesis ? 'not yet' : d.thesis.passes === null ? (d.thesis.testOff ? 'turned off for this run' : 'not yet') : `${d.thesis.passes ? 'meets the test for its direction' : 'does not yet meet the test for its direction'}${d.thesis.searched === null ? ', without a novelty search' : ''}`],
       ['So far', `${n(d.cost.calls)} model calls · ${d.cost.tokensInM} M tokens · ${d.cost.hours} h`],
     ] : [
       ['Claims', `${n(d.claims.total)}: ${d.claims.supported + d.claims.narrowed} with verified sources, ${d.claims.own} your work, ${d.claims.premises} premises, ${d.claims.hypotheses} hypotheses, ${d.claims.open} still open`],
