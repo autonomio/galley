@@ -55,6 +55,26 @@ describe('stopping a paper\'s run', () => {
     expect(alive(child)).toBe(false)
   })
 
+  it('stops a helper that a surviving process starts once the run\'s leader has gone', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-stop-'))
+    const paper = join(dir, 'trees')
+    mkdirSync(paper)
+    const helperFile = join(dir, 'helper.pid')
+    const childFile = join(dir, 'child.pid')
+    // On SIGTERM the run's model call does not stop: it starts a helper of its own, in a group of its own.
+    const child = `process.on("SIGTERM", () => { const h = require("child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" }); require("fs").writeFileSync(${JSON.stringify(helperFile)}, String(h.pid)) }); require("fs").writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000)`
+    const leader = spawn(process.execPath, ['-e', `require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(child)}, process.argv[1]], { stdio: 'ignore', detached: true }); setInterval(() => {}, 1000)`, childFile, paper], { detached: true, stdio: 'ignore' })
+    started.push(leader)
+    writeFileSync(join(paper, 'progress.json'), JSON.stringify({ pid: leader.pid }))
+    await until(() => existsSync(childFile) && readFileSync(childFile, 'utf8').length > 0)
+    extra.push(Number(readFileSync(childFile, 'utf8')))
+    expect(await stopRun(paper, 500)).toBe(true)
+    await until(() => existsSync(helperFile) && readFileSync(helperFile, 'utf8').length > 0)
+    const helper = Number(readFileSync(helperFile, 'utf8'))
+    extra.push(helper)
+    expect(alive(helper)).toBe(false)
+  })
+
   it('leaves running a shared service the run started, Canary\'s, which serves every project', async () => {
     dir = mkdtempSync(join(tmpdir(), 'galley-stop-'))
     const paper = join(dir, 'trees')

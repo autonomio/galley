@@ -108,9 +108,10 @@ export async function stopRun(paperDir: string, patienceMs = 5000): Promise<bool
   const tracked = new Set(runProcesses(all, first).map((p) => p.pid))
   const living = () => [...tracked].filter((id) => exists(id))
   for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
-    // Whatever the run started since it was last looked at is stopped too.
+    // Whatever the run started since it was last looked at is stopped too, from wherever it still runs: a process that
+    // outlived its leader can start a helper of its own.
     const table = processes() ?? []
-    for (const p of runProcesses(table, starts(table))) tracked.add(p.pid)
+    for (const p of runProcesses(table, [...starts(table), ...table.filter((q) => tracked.has(q.pid))])) tracked.add(p.pid)
     const alive = living()
     if (!alive.length) return true
     for (const id of alive) { try { process.kill(id, signal) } catch { /* gone already */ } }
