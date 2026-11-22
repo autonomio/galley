@@ -770,6 +770,8 @@ export function createEditor(root: HTMLElement, options: EditorOptions): Editor 
     let goes: string | null = null
     try { goes = (await options.deleting?.(d.slug)) ?? null } catch (error) {
       console.error('[galley] what goes with the document could not be told:', error)
+      // The host still deletes what it keeps with the document: say so, rather than that only the document goes.
+      goes = 'The document and its notes are deleted, with anything kept with it; what that includes could not be checked.'
     }
     return confirmDialog(root, {
       title: `Delete “${title}”?`,
