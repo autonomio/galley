@@ -441,15 +441,24 @@ export function texToCsl(text: string): string {
   return text.replace(/\$\$([^$]+)\$\$|\$(?=\S)([^$\n]*?\S)\$(?!\d)|\\\(([\s\S]+?)\\\)/g, (_, display: string | undefined, inline: string | undefined, paren: string | undefined) => texMath(display ?? inline ?? paren ?? ''))
 }
 
+/** A name written all in capitals, with at least this many letters in a word. */
+export const shouting = (name: string, letters: number) => name === name.toUpperCase() && name !== name.toLowerCase() && new RegExp(`\\p{L}{${letters},}`, 'u').test(name)
+
+/** A capitalized name in name case: each word, and each part after a hyphen or apostrophe, starts with a capital. */
+export const nameCase = (name: string) => name.toLowerCase().replace(/(^|[\s\-'’])(\p{L})/gu, (_, before: string, letter: string) => before + letter.toUpperCase())
+
 /** Keep only standard CSL variables in their standard shapes: registries add lists and extras that citation processors reject. */
 export function cleanCsl(raw: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const key of CSL_STRINGS) {
     const value = raw[key]
     const text = Array.isArray(value) ? value.find((v) => typeof v === 'string' && v.trim()) : value
-    if (typeof text === 'string' && text.trim()) out[key] = decodeEntities(text.replace(/<[^>]+>/g, '')).trim()
+    // Registries keep a title's markup line breaks as runs of white space.
+    if (typeof text === 'string' && text.trim()) out[key] = decodeEntities(text.replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim()
     else if (typeof text === 'number') out[key] = String(text)
   }
+  // A footnote mark the publisher's page put after the title points to a note no reference carries.
+  if (typeof out.title === 'string') out.title = out.title.replace(/\s*[†‡§¶]+$/u, '').trim()
   // A title with a subtitle prints whole ("Pebbles, Graphs, and a Pinch of Combinatorics: Towards Tight I/O Lower Bounds").
   const subtitle = Array.isArray(raw.subtitle) ? raw.subtitle.find((v) => typeof v === 'string' && v.trim()) : raw.subtitle
   if (typeof subtitle === 'string' && subtitle.trim() && typeof out.title === 'string') {
@@ -465,6 +474,9 @@ export function cleanCsl(raw: Record<string, unknown>): Record<string, unknown> 
       const name: Record<string, string> = {}
       for (const part of ['family', 'given', 'literal', 'suffix', 'non-dropping-particle', 'dropping-particle']) if (typeof n[part] === 'string') name[part] = n[part]
       if (!name.family && !name.literal && typeof n.name === 'string') name.literal = n.name
+      // A person's name some registries keep in capitals (ZIRAS) prints as the name (Ziras); initials stay as they are.
+      if (name.family && shouting(name.family, 2)) name.family = nameCase(name.family)
+      if (name.given && shouting(name.given, 3)) name.given = nameCase(name.given)
       return name
     }).filter((n) => n.family || n.literal)
     // Keep an organization as an author only when no person is listed.

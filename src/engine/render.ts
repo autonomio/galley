@@ -101,7 +101,8 @@ function disclosure(paper: Paper, record: Record_, table = 1): string {
   const seats = paper.config.seats
   const referees = [...new Set(paper.config.referees.map((r) => r.family))].map((f) => FAMILY_NAMES[f]).join(' and ')
   const lit = paper.state.literature?.status === 'done' ? paper.state.literature : null
-  const everyCitation = lit ? 'every citation outside the systematic review' : 'every citation'
+  const everyCitation = lit ? 'every citation outside the literature review' : 'every citation'
+  const count = (key: string) => Number(record[key] ?? 0).toLocaleString('en-US')
   // Answering, judging and settling single findings run on the lighter settings; the statement names them.
   const settling = [...new Set([seats.author, ...paper.config.referees.map((r) => r.family)])].map((f) => lightName(lightSpecFor(paper.config, f)))
   const settled = paper.state.round >= 1 ? ` A first answer to a finding and the first verdict on it ran on lighter reasoning settings (${settling.join(', ')}); later answers, second verdicts and every adjudication ran at full effort.` : ''
@@ -123,11 +124,11 @@ function disclosure(paper: Paper, record: Record_, table = 1): string {
 |:---|:---|
 | Model calls | ${record['run.calls']} (Claude ${record['run.calls_claude']}, GPT ${record['run.calls_gpt']}, Gemini ${record['run.calls_gemini']}) |
 | Tokens | ${record['run.tokens_in_m']} M in, ${Number(record['run.tokens_out_k']) >= 1000 ? `${(Number(record['run.tokens_out_k']) / 1000).toFixed(1)} M` : `${record['run.tokens_out_k']} k`} out |
-| Claims | ${record['run.claims']} (${record['run.claims_seed']} from the seed, ${record['run.claims_added']} added; ${record['run.claims_narrowed']} narrowed; ${record['run.claims_unsupported']} stated as hypotheses) |
-| Works screened | ${record['run.works_screened']} |
+| Claims | ${record['run.claims']} (${record['run.claims_seed']} from the seed, ${Number(record['run.claims_review'] ?? 0) ? `${record['run.claims_review']} from the literature review, ` : ''}${record['run.claims_added']} added; ${record['run.claims_narrowed']} narrowed; ${record['run.claims_unsupported']} stated as hypotheses) |
+| Works screened for citations | ${record['run.works_screened']} |
 | Claim–source pairs | ${record['run.citations_verified']} verified against the source's passage, ${record['run.citations_rejected']} rejected |
-${sims.length ? `| Simulations | ${sims.map((r) => `${r.id}: ${methodWords(r.result.method)}, ${sizeOf(r.result)}; ${r.result.provenance.ok ? 'every check passed' : `${r.result.provenance.checks.filter((c) => !c.ok).length} check(s) noted`}`).join('; ')} |\n` : ''}${lit ? `| Systematic review | ${record['lit.discovered']} records identified, ${record['lit.screened']} screened, ${record['lit.reviewed']} read in full and included; ${record['lit.findings']} findings, ${record['lit.audited']} audited |\n` : ''}| Referee findings | ${findingsSummary(record, theAuthors(paper))} |
-| Verifier calibration | ${record['run.calibration'] === 'none to check' ? 'no verified citations to check' : `${record['run.calibration']} planted defective citations caught; ${record['run.calibration_controls']} unaltered controls accepted`} |
+${sims.length ? `| Simulations | ${sims.map((r) => { const noted = r.result.provenance.checks.filter((c) => !c.ok).length; return `${r.id}: ${methodWords(r.result.method)}, ${sizeOf(r.result)}; ${r.result.provenance.ok ? 'every check passed' : `${noted} ${noted === 1 ? 'check' : 'checks'} noted`}` }).join('; ')} |\n` : ''}${lit ? `| Literature review | ${count('lit.discovered')} records found, ${count('lit.screened')} screened, ${count('lit.retrieved')} read in full, ${count('lit.reviewed')} included; ${count('lit.findings')} findings, ${count('lit.audited')} audited |\n` : ''}| Referee findings | ${findingsSummary(record, theAuthors(paper))} |
+| Verifier calibration | ${record['run.calibration'] === 'none to check' ? 'no verified citations to check' : `${record['run.calibration']} planted defective citations caught${String(record['run.calibration_controls']).endsWith(' of 0') ? '' : `; ${record['run.calibration_controls']} unaltered controls accepted`}`} |
 
 : The production record of this manuscript.
 `
@@ -479,7 +480,7 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   // The ledger quotes claims as they stand, placeholders included, so it is filled like every other part of the text.
   const appendices: [string, string][] = []
   if (paper.config.ledgerAppendix === true) appendices.push(['Claim ledger', fillPlaceholders(ledgerAppendix(paper), record).text])
-  const described = describeData(paper)
+  const described = describeData(paper, tablesIn([...body, ...appendices.map(([, text]) => text)].join('\n\n')) + 1)
   if (described) appendices.push(['The data', described])
   const flow = existsSync(paper.path('build', REVIEW_FLOW)) ? REVIEW_FLOW : null
   // The review's flow figure and tables come after every figure and table before them, and are referred to by number.
@@ -958,9 +959,9 @@ ${list(s.findings.filter((f) => f.assignee === 'humans' && f.status === 'open').
 ## Steps skipped along the way
 ${list(s.notes.filter((n) => / was skipped /.test(n.text)).map((n) => `${n.behavior}: ${n.text}`), 'None.')}
 
-${s.literature?.status === 'done' ? `## The systematic review
+${s.literature?.status === 'done' ? `## The literature review
 Question: ${s.literature.question}
-Canary run ${s.literature.key}, searched ${s.literature.searchedOn}: ${s.literature.counts?.discovered} records identified, ${s.literature.counts?.screened} screened, ${s.literature.counts?.reviewed} read in full; ${s.literature.counts?.findings} findings, cited from ${s.literature.counts?.cited} publications. The full research bundle is ${s.literature.bundle}. Check that the question is the one you want answered; the findings appear in the claim ledger as "from the systematic review".
+Canary run ${s.literature.key}, searched ${s.literature.searchedOn}: ${s.literature.counts?.discovered} records identified, ${s.literature.counts?.screened} screened, ${s.literature.counts?.reviewed} read in full; ${s.literature.counts?.findings} findings, cited from ${s.literature.counts?.cited} publications. The full research bundle is ${s.literature.bundle}. Check that the question is the one you want answered; the findings appear in the claim ledger as "from the literature review".
 
 ` : ''}${runsOf(paper).length ? `## Simulations: check what each one assumes
 ${runsOf(paper).map((r) => `${r.id} ${r.title} (${methodWords(r.result.method)}, ${sizeOf(r.result)}, seed ${r.result.provenance.seed}${r.result.provenance.ok ? '' : `; checks: ${r.result.provenance.checks.filter((c) => !c.ok).map((c) => c.detail).join('; ')}`})\n${r.result.spec.inputs.map((i) => `- ${i.name} ~ ${i.dist}: ${r.assumptions.find((a) => a.name === i.name)?.basis ?? 'no basis given'}`).join('\n')}`).join('\n\n')}
@@ -1105,7 +1106,7 @@ export async function typeset(paper: Paper): Promise<string[]> {
     const figures = join(build, 'figures')
     mkdirSync(figures, { recursive: true })
     writeFileSync(join(figures, 'review-flow.typ'), flowSource)
-    try { await exec('typst', ['compile', 'review-flow.typ', 'review-flow.png', '--ppi', '600'], figures) } catch (error) { paper.note('typeset', `The systematic review's flow figure was not drawn: ${(error as Error).message.slice(0, 200)}`) }
+    try { await exec('typst', ['compile', 'review-flow.typ', 'review-flow.png', '--ppi', '600'], figures) } catch (error) { paper.note('typeset', `The literature review's flow figure was not drawn: ${(error as Error).message.slice(0, 200)}`) }
   }
   const { markdown, refs, record } = await buildManuscript(paper)
   writeFileSync(join(build, 'manuscript.md'), markdown)

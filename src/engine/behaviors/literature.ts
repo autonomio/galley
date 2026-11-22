@@ -45,7 +45,7 @@ Return question.`,
           paper.say(`… literature-review: Canary run ${lit.key} started: ${lit.question}`)
           paper.save()
         }
-        const done = paper.begin({ behavior: 'literature-review', target: 'review', what: `Canary systematic review ${lit.key}` })
+        const done = paper.begin({ behavior: 'literature-review', target: 'review', what: `Canary literature review ${lit.key}` })
         let status: string
         try {
           status = await awaitReview(lit.key)

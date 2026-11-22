@@ -8,7 +8,7 @@ import type { Behavior, Target } from '../scheduler.js'
 import { arr, enm, obj, str } from '../schema.js'
 import { applyExact, dropUnknownCitations, words } from '../text.js'
 import type { Passage, Section } from '../types.js'
-import { activeClaims, briefBlock, citableKeys, claimsBlock, keyFor, live, manuscriptBlock, noteForAuthors, now, seatFamily, sectionText } from './common.js'
+import { activeClaims, briefBlock, citableKeys, claimsBlock, keyFor, live, manuscriptBlock, noteForAuthors, now, seatFamily, sectionName, sectionText } from './common.js'
 import { verifyCitationsSettled } from './truth.js'
 import { literatureBlock, REVIEW_SECTION, REVIEW_SECTION_RULES } from '../literature.js'
 import { simulationSeries } from '../simulations.js'
@@ -62,9 +62,9 @@ Venue: ${paper.config.venue}. Style for this venue and field: ${s.outline!.style
 Glossary: ${s.outline!.glossary.join('; ')}
 
 The whole paper, so you know what the other sections cover:
-${s.outline!.sections.map((sec) => `${sec.id} ${sec.title}: ${sec.purpose}`).join('\n')}
+${s.outline!.sections.map((sec) => `${sectionName(paper, sec)}: ${sec.purpose}`).join('\n')}
 
-YOUR SECTION: ${section.id} ${section.title}
+YOUR SECTION: ${sectionName(paper, section)}
 Purpose: ${section.purpose}
 Length: about ${section.words} words.
 ${figures.length ? `Figures placed after this section's text, to refer to by number: ${figures.map((f) => `Figure ${numbers.get(f.id)}: ${f.caption}`).join('; ')}` : ''}
@@ -74,6 +74,8 @@ ${claimsBlock(paper, section.claimIds) || '(none; this section connects and fram
 
 Rules:
 - Every factual sentence states one of the claims above or connects them. Add no new factual claims, numbers or names.
+- Refer to another section by the number it prints with, as listed above (Section 5), never by its id.
+- A statement about what the data or an analysis shows agrees with the measurement it rests on. Where the paper reads a result differently from what an analysis recorded (for example under a stricter definition), it says so where it states the result: what the record holds, and why the paper reads it as it does.
 - Define a term, symbol or quantity only in the section whose purpose it is (see the whole paper above). Every other section uses it as defined there, pointing to that section or definition where a reader needs it, and never defines it again; the introduction names the central idea in a sentence, not its full definition. Each symbol stands for one thing only.
 - Cite only with the keys given above, in Pandoc form: [@key] or [@key1; @key2], or @key for a narrative citation. Cite a claim's evidence where the claim is made. Never cite a key that is not listed.
 - A claim without verified evidence is stated plainly, like the paper's other claims, and gets a note for the authors saying it has no verified source.
@@ -183,7 +185,7 @@ ${sectionNow ? `\nThe section as it now reads; the figure and its caption must a
 ${lastError ? `\nThe previous attempt failed to compile with: ${lastError}\nFix that.` : ''}${fig.revise ? `\nIn the typeset paper, a reader found this in the figure: ${fig.revise}\nDraw it again without that defect.` : ''}
 A number may be written as its {{placeholder}}; it is filled in with its recorded value before the figure is drawn.
 
-Return typst (the complete document source), and caption: the caption as it should print under the figure. Keep the current caption unless it no longer matches the figure as drawn or the section as it reads; never name an internal identifier in it, and write any mathematics in it in LaTeX between dollar signs ($W_t$, not W_t).`,
+Return typst (the complete document source), and caption: the caption as it should print under the figure. Keep the current caption unless it no longer matches the figure as drawn or the section as it reads; never name an internal identifier in it, never refer to a section by its number (remove any such reference), and write any mathematics in it in LaTeX between dollar signs ($W_t$, not W_t).`,
           schema: obj({ typst: str(), caption: str() }),
         })
         // A figure is a picture: its numbers are written in before it is drawn, never left as placeholders. No label is
