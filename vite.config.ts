@@ -206,6 +206,11 @@ export default defineConfig(({ command }) => {
       strictPort: !!process.env.PORT,
       fs: { allow: ['..'] },
     },
+    preview: {
+      port: Number(process.env.PORT || 4173),
+      strictPort: !!process.env.PORT,
+      allowedHosts: process.env.GALLEY_HOST ? [process.env.GALLEY_HOST] : [],
+    },
     build: {
       outDir: '../dist-demo',
       emptyOutDir: true,

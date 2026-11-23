@@ -1,0 +1,30 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build:demo
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Smoke-test the built workspace and document store
+        run: |
+          docker build -t galley:test .
+          docker run -d --name galley-test -p 127.0.0.1:5174:5174 galley:test
+          curl --fail --retry 10 --retry-all-errors --retry-delay 1 --max-time 5 http://127.0.0.1:5174/ | grep '<title>Galley</title>'
+          curl --fail http://127.0.0.1:5174/api/galley/docs | grep welcome
+          curl --fail -X POST http://127.0.0.1:5174/api/galley/docs | grep slug
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            -H 'Accept: application/json' http://127.0.0.1:5174/api/galley-papers/welcome)" = 404

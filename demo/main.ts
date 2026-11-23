@@ -14,6 +14,9 @@ import { proposalsAction } from './proposals.js'
 
 const params = new URLSearchParams(location.search)
 const local = params.get('store') === 'local'
+// Hosted builds provide the file-backed editor. The paper engine belongs to the
+// developer host, where its three native model sessions and typesetter run.
+const papersEnabled = !local && import.meta.env.DEV
 const theme = (params.get('theme') === 'light' ? 'light' : 'dark') as 'light' | 'dark'
 
 const store = local
@@ -39,16 +42,16 @@ const editor = createEditor(document.getElementById('editor')!, {
   store,
   theme,
   placeholder: 'Start writing…',
-  toolbar: ['writer', 'new', 'import', 'copy', download, ...(local ? [] : [writePaperAction(), choicesAction(), proposalsAction()]), 'delete'],
+  toolbar: ['writer', 'new', 'import', 'copy', download, ...(papersEnabled ? [writePaperAction(), choicesAction(), proposalsAction()] : []), 'delete'],
   storagePrefix: local ? 'galley-local' : 'galley',
   // A paper's document is written by its team while you work in it: who is at work, its notes and its history.
-  plugins: local ? [] : [livingPaper(store, document.getElementById('history')!)],
+  plugins: papersEnabled ? [livingPaper(store, document.getElementById('history')!)] : [],
 })
 
 editor.on('writer-mode', ({ on }) => document.body.classList.toggle('is-writing', on))
 
 document.documentElement.dataset.theme = theme
-document.getElementById('demo-where')!.textContent = local ? 'documents in this browser' : 'documents in .galley-data/'
+document.getElementById('demo-where')!.textContent = local ? 'documents in this browser' : 'documents on the server'
 const storeLink = document.getElementById('demo-store') as HTMLAnchorElement
 storeLink.textContent = local ? 'Use files' : 'Use browser storage'
 storeLink.href = `?${new URLSearchParams({ ...(local ? {} : { store: 'local' }), ...(theme === 'light' ? { theme } : {}) })}`

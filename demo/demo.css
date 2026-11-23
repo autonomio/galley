@@ -22,7 +22,6 @@ html[data-theme="light"] .demo-name { color: #23272D; }
 html[data-theme="light"] .demo-link:hover { color: #23272D; }
 body.is-writing .demo-bar { display: none; }
 
-<serena.repl.api.fs_api.FileContent object at 0x10ae87a80>
 /* Proposed changes from a galley paper's agents. */
 .demo-proposals { position: fixed; right: 16px; top: 56px; width: 360px; max-height: calc(100vh - 80px); overflow: auto; padding: 12px; border-radius: 10px; background: #1F242B; color: #DEE2E6; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.35); z-index: 10; }
 html[data-theme="light"] .demo-proposals { background: #FFFFFF; color: #23272D; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
