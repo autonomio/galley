@@ -18,7 +18,7 @@ test('the paper wizard walks through seed, materials and settings, and starts th
     seats: { author: { family: 'claude', name: 'Claude Opus 5.5', model: 'claude-opus-5-5' }, checker: { family: 'gpt', name: 'GPT-6.2 Sol', model: 'gpt-6.2-sol' }, challenger: { family: 'gemini', name: 'Gemini 4 Carbon', model: 'gemini-4-carbon-high' }, verifier: { family: 'gemini', name: 'Gemini 4 Carbon', model: 'gemini-4-carbon-high' } },
     referees: ['methods', 'field', 'citations', 'editor'],
     defaults: { venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, simulation: false },
-    review: { research: 'gpt-6.1-sol', audit: 'gpt-6-astra', papers: 50 },
+    review: { research: 'gpt-6.1-sol', audit: 'gpt-6.1-sol', papers: 50 },
   } }))
   await page.route(`**/api/galley-papers/${slug}`, async (route) => {
     if (route.request().method() !== 'POST') return route.fulfill({ status: 404, body: '' })
@@ -55,6 +55,8 @@ test('the paper wizard walks through seed, materials and settings, and starts th
   await expect(wizard).toContainText('Review question')
   await expect(wizard.locator('.gw-plan')).toContainText('Simulate')
   await expect(wizard.locator('.gw-plan')).toContainText('the plan waits for it')
+  await expect(wizard.locator('.gw-plan')).toContainText('gpt-6.1-sol research · gpt-6.1-sol audit')
+  await expect(wizard.locator('.gw-plan')).toContainText('without a fixed time limit')
   await expect(wizard).toContainText('never leave this machine')
   await wizard.getByRole('button', { name: 'Start the paper' }).click()
   await expect(wizard.getByRole('heading', { name: 'Writing the paper' })).toBeVisible()

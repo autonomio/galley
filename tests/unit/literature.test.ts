@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { plan } from '../../src/engine/behaviors/front.js'
-import { declaration, importReview, REVIEW_SECTION, withReviewSection } from '../../src/engine/literature.js'
+import { declaration, importReview, REVIEW_SECTION, REVIEW_SETTINGS, withReviewSection } from '../../src/engine/literature.js'
 import { Paper } from '../../src/engine/paper.js'
 import { productionRecord } from '../../src/engine/record.js'
 import { runPaper, type Behavior } from '../../src/engine/scheduler.js'
@@ -73,6 +73,7 @@ describe('systematic review', () => {
     ])
     expect(s.works.W1.doi).toBe('10.1/one')
     expect(s.literature.status).toBe('done')
+    expect(s.literature.models).toEqual({ research: 'gpt-6.1-sol', audit: 'gpt-6-astra' })
     expect(s.literature.counts).toMatchObject({ discovered: 4200, screened: 90, reviewed: 50, core: 31, supporting: 19, cited: 3, queries: 2, findings: 2, audited: 2, minutes: 36 })
     expect(s.literature.protocol?.concepts).toEqual(['street trees (urban trees)'])
     expect(s.outline.sections.find((sec) => sec.id === REVIEW_SECTION)?.claimIds).toEqual(review.map((c) => c.id))
@@ -107,6 +108,10 @@ describe('systematic review', () => {
     expect(yaml).toContain('question: "Does \\"soil\\" matter?"')
     expect(yaml).toContain('target_papers: 50')
     expect(yaml).toContain('subagents: false')
+    expect(yaml).toContain('research: {model: gpt-6.1-sol, effort: xhigh}')
+    expect(yaml).toContain('audit: {model: gpt-6.1-sol, effort: xhigh}')
+    expect(yaml).not.toContain('budget_seconds')
+    expect(REVIEW_SETTINGS.audit).toBe('gpt-6.1-sol')
   })
 
   it('runs a background target alongside the rest, and waits for it before the run ends', async () => {
