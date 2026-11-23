@@ -5,7 +5,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, type Plugin, type ViteDevServer } from 'vite'
 import { liveView } from './src/engine/live.js'
 import { galleyVitePlugin } from './src/server/vite.js'
 
@@ -28,8 +28,16 @@ function paperForDocument(doc: string): string | null {
 // A paper being written, as the editor shows it beside the text: who is
 // working on what right now, its working notes and what has happened.
 // Read from the paper's files; it never touches the run.
+// Both Vite hosts mount the same API behind the editor.
+function withPreview(plugin: {
+  name: string
+  configureServer(server: Pick<ViteDevServer, 'middlewares'>): void
+}): Plugin {
+  return { ...plugin, configurePreviewServer: plugin.configureServer }
+}
+
 function livePlugin(): Plugin {
-  return {
+  return withPreview({
     name: 'galley-live',
     configureServer(server) {
       server.middlewares.use('/api/galley-live', (req, res) => {
@@ -43,14 +51,14 @@ function livePlugin(): Plugin {
         res.end(JSON.stringify(view))
       })
     },
-  }
+  })
 }
 
 // The demo host's side of galley papers: the changes agents propose for a
 // document live beside it as <slug>.proposals.json, and Accept or Decline
 // is written back there for the paper's next run.
 function proposalsPlugin(): Plugin {
-  return {
+  return withPreview({
     name: 'galley-proposals',
     configureServer(server) {
       server.middlewares.use('/api/galley-proposals', (req, res) => {
@@ -77,7 +85,7 @@ function proposalsPlugin(): Plugin {
         res.end(JSON.stringify(read()))
       })
     },
-  }
+  })
 }
 
 // A seed document becomes a paper: the engine runs detached, writes its
@@ -85,7 +93,7 @@ function proposalsPlugin(): Plugin {
 // document beside the seed, so it shows up in the same document list.
 function papersPlugin(): Plugin {
   const cli = resolve('dist/engine/cli.js')
-  return {
+  return withPreview({
     name: 'galley-papers',
     configureServer(server) {
       server.middlewares.use('/api/galley-papers', (req, res) => {
@@ -188,7 +196,7 @@ function papersPlugin(): Plugin {
         })
       })
     },
-  }
+  })
 }
 
 export default defineConfig(({ command }) => {
@@ -205,6 +213,11 @@ export default defineConfig(({ command }) => {
       port: Number(process.env.PORT || 5174),
       strictPort: !!process.env.PORT,
       fs: { allow: ['..'] },
+    },
+    preview: {
+      port: Number(process.env.PORT || 4173),
+      strictPort: !!process.env.PORT,
+      allowedHosts: process.env.GALLEY_HOST ? [process.env.GALLEY_HOST] : [],
     },
     build: {
       outDir: '../dist-demo',
