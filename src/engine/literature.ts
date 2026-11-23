@@ -1,7 +1,7 @@
 // A systematic review of the literature, done by Canary. Galley writes the
 // review question; Canary plans the search, screens the candidates, reads the
-// full papers, ties every finding to verbatim passages and has an independent
-// model audit each one. Galley turns the finished research bundle into ledger
+// full papers, ties every finding to verbatim passages and audits each in a
+// separate session. Galley turns the finished research bundle into ledger
 // claims with verified citations and a section of the paper.
 import { spawn } from 'node:child_process'
 import { canaryPython, openalexKey } from './evidence.js'
@@ -9,11 +9,11 @@ import type { Paper } from './paper.js'
 import type { Citation, Claim, LiteratureReview, Section, Work } from './types.js'
 
 export const REVIEW_SECTION = 'LR'
-const RESEARCH = { model: 'gpt-6.1-sol', effort: 'xhigh' }
-const AUDIT = { model: 'gpt-6-astra', effort: 'ultra', budgetSeconds: 600 }
+// The current Canary compiler requires the same model and effort for both roles.
+const REVIEW_MODEL = { model: 'gpt-6.1-sol', effort: 'xhigh' }
 const TARGET_PAPERS = 50
 /** What the start dialog says about the review: who does it and how much it reads. */
-export const REVIEW_SETTINGS = { research: RESEARCH.model, audit: AUDIT.model, papers: TARGET_PAPERS }
+export const REVIEW_SETTINGS = { research: REVIEW_MODEL.model, audit: REVIEW_MODEL.model, papers: TARGET_PAPERS }
 const port = () => Number(process.env.CANARY_RUNS_PORT || 8789)
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -22,8 +22,8 @@ export function declaration(question: string, targetPapers = TARGET_PAPERS): str
   return [
     'version: 1',
     `question: ${JSON.stringify(question)}`,
-    `research: {model: ${RESEARCH.model}, effort: ${RESEARCH.effort}}`,
-    `audit: {model: ${AUDIT.model}, effort: ${AUDIT.effort}, budget_seconds: ${AUDIT.budgetSeconds}}`,
+    `research: {model: ${REVIEW_MODEL.model}, effort: ${REVIEW_MODEL.effort}}`,
+    `audit: {model: ${REVIEW_MODEL.model}, effort: ${REVIEW_MODEL.effort}}`,
     `retrieval: {selection: coverage, target_papers: ${targetPapers}, corpus: fresh, access: open_full_text}`,
     'subagents: false',
   ].join('\n') + '\n'
@@ -204,7 +204,7 @@ export function importReview(paper: Paper, data: any, bundlePath: string): void 
   lit.finishedAt = new Date().toISOString()
   lit.bundle = bundlePath
   lit.searchedOn = String(run.started_at ?? data?.bundle?.created_at ?? '').slice(0, 10)
-  lit.models = { research: String(run.research_model ?? RESEARCH.model), audit: String(run.audit_model ?? AUDIT.model) }
+  lit.models = { research: String(run.research_model ?? REVIEW_MODEL.model), audit: String(run.audit_model ?? REVIEW_MODEL.model) }
   lit.protocol = {
     concepts: (net.concepts ?? []).map((c: any) => c.synonyms?.length ? `${c.name} (${c.synonyms.slice(0, 4).join(', ')})` : String(c.name)),
     eligibility: { core: tidy(String(eligibility.core ?? '')), supporting: tidy(String(eligibility.supporting ?? '')), exclusion: tidy(String(eligibility.exclusion ?? '')) },
@@ -250,7 +250,7 @@ Search queries: ${lit.protocol.queries.map((q) => `"${q}"`).join('; ')}
 Eligible as core studies: ${lit.protocol.eligibility.core}
 Eligible as supporting studies: ${lit.protocol.eligibility.supporting}
 Excluded: ${lit.protocol.eligibility.exclusion}
-How it was done: a research model (${modelName(lit.models?.research)}) planned the search, screened candidates by title and abstract, retrieved and read the full texts, and extracted each finding with the verbatim passages it rests on; an independent model (${modelName(lit.models?.audit)}) audited every finding against those passages.
+How it was done: a research session (${modelName(lit.models?.research)}) planned the search, screened candidates by title and abstract, retrieved and read the full texts, and extracted each finding with the verbatim passages it rests on. A separate audit session (${modelName(lit.models?.audit)}) checked every finding against those passages.
 Where the studies disagree: ${lit.contradictions?.join(' | ') || 'none recorded'}
 What they leave open: ${lit.gaps?.join(' | ') || 'none recorded'}
 The review's numbers, written only as these placeholders:
