@@ -3,13 +3,13 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-RUN npm run build && npm run build:demo
+RUN npm run build:demo
 
 FROM node:24-bookworm-slim
 WORKDIR /app
 COPY --from=build --chown=node:node /app /app
-ENV GALLEY_DIR=/data/documents GALLEY_PAPERS=/data/papers PORT=5174
-RUN install -d -o node -g node /data/documents /data/papers
+ENV GALLEY_DIR=/data/documents PORT=5174
+RUN install -d -o node -g node /data/documents
 USER node
 VOLUME ["/data"]
 EXPOSE 5174

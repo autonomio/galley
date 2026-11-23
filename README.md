@@ -32,6 +32,10 @@ npm run dev
 
 Open http://localhost:5174. Documents are kept as markdown files in `.galley-data/`; set `GALLEY_DIR` to use another folder. Add `?store=local` to the URL to keep documents in the browser instead, with no server involved.
 
+The Docker image serves the built editor and file API. Mount a volume at
+`/data` for documents and notes. Run paper generation on the developer host
+with the native model sessions and typesetter described in [Papers](docs/PAPERS.md).
+
 ## Adopt it in an app
 
 ```ts
