@@ -7,6 +7,7 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, s
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { claim, keyFor, ledgerAppendix } from './behaviors/common.js'
+import { modelForPlace, type Place } from './model-catalog.js'
 import { FAMILY_NAMES, lightName, lightSpecFor } from './config.js'
 import { cleanCsl, cslForDoi, cslFromWork } from './evidence.js'
 import type { Paper } from './paper.js'
@@ -51,16 +52,18 @@ const yamlString = (text: string) => JSON.stringify(text)
 
 function disclosure(paper: Paper, record: Record_): string {
   const seats = paper.config.seats
-  const referees = [...new Set(paper.config.referees.map((r) => r.family))].map((f) => FAMILY_NAMES[f]).join(' and ')
+  const routing = paper.config.routing
+  const who = (seat: keyof typeof seats) => routing ? modelForPlace(routing, seat).identity : FAMILY_NAMES[seats[seat]]
+  const referees = [...new Set(paper.config.referees.map((r) => routing ? modelForPlace(routing, r.seat as Place).identity : FAMILY_NAMES[r.family]))].join(' and ')
   const lit = paper.state.literature?.status === 'done' ? paper.state.literature : null
   const everyCitation = lit ? 'every citation outside the systematic review' : 'every citation'
   // Answering, judging and settling single findings run on the lighter settings; the statement names them.
   const settling = [...new Set([seats.author, ...paper.config.referees.map((r) => r.family)])].map((f) => lightName(lightSpecFor(paper.config, f)))
-  const settled = paper.state.round >= 1 ? ` Answering findings, judging the answers and settling disputes ran on lighter reasoning settings (${settling.join(', ')}).` : ''
+  const settled = !routing && paper.state.round >= 1 ? ` Answering findings, judging the answers and settling disputes ran on lighter reasoning settings (${settling.join(', ')}).` : ''
   const sims = runsOf(paper)
-  const simulated = sims.length ? ` The Monte Carlo simulation${sims.length > 1 ? 's' : ''} (${sims.map((r) => `${r.id}, ${methodWords(r.result.method)} with ${sizeOf(r.result)}, seed ${r.result.provenance.seed}`).join('; ')}) ran on the authors' machine with galley's simulation engine, from a specification ${FAMILY_NAMES[seats.author]} wrote; every simulated number in the text is filled in from that run at the precision its Monte Carlo error supports, and the evidence package holds each specification with its results, so every number can be reproduced.` : ''
+  const simulated = sims.length ? ` The Monte Carlo simulation${sims.length > 1 ? 's' : ''} (${sims.map((r) => `${r.id}, ${methodWords(r.result.method)} with ${sizeOf(r.result)}, seed ${r.result.provenance.seed}`).join('; ')}) ran on the authors' machine with galley's simulation engine, from a specification ${who('author')} wrote; every simulated number in the text is filled in from that run at the precision its Monte Carlo error supports, and the evidence package holds each specification with its results, so every number can be reproduced.` : ''
   const review = lit ? ` The systematic review ${paper.config.literatureReview === 'load-bearing' ? 'this paper reports' : 'reported in its own section'} was carried out with Canary: ${modelName(lit.models?.research)} planned the search of OpenAlex, screened the candidates, read the full texts and quoted the passages behind each finding, and ${modelName(lit.models?.audit)} audited every finding against those passages; the review's citations rest on them.` : ''
-  return `This manuscript was produced with ${software()} from a seed text written by the author. ${FAMILY_NAMES[seats.author]} extracted the seed's claims, planned the argument, drafted every section and answered the referees. ${FAMILY_NAMES[seats.checker]} wrote the literature searches, selected candidate passages and checked each section against its claims. ${seats.challenger === seats.verifier ? `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting and verified ${everyCitation} against the passage it rests on.` : `${FAMILY_NAMES[seats.challenger]} challenged the idea before drafting, and ${FAMILY_NAMES[seats.verifier]} verified ${everyCitation} against the passage it rests on.`} Referee reports came from ${referees}, never from the family that drafted the text, and each answer to a material finding was verified by the referee family that raised it.${settled} Literature search ran through Canary over OpenAlex; bibliographic records come from the DOI registries.${review}${simulated} No model reviewed its own work. The production journal that accompanies this manuscript records every step, model call, verdict and decision with its time, and the evidence package holds each claim with the verbatim passage and verdict behind every citation.
+  return `This manuscript was produced with ${software()} from a seed text written by the author. ${who('author')} extracted the seed's claims, planned the argument, drafted every section and answered the referees. ${who('checker')} wrote the literature searches, selected candidate passages and checked each section against its claims. ${who('challenger') === who('verifier') ? `${who('challenger')} challenged the idea before drafting and verified ${everyCitation} against the passage it rests on.` : `${who('challenger')} challenged the idea before drafting, and ${who('verifier')} verified ${everyCitation} against the passage it rests on.`} Referee reports came from ${referees}${routing ? '' : ', never from the family that drafted the text'}, and each answer to a material finding was verified by the referee family that raised it.${settled} Literature search ran through Canary over OpenAlex; bibliographic records come from the DOI registries.${review}${simulated} The production journal that accompanies this manuscript records every step, model call, verdict and decision with its time, and the evidence package holds each claim with the verbatim passage and verdict behind every citation.
 
 | Production record | |
 |---|---|
@@ -156,7 +159,7 @@ const byTime = (a: AnnotationReply, b: AnnotationReply) => a.created_at.localeCo
 /** Replies galley did not write: a person's, which are never rewritten. */
 const theirOwn = (replies: AnnotationReply[] = []) => replies.filter((r) => !r.id.startsWith('galley-'))
 
-/** A finding's answers as replies in its thread: each answer, the referee's verdict on it, and a third family's decision. */
+/** A finding's answers as replies in its thread: each answer, the referee's verdict on it, and the adjudicator's decision. */
 function answers(f: Finding): AnnotationReply[] {
   const out: AnnotationReply[] = []
   f.dispositions.forEach((d, k) => {
@@ -492,7 +495,7 @@ ${list(active.filter((c) => c.status === 'unsupported').map((c) => `${c.id}: ${c
 ## Claims narrowed to what their evidence supports (${active.filter((c) => c.status === 'narrowed').length})
 ${list(active.filter((c) => c.status === 'narrowed').map((c) => `${c.id}: ${c.text}`), 'None.')}
 
-## Decisions made by a third model family, and notes left for you
+## Adjudication decisions and notes left for you
 ${list(s.notes.filter((n) => n.forHuman).map((n) => n.text), 'None.')}
 
 ## Threads assigned to people

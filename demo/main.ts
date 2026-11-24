@@ -10,6 +10,7 @@ import { createEditor, createHttpStore, createLocalStore, icons, type EditorActi
 import { choicesAction } from './choices.js'
 import { livingPaper } from './living.js'
 import { writePaperAction } from './paper.js'
+import { mountModelSettings } from './model-settings.js'
 import { proposalsAction } from './proposals.js'
 
 const params = new URLSearchParams(location.search)
@@ -38,18 +39,6 @@ const download: EditorAction = {
   },
 }
 
-const editor = createEditor(document.getElementById('editor')!, {
-  store,
-  theme,
-  placeholder: 'Start writing…',
-  toolbar: ['writer', 'new', 'import', 'copy', download, ...(papersEnabled ? [writePaperAction(), choicesAction(), proposalsAction()] : []), 'delete'],
-  storagePrefix: local ? 'galley-local' : 'galley',
-  // A paper's document is written by its team while you work in it: who is at work, its notes and its history.
-  plugins: papersEnabled ? [livingPaper(store, document.getElementById('history')!)] : [],
-})
-
-editor.on('writer-mode', ({ on }) => document.body.classList.toggle('is-writing', on))
-
 document.documentElement.dataset.theme = theme
 document.getElementById('demo-where')!.textContent = local ? 'documents in this browser' : 'documents on the server'
 const storeLink = document.getElementById('demo-store') as HTMLAnchorElement
@@ -64,5 +53,35 @@ themeButton.addEventListener('click', () => {
   location.search = next.toString()
 })
 
-// For poking at from the console, and for the end-to-end tests.
-;(window as unknown as { galley: typeof editor }).galley = editor
+const settingsLink = document.getElementById('demo-settings') as HTMLAnchorElement
+const settingsURL = new URL(location.href)
+const settingsOpen = papersEnabled && params.get('settings') === 'models'
+settingsURL.searchParams.set('settings', 'models')
+settingsLink.href = settingsURL.href
+settingsLink.hidden = !papersEnabled || settingsOpen
+
+if (settingsOpen) {
+  settingsURL.searchParams.delete('settings')
+  const main = document.querySelector('.demo-main')!
+  const settings = document.createElement('main')
+  settings.className = 'galley gms'
+  settings.dataset.galleyTheme = theme
+  main.replaceWith(settings)
+  document.title = 'Galley — Settings · Models'
+  mountModelSettings(settings, settingsURL.href)
+} else {
+  const editor = createEditor(document.getElementById('editor')!, {
+    store,
+    theme,
+    placeholder: 'Start writing…',
+    toolbar: ['writer', 'new', 'import', 'copy', download, ...(papersEnabled ? [writePaperAction(), choicesAction(), proposalsAction()] : []), 'delete'],
+    storagePrefix: local ? 'galley-local' : 'galley',
+    // A paper's document is written by its team while you work in it: who is at work, its notes and its history.
+    plugins: papersEnabled ? [livingPaper(store, document.getElementById('history')!)] : [],
+  })
+
+  editor.on('writer-mode', ({ on }) => document.body.classList.toggle('is-writing', on))
+
+  // For poking at from the console, and for the end-to-end tests.
+  ;(window as unknown as { galley: typeof editor }).galley = editor
+}

@@ -5,12 +5,13 @@
 // claims with verified citations and a section of the paper.
 import { spawn } from 'node:child_process'
 import { canaryPython, openalexKey } from './evidence.js'
+import { CANARY_MODEL } from './model-catalog.js'
 import type { Paper } from './paper.js'
 import type { Citation, Claim, LiteratureReview, Section, Work } from './types.js'
 
 export const REVIEW_SECTION = 'LR'
 // The current Canary compiler requires the same model and effort for both roles.
-const REVIEW_MODEL = { model: 'gpt-6.1-sol', effort: 'xhigh' }
+const REVIEW_MODEL = { model: CANARY_MODEL.selector, effort: CANARY_MODEL.effort }
 const TARGET_PAPERS = 50
 /** What the start dialog says about the review: who does it and how much it reads. */
 export const REVIEW_SETTINGS = { research: REVIEW_MODEL.model, audit: REVIEW_MODEL.model, papers: TARGET_PAPERS }

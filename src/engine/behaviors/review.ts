@@ -1,6 +1,6 @@
-// The referee loop: referees from families other than the author's read the
-// whole manuscript; the author answers each material finding; the referee who
-// raised it verifies the answer; a third family settles what stays disputed.
+// The referees read the whole manuscript. The author answers each material
+// finding, the referee who raised it verifies the answer, and the adjudicator
+// settles what stays disputed.
 // Minor findings are fixed in place by whoever saw them, with no thread.
 import { thirdFamily } from '../config.js'
 import type { Paper } from '../paper.js'
@@ -15,8 +15,9 @@ import { setPassage } from './write.js'
 
 const families: Family[] = ['claude', 'gpt', 'gemini']
 
-/** Referee seats for a round. Families rotate between rounds and never include the author's. */
+/** Legacy papers rotate families. Catalog assignments stay fixed across rounds. */
 export function refereesFor(paper: Paper, round: number): { seat: string; family: Family; brief: string }[] {
+  if (paper.config.routing) return paper.config.referees
   const author = paper.config.seats.author
   const others = families.filter((f) => f !== author)
   return paper.config.referees.map((ref, i) => {
@@ -35,7 +36,7 @@ function knownKeys(paper: Paper): Set<string> {
 }
 
 /** Apply an exact edit wherever in the manuscript its old text is unique. */
-function applyAnywhere(paper: Paper, edit: { old: string; new: string }, preferred: string | null, by: { family: Family; seat: string; behavior: string }, reason: string): boolean {
+function applyAnywhere(paper: Paper, edit: { old: string; new: string }, preferred: string | null, by: { family: Family; seat: string; behavior: string; light?: boolean; referee?: string }, reason: string): boolean {
   const sections = paper.state.outline?.sections ?? []
   const order = preferred ? [preferred, ...sections.map((s) => s.id).filter((id) => id !== preferred)] : sections.map((s) => s.id)
   for (const id of order) {
@@ -43,7 +44,8 @@ function applyAnywhere(paper: Paper, edit: { old: string; new: string }, preferr
     const changed = applyExact(text, edit)
     if (changed === null) continue
     const { text: clean } = dropUnknownCitations(changed, knownKeys(paper))
-    setPassage(paper, id, clean, { kind: 'agent', family: by.family, model: paper.config.models[by.family]?.model ?? by.family, seat: by.seat as any, behavior: by.behavior }, reason)
+    const { family, model } = paper.modelFor(by)
+    setPassage(paper, id, clean, { kind: 'agent', family, model, seat: by.seat as any, behavior: by.behavior }, reason)
     return true
   }
   if (paper.state.frame && edit.old && paper.state.frame.abstract.includes(edit.old)) {
@@ -98,7 +100,7 @@ ${citationEvidenceBlock(paper) || '(no citations)'}`,
         let n = s.findings.filter((f) => f.round === round && f.seat === ref.seat).length
         for (const raw of (reply.findings ?? []).slice(0, 12)) {
           const finding: Finding = {
-            id: `F${round}-${ref.seat}-${++n}`, at: new Date().toISOString(), round, seat: ref.seat, family: ref.family, model: paper.config.models[ref.family]?.model ?? ref.family,
+            id: `F${round}-${ref.seat}-${++n}`, at: new Date().toISOString(), round, seat: ref.seat, family: ref.family, model: paper.modelFor({ seat: `referee:${ref.seat}`, family: ref.family }).model,
             severity: raw.severity, sectionId: raw.section_id && sections.has(raw.section_id) ? raw.section_id : null,
             quote: raw.quote ?? '', question: raw.question, alternatives: raw.alternatives, evidence: raw.evidence, decision: raw.decision,
             edit: raw.edit && raw.edit.old ? raw.edit : null, status: 'open', assignee: 'agents', origin: 'agent', dispositions: [],
@@ -158,7 +160,7 @@ export const respond: Behavior = {
 
 ${STYLE}
 
-You are the author. Referees from other model families raised the findings below. Answer each one.
+You are the author. Referees raised the findings below. Answer each one.
 - fixed: the referee is right; give the edits that fix it.
 - rebutted: the referee is wrong; give the concrete reason in reply, and no edits.
 - limitation: the point is fair but cannot be fixed within this paper; give an edit that states it as a limitation where it belongs. State a limitation once, in the limitations section, and about the work itself ("the rubric has not been validated as a predictor of impact"), never about how this manuscript was produced or what happens if a step fails, and never as a remark on what this text does not document; if the paper already states it, point to that place in reply and give no edit.
@@ -207,7 +209,7 @@ ${findings.map((f) => `${f.id} [${f.severity}, ${f.seat} referee]\n  quote: "${f
             f.status = 'open'
             continue
           }
-          const applied = (answer.edits ?? []).filter((edit: { old: string; new: string }) => applyAnywhere(paper, edit, f.sectionId, { family, seat: 'author', behavior: 'respond' }, `answer to ${f.id}`))
+          const applied = (answer.edits ?? []).filter((edit: { old: string; new: string }) => applyAnywhere(paper, edit, f.sectionId, { family, seat: 'author', behavior: 'respond', light: true }, `answer to ${f.id}`))
           const kind = answer.kind === 'needs_evidence' ? 'limitation' : answer.kind
           f.dispositions.push({ at: now(), kind: answer.kind, text: answer.reply, edits: applied, family })
           f.status = (answer.edits?.length && !applied.length && kind !== 'rebutted') ? 'open' : kind
@@ -232,13 +234,17 @@ export const verifyDisposition: Behavior = {
     const s = paper.state
     if (!live(paper)) return []
     const pending = s.findings.filter((f) => ['fixed', 'rebutted', 'limitation'].includes(f.status) && lastDisposition(f) && !lastDisposition(f)!.verification)
-    const byFamily = new Map<Family, Finding[]>()
-    for (const f of pending) byFamily.set(f.family, [...(byFamily.get(f.family) ?? []), f])
-    return [...byFamily.entries()].map(([family, findings]): Target => ({
+    const groups = new Map<string, Finding[]>()
+    for (const f of pending) {
+      const key = paper.config.routing ? f.seat : f.family
+      groups.set(key, [...(groups.get(key) ?? []), f])
+    }
+    return [...groups.values()].map((findings) => ({ findings, family: findings[0].family, seat: findings[0].seat }))
+      .map(({ findings, family, seat }): Target => ({
       key: `verify-disposition:${findings.map((f) => `${f.id}.${f.dispositions.length}`).join(',')}`, label: `${findings.length} answer(s) for ${family}`,
       run: async () => {
         const reply = await paper.ask<any>({
-          behavior: 'verify-disposition', light: true, target: findings.map((f) => f.id).join(','), seat: 'referee', family,
+          behavior: 'verify-disposition', light: true, target: findings.map((f) => f.id).join(','), seat: seat === 'human' ? 'challenger' : `referee:${seat}`, family,
           prompt: `${HOUSE}
 
 You raised these findings as a referee. The author answered each. Judge each answer against the current text.
@@ -280,19 +286,19 @@ export const adjudicate: Behavior = {
     if (!live(paper)) return []
     const stuck = s.findings.filter((f) => f.status === 'open' && material(f) && f.dispositions.length >= paper.config.fixAttempts && f.assignee !== 'humans')
     return stuck.map((f): Target => {
-      const family = thirdFamily(paper.config.seats.author, f.family)
+      const family = paper.modelFor({ seat: 'adjudicator', referee: f.seat, family: thirdFamily(paper.config.seats.author, f.family), light: true }).family
       return {
         key: `adjudicate:${f.id}`, label: `${f.id} by ${family}`,
         run: async () => {
           // The whole manuscript: a disputed finding often spans sections.
           const current = manuscriptBlock(paper)
           const reply = await paper.ask<any>({
-            behavior: 'adjudicate', light: true, target: f.id, seat: 'adjudicator', family,
+            behavior: 'adjudicate', light: true, target: f.id, seat: 'adjudicator', family, referee: f.seat,
             prompt: `${HOUSE}
 
 ${STYLE}
 
-An author and a referee from two other model families could not agree. Decide.
+The author and a referee could not agree. Decide.
 - adopt_referee: the referee is right; give the edits that implement the referee's decision.
 - adopt_author: the author's last answer stands; no edits.
 - narrow: both are partly right; give edits that narrow the text to the common ground.
@@ -311,7 +317,7 @@ ${current}
 ${placeholderLegend(paper, current)}`,
             schema: obj({ decision: enm(['adopt_referee', 'adopt_author', 'narrow', 'limitation']), reason: str(), edits: arr(obj({ old: str(), new: str() })) }),
           })
-          const applied = (reply.edits ?? []).filter((edit: { old: string; new: string }) => applyAnywhere(paper, edit, f.sectionId, { family, seat: 'adjudicator', behavior: 'adjudicate' }, `adjudication of ${f.id}`))
+          const applied = (reply.edits ?? []).filter((edit: { old: string; new: string }) => applyAnywhere(paper, edit, f.sectionId, { family, seat: 'adjudicator', behavior: 'adjudicate', referee: f.seat, light: true }, `adjudication of ${f.id}`))
           f.adjudication = { decision: `${reply.decision}: ${reply.reason}`, family, edits: applied }
           f.status = 'adjudicated'
           paper.note('adjudicate', `${f.id} (${f.question}) was settled by ${family}: ${reply.decision}. ${reply.reason}`, true)

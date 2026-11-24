@@ -5,7 +5,9 @@
 // the text and the threads themselves.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { defaultConfig, FAMILY_NAMES } from './config.js'
+import { modelForPlace, type Place } from './model-catalog.js'
+import { Paper } from './paper.js'
+import { FAMILY_NAMES } from './config.js'
 import type { Family, PaperState } from './types.js'
 
 export interface LiveSeat {
@@ -163,12 +165,12 @@ function activity(s: PaperState, events: JournalEvent[]): LiveEntry[] {
     }
     if (e.event === 'provider_limit') {
       const family = e.family as Family
-      say(e, 'galley', `is waiting out ${FAMILY_NAMES[family] ?? family}'s usage limit (${Math.max(1, Math.round(Number(e.wait_ms) / 60000))} min), then carries on.`)
+      say(e, 'galley', `is waiting out ${e.identity ?? FAMILY_NAMES[family] ?? family}'s usage limit (${Math.max(1, Math.round(Number(e.wait_ms) / 60000))} min), then carries on.`)
       continue
     }
     if (e.event === 'note') {
       if (e.behavior === 'editor') say(e, 'human', String(e.text).replace(/^You /, ''), { human: true })
-      // A third family's decision is already its own line in the history.
+      // The adjudicator's decision is already its own line in the history.
       else if (e.forHuman && e.behavior !== 'adjudicate') say(e, 'galley', `noted: ${String(e.text)}`)
       continue
     }
@@ -246,8 +248,8 @@ function workingNotes(s: PaperState, config: { rounds?: number, literatureReview
 export function liveView(dir: string, options: { limit?: number } = {}): LiveView | null {
   const s = readJson<PaperState>(join(dir, 'state.json'))
   if (!s) return null
-  const config = readJson<{ title?: string, rounds?: number, literatureReview?: unknown, simulation?: unknown, seats?: Record<string, Family>, referees?: { seat: string }[] }>(join(dir, 'paper.json')) ?? {}
-  const progress = readJson<{ pid: number, outcome: string | null, inFlight?: { behavior: string, target: string, what: string, started: string }[] }>(join(dir, 'progress.json'))
+  const config = Paper.readConfig(dir)
+  const progress = readJson<{ pid: number, outcome: string | null, inFlight?: { behavior: string, target: string, what: string, started: string, family?: Family }[] }>(join(dir, 'progress.json'))
   let running = false
   if (progress && !progress.outcome && !s.outcome) {
     try { process.kill(progress.pid, 0); running = true } catch { /* the run has ended */ }
@@ -257,7 +259,7 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
     const model = m?.[1] ?? f.what
     const seat = (m?.[2] ?? 'galley').replace(/^referee:/, '')
     const place = placeOf(s, f.behavior, f.target)
-    return { seat, name: seatName(seat), family: familyOf(model), model, doing: doing(s, f.behavior, f.target), section: place.section, finding: place.finding, seconds: Math.max(0, Math.round((Date.now() - Date.parse(f.started)) / 1000)) }
+    return { seat, name: seatName(seat), family: f.family ?? familyOf(model), model, doing: doing(s, f.behavior, f.target), section: place.section, finding: place.finding, seconds: Math.max(0, Math.round((Date.now() - Date.parse(f.started)) / 1000)) }
   }) : []
   const lines = existsSync(join(dir, 'journal.jsonl')) ? readFileSync(join(dir, 'journal.jsonl'), 'utf8').split('\n').filter(Boolean) : []
   const events = lines.map((line) => { try { return JSON.parse(line) as JournalEvent } catch { return null } }).filter((e): e is JournalEvent => !!e)
@@ -269,7 +271,7 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
       if (e.event === 'call' || e.event === 'settled') break
       if (e.event !== 'provider_limit') continue
       const until = new Date(Date.parse(e.at) + Number(e.wait_ms)).toISOString()
-      if (Date.parse(until) > Date.now()) waiting = { family: e.family, name: FAMILY_NAMES[e.family as Family] ?? e.family, until }
+      if (Date.parse(until) > Date.now()) waiting = { family: e.family, name: e.identity ?? FAMILY_NAMES[e.family as Family] ?? e.family, until }
       break
     }
   }
@@ -286,17 +288,18 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
   const current = stages.find((x) => !x.done) ?? stages[stages.length - 1]
   const all = activity(s, events)
   // Referees rotate families between rounds: each shows the family it last worked as.
-  const defaults = defaultConfig()
-  const seats = { ...defaults.seats, ...(config.seats ?? {}) } as Record<string, Family>
   const lastAs: Record<string, Family> = {}
   for (const e of events) {
     if (e.event === 'call' && e.family) lastAs[String(e.seat).replace(/^referee:/, '')] = e.family
     if (e.event === 'review' && e.family) lastAs[String(e.seat)] = e.family
   }
-  const member = (seat: string, family: Family | null) => ({ seat, name: seatName(seat), family, detail: family ? FAMILY_NAMES[family] : null })
+  const member = (seat: string, family: Family | null) => {
+    const assigned = config.routing && config.routing.places[seat as Place] !== 'independent' ? modelForPlace(config.routing, seat as Place).identity : null
+    return { seat, name: seatName(seat), family, detail: assigned ?? (family ? FAMILY_NAMES[family] : null) }
+  }
   const team = [
-    ...(['author', 'checker', 'challenger', 'verifier'] as const).map((seat) => member(seat, seats[seat] ?? null)),
-    ...(config.referees ?? defaults.referees).map((r) => member(r.seat, lastAs[r.seat] ?? null)),
+    ...(['author', 'checker', 'challenger', 'verifier'] as const).map((seat) => member(seat, config.seats[seat] ?? null)),
+    ...config.referees.map((r) => member(r.seat, lastAs[r.seat] ?? (config.routing ? r.family : null))),
     member('adjudicator', lastAs.adjudicator ?? null),
   ]
   const sections = (s.outline?.sections ?? []).map((sec) => ({ id: sec.id, title: sec.title, written: !!s.passages[sec.id] }))

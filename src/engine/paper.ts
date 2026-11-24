@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { defaultConfig, lightSpecFor, specFor, type PaperConfig } from './config.js'
+import { adjudicatorModel, modelForPlace, modelSpec, readModelCatalog, resolveRouting, specIdentity, validateRouting, type Place } from './model-catalog.js'
 import { callModel, ModelFailure, RateLimited, resetHintMs, type CallResult } from './models.js'
 import type { Schema } from './schema.js'
 import type { Family, Note, PaperState, Seat } from './types.js'
@@ -45,8 +46,8 @@ export interface AskOptions {
   family: Family
   prompt: string
   schema: Schema
-  effort?: string
-  /** Settle a single referee finding on the lighter settings (LIGHT_MODELS). */
+  referee?: string
+  /** Legacy papers settle single referee findings on their lighter settings. */
   light?: boolean
 }
 
@@ -56,6 +57,7 @@ export interface InFlight {
   target: string
   what: string
   started: number
+  family?: Family
 }
 
 export class Paper {
@@ -100,11 +102,17 @@ export class Paper {
   }
 
   static create(dir: string, seed: string, overrides: Partial<PaperConfig> = {}): Paper {
-    mkdirSync(dir, { recursive: true })
     if (existsSync(join(dir, 'state.json'))) throw new Error(`${dir} already holds a paper`)
+    const configPath = join(dir, 'paper.json')
+    const hasConfig = existsSync(configPath)
+    const config = hasConfig ? JSON.parse(readFileSync(configPath, 'utf8')) as Partial<PaperConfig> : overrides
+    const legacy = config.seats || config.models || config.lightModels || config.referees
+    const routing = overrides.routing ?? config.routing ?? (legacy ? undefined : resolveRouting(readModelCatalog()))
+    if (routing) validateRouting(routing)
+    mkdirSync(dir, { recursive: true })
+    if (!hasConfig || (!config.routing && routing) || overrides.routing) writeJsonAtomic(configPath, { ...config, routing })
     const slug = dir.split('/').filter(Boolean).pop()!
     writeFileSync(join(dir, 'seed.md'), seed.endsWith('\n') ? seed : seed + '\n')
-    if (!existsSync(join(dir, 'paper.json'))) writeJsonAtomic(join(dir, 'paper.json'), overrides)
     const state: PaperState = {
       version: 1,
       slug,
@@ -137,9 +145,18 @@ export class Paper {
 
   static readConfig(dir: string): PaperConfig {
     const path = join(dir, 'paper.json')
-    const overrides = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}
+    const overrides: Partial<PaperConfig> = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}
     const base = defaultConfig()
-    return { ...base, ...overrides, seats: { ...base.seats, ...(overrides.seats || {}) } }
+    const config = { ...base, ...overrides, seats: { ...base.seats, ...overrides.seats } }
+    if (config.routing) {
+      const routing = config.routing
+      validateRouting(routing)
+      for (const seat of Object.keys(config.seats) as (keyof PaperConfig['seats'])[]) {
+        config.seats[seat] = modelSpec(modelForPlace(routing, seat)).family
+      }
+      config.referees = base.referees.map((ref) => ({ ...ref, family: modelSpec(modelForPlace(routing, ref.seat as Place)).family }))
+    }
+    return config
   }
 
   path(...parts: string[]): string {
@@ -170,44 +187,56 @@ export class Paper {
     this.save()
   }
 
+  modelFor(options: Pick<AskOptions, 'seat' | 'family' | 'light' | 'referee'>): ReturnType<typeof specFor> {
+    const { routing } = this.config
+    if (!routing) return options.light ? lightSpecFor(this.config, options.family) : specFor(this.config, options.family)
+    const place = (options.referee ?? options.seat.replace(/^referee:/, '')) as Place
+    if (options.seat === 'adjudicator') {
+      const referee = options.referee === 'human' ? modelForPlace(routing, 'challenger') : modelForPlace(routing, place)
+      return modelSpec(adjudicatorModel(routing, referee))
+    }
+    return modelSpec(modelForPlace(routing, place))
+  }
+
   /** Ask one family for one structured answer, within its concurrency limit, waiting out provider limits. */
   async ask<T = any>(options: AskOptions): Promise<T> {
-    const spec = options.light ? lightSpecFor(this.config, options.family) : { ...specFor(this.config, options.family), ...(options.effort ? { effort: options.effort } : {}) }
+    const spec = this.modelFor(options)
+    const { family } = spec
     const seq = ++this.callSeq
-    const file = `${String(Date.now()).slice(-9)}-${seq}-${options.behavior}-${options.family}.json`
+    const file = `${String(Date.now()).slice(-9)}-${seq}-${options.behavior}-${family}.json`
     for (let wait = 0; ; wait++) {
-      await acquire(options.family)
+      await acquire(family)
       let result: CallResult
-      const done = this.begin({ behavior: options.behavior, target: options.target, what: `${spec.model} (${options.seat})` })
+      const done = this.begin({ behavior: options.behavior, target: options.target, what: `${specIdentity(spec)} (${options.seat})`, family })
       try {
         result = await callModel({ spec, prompt: options.prompt, schema: options.schema, cacheDir: this.path('calls', 'cache') })
       } catch (error) {
         done()
-        release(options.family)
+        release(family)
         if (error instanceof RateLimited && wait < LIMIT_WAITS.length) {
           // A provider that says when its quota resets is tried again just after that, not on the fixed schedule.
           const hint = resetHintMs(error.message)
           const ms = hint === null ? LIMIT_WAITS[wait] : Math.min(hint + 30_000, LIMIT_HINT_CAP)
-          this.journal({ event: 'provider_limit', behavior: options.behavior, target: options.target, family: options.family, wait_ms: ms, message: error.message })
-          this.say(`… ${options.behavior}: ${options.family} is at a usage limit or out of reach; waiting ${Math.max(1, Math.round(ms / 60_000))} min (${error.message.slice(0, 120)})`)
+          this.journal({ event: 'provider_limit', behavior: options.behavior, target: options.target, family, identity: specIdentity(spec), wait_ms: ms, message: error.message })
+          this.say(`… ${options.behavior}: ${specIdentity(spec)} is at a usage limit or out of reach; waiting ${Math.max(1, Math.round(ms / 60_000))} min (${error.message.slice(0, 120)})`)
           await sleep(ms)
           continue
         }
         const message = error instanceof Error ? error.message : String(error)
         mkdirSync(this.path('calls'), { recursive: true })
         writeJsonAtomic(this.path('calls', file), { behavior: options.behavior, target: options.target, seat: options.seat, spec, prompt: options.prompt, error: message })
-        this.journal({ event: 'call_failed', behavior: options.behavior, target: options.target, seat: options.seat, family: options.family, model: spec.model, error: message, call: file })
+        this.journal({ event: 'call_failed', behavior: options.behavior, target: options.target, seat: options.seat, family, model: spec.model, effort: spec.effort, error: message, call: file })
         throw error instanceof ModelFailure || error instanceof RateLimited ? error : new ModelFailure(message)
       }
       done()
-      release(options.family)
+      release(family)
       mkdirSync(this.path('calls'), { recursive: true })
       writeJsonAtomic(this.path('calls', file), {
         behavior: options.behavior, target: options.target, seat: options.seat, spec,
         prompt: options.prompt, output: result.data, usage: result.usage, ms: result.ms, cached: result.cached,
       })
       this.journal({
-        event: 'call', behavior: options.behavior, target: options.target, seat: options.seat, family: options.family,
+        event: 'call', behavior: options.behavior, target: options.target, seat: options.seat, family,
         model: spec.model, effort: spec.effort, ms: result.ms, cached: result.cached, usage: result.usage, call: file,
       })
       return result.data as T

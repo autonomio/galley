@@ -1,15 +1,9 @@
 // Who plays which seat, and the dials a paper can turn. A paper's paper.json
 // overrides any of these; nothing else does.
+import { LEGACY_MODELS, LEGACY_LIGHT_MODELS, modelSpec, type ModelRouting } from './model-catalog.js'
 import type { Material } from './materials.js'
 import type { ModelSpec } from './models.js'
 import type { Family, Seat } from './types.js'
-
-export const FAMILY_MODELS: Record<Family, { model: string; effort: string }> = {
-  claude: { model: 'claude-opus-5-5', effort: 'xhigh' },
-  gpt: { model: 'gpt-6.2-sol', effort: 'xhigh' },
-  // Antigravity names the effort in the model id.
-  gemini: { model: 'gemini-4-carbon-high', effort: 'high' },
-}
 
 export const FAMILY_NAMES: Record<Family, string> = {
   claude: 'Claude Opus 5.5',
@@ -17,18 +11,13 @@ export const FAMILY_NAMES: Record<Family, string> = {
   gemini: 'Gemini 4 Carbon',
 }
 
-/** Lighter settings for settling single referee findings (answering one, judging an answer, deciding a dispute): the same families, less reasoning. */
-export const LIGHT_MODELS: Record<Family, { model: string; effort: string }> = {
-  claude: { model: 'claude-opus-5-5', effort: 'medium' },
-  gpt: { model: 'gpt-6.2-sol', effort: 'medium' },
-  gemini: { model: 'gemini-4-hydrogen-medium', effort: 'medium' },
-}
-
 const LIGHT_NAMES: Record<string, string> = {
-  'claude-opus-5-5': 'Claude Opus 5.5', 'gpt-6.2-sol': 'GPT-6.2 Sol', 'gemini-4-hydrogen-medium': 'Gemini 4 Hydrogen', 'gemini-4-carbon-high': 'Gemini 4 Carbon',
+  [LEGACY_MODELS.claude.selector]: FAMILY_NAMES.claude,
+  [LEGACY_MODELS.gpt.selector]: FAMILY_NAMES.gpt,
+  [LEGACY_LIGHT_MODELS.gemini.selector]: 'Gemini 4 Hydrogen',
+  [LEGACY_MODELS.gemini.selector]: FAMILY_NAMES.gemini,
 }
 
-/** A light setting as the AI statement names it: Gemini 4 Hydrogen, or Claude Opus 5.5 at medium effort. */
 export function lightName(spec: ModelSpec): string {
   const name = LIGHT_NAMES[spec.model] ?? spec.model
   return spec.family === 'gemini' ? name : `${name} at ${spec.effort} effort`
@@ -64,6 +53,7 @@ export interface PaperConfig {
   candidatesPerClaim: number
   seats: Record<Exclude<Seat, 'referee' | 'adjudicator'>, Family>
   referees: RefereeSeat[]
+  routing?: ModelRouting
   models: Partial<Record<Family, { model: string; effort: string }>>
   /** The lighter settings that answer, judge and settle single referee findings; defaults to LIGHT_MODELS. */
   lightModels?: Partial<Record<Family, { model: string; effort: string }>>
@@ -129,13 +119,13 @@ export function defaultConfig(): PaperConfig {
 }
 
 export function specFor(config: PaperConfig, family: Family): ModelSpec {
-  const chosen = config.models[family] ?? FAMILY_MODELS[family]
-  return { family, model: chosen.model, effort: chosen.effort }
+  const chosen = config.models[family]
+  return chosen ? { family, ...chosen } : modelSpec(LEGACY_MODELS[family])
 }
 
 export function lightSpecFor(config: PaperConfig, family: Family): ModelSpec {
-  const chosen = config.lightModels?.[family] ?? LIGHT_MODELS[family]
-  return { family, model: chosen.model, effort: chosen.effort }
+  const chosen = config.lightModels?.[family]
+  return chosen ? { family, ...chosen } : modelSpec(LEGACY_LIGHT_MODELS[family])
 }
 
 /** The family that is neither of the two given: the third voice for adjudication. */

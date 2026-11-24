@@ -86,7 +86,7 @@ Return markdown (the section body) and used_claims (ids of the claims you stated
           })
           const { text, dropped } = dropUnknownCitations(String(reply.markdown ?? '').trim(), knownKeys(paper))
           if (dropped.length) paper.note('draft', `${section.id}: removed citations to unknown keys ${[...new Set(dropped)].join(', ')}`)
-          setPassage(paper, section.id, text, { kind: 'agent', family, model: paper.config.models[family]?.model ?? family, seat: 'author', behavior: 'draft' }, 'first draft')
+          setPassage(paper, section.id, text, { kind: 'agent', family, model: paper.modelFor({ seat: 'author', family }).model, seat: 'author', behavior: 'draft' }, 'first draft')
           paper.save()
         },
       }))
@@ -132,7 +132,7 @@ ${claimsBlock(paper, section.claimIds) || '(none)'}${section.id === REVIEW_SECTI
             applied++
           }
           const { text: clean } = dropUnknownCitations(next, knownKeys(paper))
-          if (clean !== text) setPassage(paper, section.id, clean, { kind: 'agent', family, model: paper.config.models[family]?.model ?? family, seat: 'checker', behavior: 'fidelity' }, `fidelity: ${applied} fixes`)
+          if (clean !== text) setPassage(paper, section.id, clean, { kind: 'agent', family, model: paper.modelFor({ seat: 'checker', family }).model, seat: 'checker', behavior: 'fidelity' }, `fidelity: ${applied} fixes`)
           s.passages[section.id].checked = missed ? 'changes_requested' : 'faithful'
           if (missed) paper.journal({ event: 'fidelity_unanchored', section: section.id, count: missed })
           paper.save()

@@ -53,18 +53,21 @@ Behind it, in the paper's folder: `seed.md`, `state.json` (everything decided so
 
 ## Who does what
 
-Three model families take different seats, and no family reviews its own work.
+Open **Settings → Models** in the local Galley app. Sign in through each provider's native CLI, then select catalog models for **Primary**, **Secondary**, and **Tertiary**. Each slot has a **Test** action that sends a short connectivity check through the exact client, selector, and effort used in a paper. **Check now** refreshes the catalog from native CLI model lists and keeps saved identities, including when a provider cannot be reached.
 
-| Seat | Family | Does |
+Assign a slot to each role. Distinct model identities in the same provider are allowed. For a run without Claude, choose a GPT model and effort in Primary and leave the Author assigned to Primary. The default assignments are:
+
+| Seat | Slot | Does |
 | --- | --- | --- |
-| Author | Claude Opus 5.5 | extracts the seed's claims, plans the argument, outlines, drafts, draws figures, frames, answers referees |
-| Checker | GPT-6.2 Sol | writes literature searches, picks candidate passages, checks each section against its claims |
-| Challenger | Gemini 4 Carbon | challenges the idea before drafting, reformulates it, reassesses a thesis that lost its evidence, profiles the finished paper |
-| Verifier | Gemini 4 Carbon | verifies every citation against the passage it rests on |
-| Referees | GPT-6.2 Sol and Gemini 4 Carbon | methods, field, citations and editor seats; families rotate between rounds and never include the author's |
-| Adjudicator | the third family | settles a finding the author and referee could not agree on |
+| Author | Primary | extracts claims, plans, outlines, drafts, frames, and answers referees |
+| Checker | Secondary | searches for evidence and checks the draft against its claims |
+| Challenger | Tertiary | challenges the idea, proposes directions, and reassesses the thesis |
+| Verifier | Tertiary | verifies citations and runs the calibration |
+| Methods and citations referees | Secondary | review the methods, evidence, citations, and prior art |
+| Field referee and desk editor | Tertiary | review the contribution, clarity, and structure |
+| Adjudicator | Independent | selects a third model, preferring a provider distinct from both the author and referee |
 
-Every seat runs at full reasoning (Claude and GPT at xhigh, Gemini as Carbon at high), except the three steps that settle single referee findings: the author's answer, the referee's judgment of it and the adjudicator's decision run on lighter settings, Claude and GPT at medium effort and Gemini as Hydrogen (`gemini-4-hydrogen-medium`). The families and the rule that no family judges its own work stay the same; the AI statement names both settings.
+Settings save per row in `$GALLEY_DIR/.galley-models.json` (`.galley-data/.galley-models.json` by default). The wizard and CLI read that catalog. Each paper records its resolved model assignments at creation and reuses them on resume. The referee who raised a finding uses the same selection to judge its answer. A failed call identifies the selected provider and model. Canary's systematic review uses the catalog's fixed entry for both research and audit, as required by its compiler.
 
 Each family runs through its own CLI with no tools and no delegation: Claude through `claude`, GPT through Codex (the CLI the ChatGPT app ships, which knows Sol 6.2), Gemini through `agy`. Literature search runs through Canary's search runtime over OpenAlex; bibliographic records come from the DOI registries.
 
@@ -98,7 +101,7 @@ Behaviors are atomic: each reads the paper's state, does one thing, and writes i
 | 20 | close-round | referees | every seat reported | ends the round |
 | 21 | respond | referees | a material finding is open | fixed, rebutted, or stated as a limitation |
 | 22 | verify-disposition | referees | an answer is unverified | the referee who raised it judges the answer |
-| 23 | adjudicate | referees | a finding is still disputed at the cap | the third family decides |
+| 23 | adjudicate | referees | a finding is still disputed at the cap | the adjudicator decides |
 | 24 | reconcile | close | the review is done | a family other than the author's reads the final text against every claim: confirmed, narrowed to the text's wording, or dropped as no longer stated |
 | 25 | reprofile | close | the review is done | the finished paper against the seven factors |
 | 26 | typeset | skeleton | the text changed | PDF, LaTeX, Word, editor document, evidence package, sign-off |
@@ -195,15 +198,15 @@ You can work in it at any time, while the paper is being written:
 | `citations` | `auto` | `choose` or `mixed` |
 | `rounds` | 2 | referee rounds |
 | `fixAttempts` | 3 | answers per finding before adjudication |
-| `seats` | as above | e.g. `{ "author": "claude" }` |
-| `models` | as above | e.g. `{ "gpt": { "model": "gpt-6.2-sol", "effort": "xhigh" } }` |
-| `lightModels` | medium effort; Gemini 4 Hydrogen | the settings that answer, judge and settle single referee findings, e.g. `{ "gemini": { "model": "gemini-4-hydrogen-high", "effort": "high" } }` |
+| `routing` | resolved from Settings → Models | recorded slots and role assignments for the paper |
 | `off` | none | behaviors to switch off, by id |
 | `declarations` | none | `availability`, `competing_interests`, `funding` |
 
+Earlier papers retain their family-based settings in `seats`, `models`, and `lightModels`.
+
 ## Requirements
 
-`claude` signed in (`claude auth login`), the ChatGPT app or `GALLEY_CODEX_BIN` pointing at a Codex CLI that serves `gpt-6.2-sol`, `agy` signed in, Canary installed as a uv tool, `pandoc` and `typst`. `galley doctor` checks all of them with one tiny call each.
+Sign in to the native CLIs for the models you choose. Install Canary as a uv tool, plus `pandoc` and `typst`. `galley doctor` checks the configured slots, tools and sources.
 
 OpenAlex budgets its API in credits per day. Without a key it allows 1,000 credits, and a search costs 10 credits whatever its page size. With a key, a paper runs 7 positioning searches and two per claim that needs evidence (about 30); without one, one deeper search per claim (about 20), so four to five papers a day get their evidence. A free key (openalex.org) gives ten times the budget: put `OPENALEX_API_KEY=…` (either case) in `~/.env` or in `~/.local/share/canary/.env`. Galley reads only that line and hands the key to Canary. `galley doctor` and the start of every run say how much of today's budget is left; a search that finds the budget spent is skipped at once, and its claims are stated as hypotheses.
 

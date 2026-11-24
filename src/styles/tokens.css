@@ -87,6 +87,7 @@
   --galley-fw-regular: 400;
   --galley-fw-strong: 600;
   --galley-fw-display: 700;
+  --galley-settings-tracking: 0.08em;
   --galley-fs-tiny: calc(var(--galley-ctl-base-size) * 0.7);
   --galley-fs-micro: calc(var(--galley-ctl-base-size) * 0.75);
   --galley-fs-row: calc(var(--galley-ctl-base-size) * 0.8125);

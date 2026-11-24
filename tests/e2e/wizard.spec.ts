@@ -14,9 +14,11 @@ test('the paper wizard walks through seed, materials and settings, and starts th
   writeFileSync(join(dir, `${slug}.md`), `# Street trees\n\n${'City trees die young in narrow pavement pits. '.repeat(20)}\n`)
   let posted: { settings: Record<string, unknown>; materials: Record<string, unknown>[] } | null = null
   await page.route('**/api/galley-papers/_context', (route) => route.fulfill({ json: {
+    modelRevision: 'test-revision',
     openalexKey: true,
     seats: { author: { family: 'claude', name: 'Claude Opus 5.5', model: 'claude-opus-5-5' }, checker: { family: 'gpt', name: 'GPT-6.2 Sol', model: 'gpt-6.2-sol' }, challenger: { family: 'gemini', name: 'Gemini 4 Carbon', model: 'gemini-4-carbon-high' }, verifier: { family: 'gemini', name: 'Gemini 4 Carbon', model: 'gemini-4-carbon-high' } },
     referees: ['methods', 'field', 'citations', 'editor'],
+    refereeModels: ['gpt-6.2-sol-xhigh', 'gemini-4-carbon-high', 'gpt-6.2-sol-xhigh', 'gemini-4-carbon-high'],
     defaults: { venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, simulation: false },
     review: { research: 'gpt-6.1-sol', audit: 'gpt-6.1-sol', papers: 50 },
   } }))

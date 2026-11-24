@@ -6,6 +6,8 @@ import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
+import { catalogRevision, modelCatalogPath, readModelCatalog, resolveRouting } from './src/engine/model-catalog.js'
+import { modelSettingsHandler } from './src/server/model-settings.js'
 import { liveView } from './src/engine/live.js'
 import { galleyVitePlugin } from './src/server/vite.js'
 
@@ -88,13 +90,19 @@ function papersPlugin(): Plugin {
   return {
     name: 'galley-papers',
     configureServer(server) {
+      server.middlewares.use('/api/galley-models', modelSettingsHandler(modelCatalogPath(dir)))
       server.middlewares.use('/api/galley-papers', (req, res) => {
         const [slugPart, sub] = decodeURIComponent((req.url || '').replace(/^\//, '').split('?')[0]).split('/')
         if (slugPart === '_context') {
           // What the wizard shows before a paper starts: seats, models, defaults, and whether OpenAlex has a key.
           if (!existsSync(cli)) { res.statusCode = 503; res.end('build galley first: npm run build'); return }
           res.setHeader('Content-Type', 'application/json')
-          res.end(execFileSync(process.execPath, [cli, 'context']).toString())
+          try {
+            res.end(execFileSync(process.execPath, [cli, 'context'], { env: { ...process.env, GALLEY_DIR: dir }, stdio: ['ignore', 'pipe', 'pipe'] }).toString())
+          } catch {
+            res.statusCode = 500
+            res.end(JSON.stringify({ error: 'The model settings could not be read.' }))
+          }
           return
         }
         const slug = slugPart
@@ -152,7 +160,19 @@ function papersPlugin(): Plugin {
         let body = ''
         req.on('data', (chunk) => { body += chunk })
         req.on('end', () => {
-          const { text, settings = {}, materials = [], citations } = JSON.parse(body || '{}')
+          let input
+          try { input = JSON.parse(body) } catch { res.statusCode = 400; res.end('Invalid paper request.'); return }
+          const { text, settings = {}, materials = [], citations, modelRevision } = input ?? {}
+          let routing: ReturnType<typeof resolveRouting>
+          try {
+            const catalog = readModelCatalog(modelCatalogPath(dir))
+            if (modelRevision !== catalogRevision(catalog)) { res.statusCode = 409; res.end('Model settings changed. Review the updated plan before starting.'); return }
+            routing = resolveRouting(catalog)
+          } catch (error) {
+            res.statusCode = 400
+            res.end((error as Error).message)
+            return
+          }
           const stamp = Date.now()
           const seed = join(tmpdir(), `galley-seed-${slug}-${stamp}.md`)
           writeFileSync(seed, String(text || ''))
@@ -182,7 +202,10 @@ function papersPlugin(): Plugin {
           }
           mkdirSync(paperDir, { recursive: true })
           const log = openSync(join(paperDir, 'run.log'), 'a')
-          spawn(process.execPath, [cli, 'write', seed, paperDir, '--editor', dir, ...args], { detached: true, stdio: ['ignore', log, log] }).unref()
+          spawn(process.execPath, [cli, 'write', seed, paperDir, '--editor', dir, ...args], {
+            detached: true, stdio: ['ignore', log, log],
+            env: { ...process.env, GALLEY_DIR: dir, GALLEY_MODEL_ROUTING: JSON.stringify(routing) },
+          }).unref()
           res.statusCode = 202
           res.end(JSON.stringify({ dir: paperDir }))
         })

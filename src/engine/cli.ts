@@ -17,13 +17,13 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { LADDER } from './behaviors/index.js'
 import { answerChoice } from './behaviors/truth.js'
-import { defaultConfig, FAMILY_MODELS, FAMILY_NAMES } from './config.js'
+import { defaultConfig, FAMILY_NAMES } from './config.js'
 import { budgetLine, canaryPython, canarySearch, openalexBudget, openalexKeyed, SEARCH_CREDITS } from './evidence.js'
-import { callModel, codexBin, resetHintMs } from './models.js'
+import { catalogRevision, modelForPlace, modelSpec, providerNames, readModelCatalog, resolveRouting, SLOTS, type ModelRouting, type Place } from './model-catalog.js'
+import { codexBin, resetHintMs, testModel } from './models.js'
 import { Paper } from './paper.js'
 import { editorDir, productionRecord, syncEditor, typeset } from './render.js'
 import { runPaper, Stalled } from './scheduler.js'
-import { obj, bool } from './schema.js'
 import { DOES } from './self.js'
 import { addMaterials } from './materials.js'
 import { reviewDone } from './behaviors/close.js'
@@ -113,7 +113,7 @@ function statusData(paper: Paper): Record<string, unknown> {
       const left = Math.round((Date.parse(e.at) + e.wait_ms - Date.now()) / 1000)
       const hint = resetHintMs(String(e.message ?? ''))
       const resetsIn = hint === null ? null : Math.max(0, Math.round((Date.parse(e.at) + hint - Date.now()) / 1000))
-      if (left > 0) waiting = { family: e.family, name: FAMILY_NAMES[e.family as Family] ?? e.family, seconds: left, resetsIn }
+      if (left > 0) waiting = { family: e.family, name: e.identity ?? FAMILY_NAMES[e.family as Family] ?? e.family, seconds: left, resetsIn }
       break
     }
   }
@@ -198,11 +198,11 @@ async function doctor(): Promise<void> {
   const check = async (name: string, fn: () => Promise<string>) => {
     try { console.log(`ok   ${name}: ${await fn()}`) } catch (error) { console.log(`FAIL ${name}: ${(error as Error).message.split('\n')[0].slice(0, 300)}`); process.exitCode = 1 }
   }
-  const tiny = obj({ ok: bool() })
-  for (const family of ['claude', 'gpt', 'gemini'] as Family[]) {
-    const { model, effort } = FAMILY_MODELS[family]
-    await check(`${family} (${model})`, async () => {
-      const result = await callModel({ spec: { family, model, effort: family === 'gemini' ? effort : 'low' }, prompt: 'Reply with the JSON object {"ok": true}.', schema: tiny, timeoutMs: 300_000 })
+  const routing = resolveRouting(readModelCatalog())
+  for (const slot of SLOTS) {
+    const model = routing.slots[slot]
+    await check(`${slot} (${model.identity})`, async () => {
+      const result = await testModel(modelSpec(model), 300_000)
       return `answered in ${Math.round(result.ms / 1000)}s`
     })
   }
@@ -238,7 +238,9 @@ async function main(): Promise<void> {
       const sources = [...flags('material').map((source) => ({ source })), ...flags('shared-material').map((source) => ({ source, shared: true }))]
       const materials = sources.length ? await addMaterials(dir, sources) : []
       for (const m of materials) console.log(`Material ${m.id}: ${m.kind} ${m.url ?? m.name}${m.kind === 'dataset' ? (m.private ? ' (private)' : ' (shared)') : m.text ? '' : ' (its text could not be read)'}`)
+      const routing: ModelRouting | undefined = process.env.GALLEY_MODEL_ROUTING ? JSON.parse(process.env.GALLEY_MODEL_ROUTING) : undefined
       Paper.create(dir, seed, {
+        ...(routing ? { routing } : {}),
         ...(materials.length ? { materials } : {}),
         ...(flag('rounds') ? { rounds: Math.max(1, Number(flag('rounds'))) } : {}),
         ...(author ? { authors: [{ name: author, ...(flag('affiliation') ? { affiliation: flag('affiliation') } : {}) }] } : {}),
@@ -323,10 +325,20 @@ async function main(): Promise<void> {
     case 'context': {
       // What a host shows before a paper starts: who sits where, the defaults, and whether literature search has a key.
       const config = defaultConfig()
+      const catalog = readModelCatalog()
+      const routing = resolveRouting(catalog)
+      const seatInfo = (place: Place) => {
+        const model = modelForPlace(routing, place)
+        return { family: modelSpec(model).family, name: model.selector, model: model.identity }
+      }
       console.log(JSON.stringify({
+        modelRevision: catalogRevision(catalog),
+        providers: providerNames(routing),
         openalexKey: openalexKeyed(),
-        seats: Object.fromEntries(Object.entries(config.seats).map(([seat, family]) => [seat, { family, name: FAMILY_NAMES[family], model: FAMILY_MODELS[family].model }])),
+        seats: Object.fromEntries(Object.keys(config.seats).map((seat) => [seat, seatInfo(seat as Place)])),
         referees: config.referees.map((r) => r.seat),
+        refereeModels: config.referees.map((r) => seatInfo(r.seat as Place).model),
+        adjudicator: routing.places.adjudicator === 'independent' ? 'Independent third model' : seatInfo('adjudicator').model,
         defaults: { venue: config.venue, words: config.words, rounds: config.rounds, dial: config.dial, citations: config.citations, literatureReview: false, simulation: false },
         review: REVIEW_SETTINGS,
       }))
