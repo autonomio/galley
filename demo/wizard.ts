@@ -382,10 +382,6 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
    * be picked by its name.
    */
   function databaseRow(): HTMLElement {
-    if (saved === null) {
-      saved = []
-      void fetch('/api/galley-papers/_databases').then((r) => r.ok ? r.json() : []).then((list) => { saved = list; if (saved?.length) render() }).catch(() => {})
-    }
     const line = h('input', { type: 'text', class: 'gw-input', value: foundLine, placeholder: 'user@server, or clickhouse://user:password@host:8123', 'aria-label': 'Database connection' })
     const find = async () => {
       foundLine = line.value.trim()
@@ -412,6 +408,17 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       found = null
       render()
     }
+    const savedRows = () => saved?.length
+      ? h('div', { id: 'gw-saved-databases', class: 'gw-stack' }, ...saved.map((c) => h('button', { type: 'button', class: 'gw-btn gw-saved', text: `Use ${c.name}`, onclick: () => use({ connection: c.name, database: c.database, summary: `saved connection: ${c.name}` }, c.database) })))
+      : h('template', { id: 'gw-saved-databases' })
+    if (saved === null) {
+      saved = []
+      void fetch('/api/galley-papers/_databases').then((r) => r.ok ? r.json() : []).then((list) => {
+        saved = list
+        // Preserve the input and focus while the saved connections arrive.
+        dialog.querySelector('#gw-saved-databases')?.replaceWith(savedRows())
+      }).catch(() => {})
+    }
     // A server can hold many databases, most of them empty or small: the ten largest that hold data first, the rest on request.
     const offered = (found ?? []).flatMap((f) => f.databases.map((d) => ({ f, d }))).sort((a, b) => b.d.bytes - a.d.bytes)
     const first = offered.filter(({ d }) => d.rows > 0).slice(0, 10)
@@ -422,7 +429,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
     return h('div', { class: 'gw-field' },
       h('div', { class: 'gw-label', text: 'Connect a database' }),
       h('div', { class: 'gw-linkrow' }, line, h('button', { type: 'button', class: 'gw-btn', text: finding === 'finding' ? 'Connecting …' : 'Connect', onclick: () => void find(), ...(finding === 'finding' ? { disabled: true } : {}) })),
-      saved?.length ? h('div', { class: 'gw-stack' }, ...saved.map((c) => h('button', { type: 'button', class: 'gw-btn gw-saved', text: `Use ${c.name}`, onclick: () => use({ connection: c.name, database: c.database, summary: `saved connection: ${c.name}` }, c.database) }))) : null,
+      savedRows(),
       finding === 'failed' ? h('p', { class: 'gw-attention', text: `Not connected: ${findError}` }) : null,
       found && !offered.length ? h('p', { class: 'gw-help', text: 'No ClickHouse that galley can query was found there.' }) : null,
       options.length ? h('ul', { class: 'gw-list' }, ...options) : null,

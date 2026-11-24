@@ -131,8 +131,13 @@ test('one line connects a database: its databases are listed, one becomes a priv
   let discovery: Record<string, unknown> | null = null
   let discoveryUrl = ''
   let posted: { datasets: Record<string, unknown>[] } | null = null
-  await page.route('**/api/galley-papers/_databases', (route) => {
-    if (route.request().method() !== 'POST') return route.fulfill({ json: [{ name: 'markets on db.example.org', kind: 'clickhouse', via: 'http', url: 'https://db.example.org:8443', user: 'reader', database: 'markets' }] })
+  let showSaved!: () => void
+  const pendingSaved = new Promise<void>((resolve) => { showSaved = resolve })
+  await page.route('**/api/galley-papers/_databases', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await pendingSaved
+      return route.fulfill({ json: [{ name: 'markets on db.example.org', kind: 'clickhouse', via: 'http', url: 'https://db.example.org:8443', user: 'reader', database: 'markets' }] })
+    }
     discovery = route.request().postDataJSON()
     discoveryUrl = route.request().url()
     return route.fulfill({ json: [{ via: 'ssh', label: 'clickhouse on root@trades.example.org', host: 'root@trades.example.org', container: 'clickhouse', version: '26.8.1', databases: [{ name: 'origo', tables: 41, rows: 8_200_000_000, bytes: 140_000_000_000 }, { name: 'scratch_empty', tables: 5, rows: 0, bytes: 0 }] }] })
@@ -151,6 +156,9 @@ test('one line connects a database: its databases are listed, one becomes a priv
   await wizard.getByRole('button', { name: 'Next: Materials' }).click()
 
   await wizard.getByLabel('Database connection').fill('root@trades.example.org')
+  showSaved()
+  await expect(wizard.getByRole('button', { name: 'Use markets on db.example.org' })).toBeVisible()
+  await expect(wizard.getByLabel('Database connection')).toHaveValue('root@trades.example.org')
   await wizard.getByRole('button', { name: 'Connect', exact: true }).click()
   await expect(wizard.locator('.gw-row', { hasText: 'origo' })).toContainText('41 tables')
   expect(discovery).toEqual({ line: 'root@trades.example.org' })
