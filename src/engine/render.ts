@@ -115,11 +115,13 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
     }
   }
   const decl = paper.config.declarations ?? {}
-  if (paper.config.ledgerAppendix !== false) body.push(`# Appendix A: Claim ledger {.unnumbered}\n\n${ledgerAppendix(paper)}`)
+  if (paper.config.ledgerAppendix !== false) body.push(`# Appendix A: Claim ledger {.unnumbered}\n\n${fillPlaceholders(ledgerAppendix(paper), record).text}`)
   body.push(`# Use of AI and production record {.unnumbered}\n\n${disclosure(paper, record)}`)
   const evidencePackage = 'Every claim in this manuscript, the evidence it rests on and the verbatim passages of its sources are available as an evidence package accompanying it (claims, evidence and sources in the Resolvent format).'
   const reproduction = runsOf(paper).length ? ` The simulations can be rerun, and every simulated number checked against this manuscript, with the reproduction package that accompanies it (simulation/: node simulate.mjs --verify, or index.html in a browser).` : ''
-  body.push(`# Data and code availability {.unnumbered}\n\n${decl.availability || `${s.brief?.aboutSystem ? `${sourceStatement()} ` : ''}${evidencePackage}${reproduction}`}`)
+  const subject = s.softwareSubject
+  const revision = subject ? `The software studied is [${subject.name}](${subject.url}) at commit \`${subject.commit}\`.\n\n` : ''
+  body.push(`# Data and code availability {.unnumbered}\n\n${revision}${decl.availability || `${s.brief?.aboutSystem ? `${sourceStatement()} ` : ''}${evidencePackage}${reproduction}`}`)
   body.push(`# Competing interests {.unnumbered}\n\n${declaration(decl.competing_interests)}`)
   body.push(`# Funding {.unnumbered}\n\n${declaration(decl.funding)}`)
   body.push('# References {.unnumbered}\n\n::: {#refs}\n:::')
@@ -536,7 +538,7 @@ function claimClass(c: Claim): string {
   return 'observed_fact'
 }
 
-function exportEvidence(paper: Paper): void {
+function exportEvidence(paper: Paper, record: Record_): void {
   const s = paper.state
   const root = paper.path('out', 'evidence')
   rmSync(root, { recursive: true, force: true })
@@ -553,7 +555,21 @@ function exportEvidence(paper: Paper): void {
       writeFileSync(join(root, 'evidence', `${eid}.yaml`), yaml({ id: eid, kind: 'external', summary: `${cite.verdict?.outcome ?? 'supported'}: ${cite.verdict?.reason ?? ''}`.trim(), source_ids: [sid], independent: false, limitations: ['Verified against the abstract; the full text was not inspected.'], premise_claim_ids: [], claim_ids: [cid] }))
       evidenceIds.push(eid)
     }
-    if (!cites.length) {
+    const study = s.softwareEvaluation
+    if (study) for (const id of c.softwareEvidence ?? []) {
+      const index = Number(id.slice(1)) - 1
+      const collection = id.startsWith('F') ? 'findings' : 'benchmarks'
+      const item = study[collection][index]
+      if (!item) continue
+      const locator = `software-evaluation.json#/${collection}/${index}`
+      const sid = `S-${uuidish(`${s.slug}:software:${id}`)}`
+      const eid = `E-${uuidish(`${s.slug}:software:${c.id}:${id}`)}`
+      const excerpt = 'finding' in item ? `${item.finding}\n${item.evidence}` : `${item.title}\n${item.conditions}`
+      writeFileSync(join(root, 'sources', `${sid}.yaml`), yaml({ id: sid, kind: 'web', title: `${study.subject.name} software evaluation`, uri: null, date: s.createdAt.slice(0, 10), locator, excerpt, access: 'inspected' }))
+      writeFileSync(join(root, 'evidence', `${eid}.yaml`), yaml({ id: eid, kind: 'external', summary: `Software evaluation ${id} at ${study.subject.commit}`, source_ids: [sid], independent: false, limitations: [], premise_claim_ids: [], claim_ids: [cid] }))
+      evidenceIds.push(eid)
+    }
+    if (!evidenceIds.length) {
       const sid = `S-${uuidish(`${s.slug}:seed:${c.id}`)}`
       const eid = `E-${uuidish(`${s.slug}:own:${c.id}`)}`
       const kind = c.status === 'assumed' || c.status === 'unsupported' ? 'assumption' : 'statement'
@@ -563,7 +579,7 @@ function exportEvidence(paper: Paper): void {
     }
     // A review finding keeps Canary's class, made conservative as Canary does for Resolvent: low and moderate become medium.
     const uncertainty = c.origin === 'review' ? (c.uncertainty === 'high' ? 'high' : 'medium') : c.status === 'supported' && cites.length >= 2 ? 'low' : c.status === 'supported' || c.status === 'narrowed' || c.status === 'internal' ? 'medium' : 'high'
-    writeFileSync(join(root, 'claims', `${cid}.yaml`), yaml({ id: cid, class: claimClass(c), statement: c.text, uncertainty, evidence_ids: evidenceIds, state: 'active' }))
+    writeFileSync(join(root, 'claims', `${cid}.yaml`), yaml({ id: cid, class: claimClass(c), statement: fillPlaceholders(c.text, record).text, uncertainty, evidence_ids: evidenceIds, state: 'active' }))
   }
   // Each simulation's specification and results: with the seed, anyone can rerun it and get the same numbers.
   for (const r of runsOf(paper)) {
@@ -574,6 +590,7 @@ function exportEvidence(paper: Paper): void {
   if (s.literature?.status === 'done') writeFileSync(join(root, 'literature-review.json'), JSON.stringify({ question: s.literature.question, canary_run: s.literature.key, searched: s.literature.searchedOn, models: s.literature.models, protocol: s.literature.protocol, counts: s.literature.counts, disagreements: s.literature.contradictions, open_questions: s.literature.gaps, findings: s.literature.claimIds }, null, 2))
   // Measurements carry their exact specification, so anyone holding the data can recompute every number.
   const measurements = Object.values(s.measurements ?? {})
+  if (s.softwareEvaluation) writeFileSync(join(root, 'software-evaluation.json'), JSON.stringify(s.softwareEvaluation, null, 2) + '\n')
   if (measurements.length) writeFileSync(join(root, 'measurements.json'), JSON.stringify(measurements.map((m) => ({ id: m.id, dataset: (paper.config.materials ?? []).find((x) => x.id === m.spec.dataset)?.name ?? m.spec.dataset, spec: m.spec, result: m.summary, n: m.n })), null, 2) + '\n')
   writeFileSync(join(root, 'README.md'), `# Evidence package\n\nThe claims of this manuscript, the evidence each rests on, and the verbatim passages of its sources, as Resolvent records (claims/, evidence/, sources/). Copy them into a Resolvent world model to admit them there.${measurements.length ? '\n\nmeasurements.json holds every number the manuscript states about the authors\' data, with the analysis that produced it.' : ''}\n`)
 }
@@ -626,7 +643,7 @@ export async function typeset(paper: Paper): Promise<string[]> {
     mkdirSync(join(out, 'figures'), { recursive: true })
     for (const fig of paper.state.figures.filter((f) => f.status === 'rendered' && f.file)) copyFileSync(join(build, fig.file!), join(out, fig.file!))
   }
-  exportEvidence(paper)
+  exportEvidence(paper, record)
   // The runnable reproduction of the paper's simulations: a reader reruns them and checks every simulated number with Node or a browser.
   if (runsOf(paper).length) {
     try { writeReproduction(join(out, 'simulation'), runsOf(paper), { title: paper.config.title || paper.state.frame?.title }) } catch (error) { paper.note('typeset', `The simulation reproduction package was not written: ${(error as Error).message.slice(0, 200)}`) }

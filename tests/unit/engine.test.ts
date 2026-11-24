@@ -1,13 +1,16 @@
 // The engine's rules that do not need a model: exact edits, verbatim checks,
 // citation keys, placeholders, and a scheduler that never lets an improver
 // stop the line.
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { softwareSubject, softwareSubjectFromSeed } from '../../src/core/software-subject.js'
 import { Paper } from '../../src/engine/paper.js'
 import { resetHintMs } from '../../src/engine/models.js'
-import { fillPlaceholders, importEditorEdits, syncEditor } from '../../src/engine/render.js'
+import { buildManuscript, fillPlaceholders, importEditorEdits, syncEditor } from '../../src/engine/render.js'
 import { runPaper, Stalled, type Behavior } from '../../src/engine/scheduler.js'
 import { obj, str } from '../../src/engine/schema.js'
 import { applyExact, citationKey, dropUnknownCitations, escapeUnknownCitations, isVerbatim, overlap, sameClaim } from '../../src/engine/text.js'
@@ -19,6 +22,95 @@ import { cleanCsl, openalexKey, searchWait } from '../../src/engine/evidence.js'
 import type { Citation, Finding } from '../../src/engine/types.js'
 import { calibrationItems } from '../../src/engine/behaviors/close.js'
 import { analyze, parseTable, profileDataset, profileText, type AnalysisSpec } from '../../src/engine/materials.js'
+import { checkoutSoftware, emptySoftwareEvaluation, executeSoftware, readSoftware, softwareNumbers } from '../../src/engine/software.js'
+
+describe('software evidence', () => {
+  const sha = 'a1b2c3d4'.repeat(5)
+  const url = `https://github.com/example/solver/commit/${sha}`
+  const subject = softwareSubject(url)!
+
+  it('keeps a linked GitHub commit distinct from a branch or an ambiguous seed', () => {
+    expect(subject).toMatchObject({ name: 'example/solver', commit: sha, url })
+    expect(softwareSubjectFromSeed(`Evaluate [this commit](${url}).`)).toEqual(subject)
+    expect(softwareSubjectFromSeed(`${url} ${url.replace(sha, 'a'.repeat(40))}`)).toBeNull()
+    expect(softwareSubject(url.replace('/commit/' + sha, '/tree/main'))).toBeNull()
+    expect(softwareSubject(url.replace('github.com/', 'github.com@evil.example/'))).toBeNull()
+    expect(softwareSubject(url.replace('/solver/', '/../'))).toBeNull()
+  })
+
+  it('admits source excerpts only when their bytes match the pinned tree', async () => {
+    const text = '# Solver\nA documented method.\n'
+    const oid = createHash('sha1').update(`blob ${Buffer.byteLength(text)}\0${text}`).digest('hex')
+    const fetch = vi.fn().mockImplementation(async () => new Response(text))
+    vi.stubGlobal('fetch', fetch)
+    try {
+      expect(await readSoftware(subject, [{ path: 'README.md', mode: '100644', oid }], ['README.md'])).toEqual([
+        { path: 'README.md', text, url: `${subject.repository}/blob/${sha}/README.md#L1-L3` },
+      ])
+      expect(await readSoftware(subject, [{ path: 'README.md', mode: '100644', oid: 'f'.repeat(40) }], ['README.md'])).toEqual([])
+      expect(fetch.mock.calls[0][0]).toContain(`/${sha}/README.md`)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('cites the commit in the manuscript even when no benchmark completed', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'galley-software-paper-'))
+    try {
+      const paper = Paper.create(dir, 'Introduce the solver.', { softwareCommit: url })
+      paper.state.softwareEvaluation = emptySoftwareEvaluation(subject)
+      paper.save()
+      writeFileSync(paper.path('paper.json'), '{}')
+      expect(Paper.open(dir).state.softwareSubject).toEqual(subject)
+      const { markdown } = await buildManuscript(paper)
+      expect(markdown).toContain(`[example/solver](${url}) at commit \`${sha}\``)
+      expect(softwareNumbers(paper.state.softwareEvaluation)).toEqual({})
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('checks out only requested paths at the selected revision', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'galley-fixture-'))
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: workspace, encoding: 'utf8' }).trim()
+    try {
+      git('init', '-q')
+      mkdirSync(join(workspace, 'src'))
+      writeFileSync(join(workspace, 'src', 'main.txt'), 'Pinned source.\n')
+      writeFileSync(join(workspace, 'large.bin'), 'Unrelated data.\n')
+      git('add', '.')
+      git('-c', 'user.name=Galley fixture', '-c', 'user.email=fixture@example.org', '-c', 'core.hooksPath=/dev/null', 'commit', '-qm', 'Fixture')
+      const commit = git('rev-parse', 'HEAD')
+      git('checkout', '-q', '--detach', commit)
+      const files = ['src/main.txt', 'large.bin'].map((path) => ({ path, mode: '100644', oid: git('rev-parse', `${commit}:${path}`) }))
+      await checkoutSoftware(workspace, { ...subject, commit }, files, ['src'])
+      expect(git('rev-parse', 'HEAD')).toBe(commit)
+      expect(readFileSync(join(workspace, 'src', 'main.txt'), 'utf8')).toBe('Pinned source.\n')
+      expect(existsSync(join(workspace, 'large.bin'))).toBe(false)
+    } finally { rmSync(workspace, { recursive: true, force: true }) }
+  })
+
+  it.runIf(process.platform === 'darwin')('executes validation, repeated measurements and a separate profile in isolation', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'galley-software-test-'))
+    try {
+      const evaluation = emptySoftwareEvaluation(subject)
+      evaluation.protocol = {
+        paths: [], setup: [],
+        validation: [{ directory: '.', argv: ['/bin/sh', '-c', 'test -z "$GALLEY_TEST_SECRET" && ! test -r "$1"', 'test', import.meta.filename] }],
+        workloads: [{ title: 'Synthetic workload', conditions: 'One process prints OK after sleeping.', command: { directory: '.', argv: ['/bin/sh', '-c', 'sleep 0.12 && printf OK'] } }],
+      }
+      vi.stubEnv('GALLEY_TEST_SECRET', 'fixture-value')
+      await executeSoftware(evaluation, workspace, workspace)
+      expect(evaluation.validation[0]).toMatchObject({ status: 'completed', exitCode: 0 })
+      expect(evaluation.benchmarks[0]?.runs).toHaveLength(5)
+      expect(evaluation.benchmarks[0]?.runs[0]).toMatchObject({ status: 'completed', stdout: { excerpt: 'OK' } })
+      expect(evaluation.benchmarks[0]?.profile).toMatchObject({ status: 'completed', samples: expect.arrayContaining([expect.objectContaining({ processes: expect.any(Array) })]) })
+      expect(softwareNumbers(evaluation)).toMatchObject({ 'software.B1.n': 5, 'software.B1.median_ms': expect.any(Number), 'software.B1.peak_mib': expect.any(Number) })
+      expect(evaluation.gaps).toEqual([])
+    } finally {
+      vi.unstubAllEnvs()
+      rmSync(workspace, { recursive: true, force: true })
+    }
+  }, 15_000)
+})
 
 describe('text rules', () => {
   it('applies an edit only where its old text is unique', () => {

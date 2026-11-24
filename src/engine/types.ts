@@ -31,6 +31,7 @@ export interface ClaimChange {
 }
 
 export interface Claim {
+  softwareEvidence?: string[]
   id: string
   text: string
   kind: ClaimKind
@@ -267,6 +268,7 @@ export interface PaperState {
   slug: string
   createdAt: string
   seed: { text: string; sha256: string }
+  softwareSubject?: import('../core/software-subject.js').SoftwareSubject
   brief?: Brief
   claims: Claim[]
   positioning: Positioning
@@ -286,6 +288,7 @@ export interface PaperState {
   calibration?: Calibration
   /** What galley computed in the authors' datasets, by analysis id (A1, A2 …). */
   measurements?: Record<string, import('./materials.js').Measurement>
+  softwareEvaluation?: import('./software.js').SoftwareEvaluation
   /** The systematic review of the literature, when the paper has one. */
   literature?: LiteratureReview
   /** The Monte Carlo simulations galley ran for the paper, by id (S1 …). */

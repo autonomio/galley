@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
+import { SOFTWARE_SUBJECT_HINT, softwareSubject } from './src/core/software-subject.js'
 import { catalogRevision, modelCatalogPath, readModelCatalog, resolveRouting } from './src/engine/model-catalog.js'
 import { modelSettingsHandler } from './src/server/model-settings.js'
 import { liveView } from './src/engine/live.js'
@@ -162,7 +163,9 @@ function papersPlugin(): Plugin {
         req.on('end', () => {
           let input
           try { input = JSON.parse(body) } catch { res.statusCode = 400; res.end('Invalid paper request.'); return }
-          const { text, settings = {}, materials = [], citations, modelRevision } = input ?? {}
+          const { text, settings = {}, materials = [], citations, modelRevision, softwareCommit } = input ?? {}
+          const subject = typeof softwareCommit === 'string' ? softwareSubject(softwareCommit) : null
+          if (softwareCommit !== undefined && !subject) { res.statusCode = 400; res.end(SOFTWARE_SUBJECT_HINT); return }
           let routing: ReturnType<typeof resolveRouting>
           try {
             const catalog = readModelCatalog(modelCatalogPath(dir))
@@ -179,6 +182,7 @@ function papersPlugin(): Plugin {
           // The wizard's settings become the engine's flags; each value is checked against what the engine accepts.
           const s = settings as Record<string, unknown>
           const args: string[] = []
+          if (subject) args.push('--software-commit', subject.url)
           const add = (name: string, value: unknown, ok: (v: string) => boolean) => { const v = String(value ?? '').trim(); if (v && ok(v)) args.push(`--${name}`, v) }
           add('author', s.author, (v) => v.length <= 200)
           add('affiliation', s.affiliation, (v) => v.length <= 300)
@@ -189,6 +193,7 @@ function papersPlugin(): Plugin {
           add('citations', s.citations ?? citations, (v) => ['auto', 'choose', 'mixed'].includes(v))
           // An option the paper includes, in support or as what its main contribution rests on.
           if (s.literatureReview === true) args.push('--literature-review', s.reviewRole === 'load-bearing' ? 'load-bearing' : 'yes')
+          else if (subject && s.literatureReview === false) args.push('--literature-review', 'no')
           if (s.simulation === true) args.push('--simulation', s.simulationRole === 'load-bearing' ? 'load-bearing' : 'yes')
           // Uploaded files are written under their own names for the engine to copy into the paper; links pass as they are.
           const inbox = join(tmpdir(), `galley-materials-${slug}-${stamp}`)

@@ -2,6 +2,7 @@
 // paper draws on, the settings that change the outcome, and an exact account of
 // what happens and what leaves this machine. Nothing starts until Start.
 import type { EditorAction } from '../src/index.js'
+import { SOFTWARE_SUBJECT_HINT, softwareSubject, softwareSubjectFromSeed } from '../src/core/software-subject.js'
 
 interface Seat { family: string; name: string; model: string }
 interface Context {
@@ -67,6 +68,8 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   const words = text.split(/\s+/).filter(Boolean).length
   const paragraphs = text.split(/\n\s*\n/).filter((p) => p.trim()).length
   const items: Item[] = []
+  let softwareLink = softwareSubjectFromSeed(text)?.url ?? ''
+  let reviewChosen = false
   let step = 0
   let context: Context | null = null
   const settings = { author: '', affiliation: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, reviewRole: 'supporting', simulation: false, simulationRole: 'supporting' }
@@ -88,13 +91,21 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
     if (!response.ok) throw new Error('Model settings could not be loaded.')
     return response.json()
   }
+  render()
   void readContext().then((c) => {
     context = c
-    Object.assign(settings, { venue: c.defaults.venue, words: c.defaults.words, rounds: c.defaults.rounds, dial: c.defaults.dial, citations: c.defaults.citations, literatureReview: !!c.defaults.literatureReview, simulation: !!c.defaults.simulation })
-    render()
+    Object.assign(settings, { venue: c.defaults.venue, words: c.defaults.words, rounds: c.defaults.rounds, dial: c.defaults.dial, citations: c.defaults.citations, simulation: !!c.defaults.simulation })
+    if (!reviewChosen) settings.literatureReview = !!c.defaults.literatureReview || !!softwareSubject(softwareLink)
+    if (step >= 2) render()
   }).catch((error: Error) => { hint.textContent = error.message })
 
   function go(to: number): void {
+    if (to > step && STEPS[step] === 'Materials') {
+      const input = body.querySelector<HTMLInputElement>('#gw-software')!
+      input.setCustomValidity(softwareLink.trim() && !softwareSubject(softwareLink) ? SOFTWARE_SUBJECT_HINT : '')
+      if (!input.reportValidity()) return
+      if (!reviewChosen) settings.literatureReview = !!context?.defaults.literatureReview || !!softwareSubject(softwareLink)
+    }
     step = Math.max(0, Math.min(STEPS.length - 1, to))
     render()
   }
@@ -142,13 +153,21 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       render()
     }
     url.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addLink() } })
+    const software = h('input', {
+      id: 'gw-software', type: 'url', class: 'gw-input', value: softwareLink,
+      placeholder: 'https://github.com/owner/repo/commit/…', 'aria-describedby': 'gw-software-help',
+    })
+    software.addEventListener('input', () => {
+      softwareLink = software.value
+      software.setCustomValidity('')
+    })
     const list = items.length
       ? h('ul', { class: 'gw-list' }, ...items.map((item, i) => h('li', { class: 'gw-row' },
         h('span', { class: `gw-kind gw-kind--${item.kind}`, 'aria-hidden': 'true' }),
         h('span', { class: 'gw-row-main' }, h('span', { class: 'gw-mono gw-row-name', text: item.name }), h('span', { class: 'gw-row-detail', text: item.detail })),
         item.kind === 'dataset' ? segmented([['Private', true], ['Shared', false]], item.private, (v) => { item.private = v; render() }, `Who may read ${item.name}`) : h('span', { class: 'gw-row-kind', text: item.kind }),
         h('button', { type: 'button', class: 'gw-x', 'aria-label': `Remove ${item.name}`, text: '×', onclick: () => { items.splice(i, 1); render() } }))))
-      : h('p', { class: 'gw-empty', text: 'No materials. The paper will rest on your seed and the literature.' })
+      : null
     const privateSets = items.filter((i) => i.kind === 'dataset' && i.private).length
     const sharedSets = items.filter((i) => i.kind === 'dataset' && !i.private).length
     const read = items.filter((i) => i.kind !== 'dataset').length
@@ -158,6 +177,8 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       drop,
       h('div', { class: 'gw-linkrow' }, url, h('button', { type: 'button', class: 'gw-btn', text: 'Add link', onclick: addLink })),
       list,
+      h('div', { class: 'gw-field' }, h('label', { class: 'gw-label', for: 'gw-software', text: 'Software under study' }), software,
+        h('p', { id: 'gw-software-help', class: 'gw-help', text: 'For a paper about software, enter its GitHub commit link. Galley evaluates that version when the paper starts.' })),
       privateSets ? h('p', { class: 'gw-note' }, h('strong', { text: 'Private datasets stay on this machine. ' }), 'The models see only a summary of each column and the results galley computes here, and every number the paper states about your data comes from those results.') : null,
       sharedSets ? h('p', { class: 'gw-note', text: 'Shared datasets: the models also read their first 15 rows.' }) : null,
       read ? h('p', { class: 'gw-note', text: 'Documents and links are read by the models that write and review the paper.' }) : null,
@@ -214,7 +235,11 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   function toggle(key: 'literatureReview' | 'simulation', label: string, help: string, supporting: string, central: string): HTMLElement {
     const role = key === 'literatureReview' ? 'reviewRole' : 'simulationRole'
     const box = h('input', { type: 'checkbox', checked: settings[key] })
-    box.addEventListener('change', () => { settings[key] = box.checked; render() })
+    box.addEventListener('change', () => {
+      if (key === 'literatureReview') reviewChosen = true
+      settings[key] = box.checked
+      render()
+    })
     const option = h('label', { class: 'gw-choice' }, box, h('span', {}, h('span', { class: 'gw-choice-label', text: label }), h('span', { class: 'gw-help', text: help })))
     if (!settings[key]) return option
     return h('div', { class: 'gw-option' }, option, h('div', { class: 'gw-role' },
@@ -232,15 +257,17 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
 
   // ---------------------------------------------------------------- 4. start
   function startStep(): (Node | null)[] {
+    const subject = softwareSubject(softwareLink)
     const s = context?.seats
     const m = (seat: keyof Context['seats']) => s?.[seat]?.model ?? seat
     const datasets = items.filter((i) => i.kind === 'dataset')
     const searches = context?.openalexKey ? 'two' : 'one'
     const reviewModels = context?.review ? `${context.review.research} research · ${context.review.audit} audit` : 'Canary research and audit'
     // A step that runs alongside the others shows its own time but adds little to the whole.
-    const plan: [string, string, string, number, boolean?][] = [
+    const plan: [string, string, string, number | null, boolean?][] = [
       ['Read your seed', 'claims, concern, contribution and host field', m('author'), 1],
       ...(items.length ? [['Read your materials', datasets.length ? 'profile datasets here; read documents and links' : 'read documents and links', 'this machine', 1] as [string, string, string, number]] : []),
+      ...(subject ? [['Evaluate software', `${subject.name} · ${subject.commit.slice(0, 12)}. Inspect, build, validate, benchmark, and profile this commit.`, 'Galley host', null] as [string, string, string, null]] : []),
       ['Place the idea', '7 literature searches through Canary: closest work, bottleneck, consensus', m('checker'), 3],
       ['Challenge the idea', 'seven impact factors; three directions; one chosen', `${m('challenger')} · ${m('checker')}`, 10],
       ...(settings.literatureReview ? [['Systematic review', `Canary plans the search, screens candidates and targets ${context?.review?.papers ?? 50} full papers. A separate session audits the findings without a fixed time limit. ${settings.reviewRole === 'load-bearing' ? 'The paper rests on the review, so the plan waits for it.' : 'The review runs alongside the steps below.'}`, reviewModels, 40, settings.reviewRole !== 'load-bearing'] as [string, string, string, number, boolean]] : []),
@@ -252,11 +279,12 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       ['Review', `${settings.rounds} round${settings.rounds === 1 ? '' : 's'} of four referees; each answer judged by the referee who raised it${context?.adjudicator ? `; disputes: ${context.adjudicator}` : ''}`, (context?.refereeModels ?? []).join(' · '), 50 * settings.rounds],
       ['Finish', 'ledger reconciled with the text; title and abstract; typeset', `${m('checker')} · ${m('author')}`, 10],
     ]
-    const total = plan.reduce((a, p) => a + (p[4] ? 5 : p[3]), 0) + Math.round((settings.words - 7000) / 1000) * 3
+    const total = plan.reduce((a, p) => a + (p[4] ? 5 : p[3] ?? 0), 0) + Math.round((settings.words - 7000) / 1000) * 3
     const leaves = [
       [items.some((i) => i.kind !== 'dataset') ? 'Your seed, documents and links' : 'Your seed', `go to the selected model providers${context?.providers?.length ? ` (${context.providers.join(', ')})` : ''}.`],
       ...(datasets.some((d) => d.private) ? [['Private datasets', 'never leave this machine; the models see column summaries and computed results.']] : []),
       ...(datasets.some((d) => !d.private) ? [['Shared datasets', 'their summaries and first 15 rows go to the model providers.']] : []),
+      ...(subject ? [['Software evaluation', 'Selected source excerpts and run results go to the selected model providers.']] : []),
       ['Search terms', 'go to OpenAlex through Canary.'],
       ...(settings.literatureReview ? [['Review question', 'goes to Canary\'s research and audit models (OpenAI) and to OpenAlex.']] : []),
       ['Your name', 'is never sent; it is set in the byline at typesetting.'],
@@ -265,8 +293,8 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       h('h2', { id: 'gw-title', class: 'gw-title', text: 'What happens when you start' }),
       h('ol', { class: 'gw-plan' }, ...plan.map(([what, detail, who, mins]) => h('li', {},
         h('span', { class: 'gw-plan-what' }, h('strong', { text: what }), h('span', { class: 'gw-help', text: detail }), h('span', { class: 'gw-mono gw-plan-who', text: who })),
-        h('span', { class: 'gw-mono gw-plan-time', text: minutes(mins) })))),
-      h('p', { class: 'gw-facts' }, 'About ', h('strong', { text: minutes(Math.max(60, total)) }), ` for ${n(settings.words)} words. Nothing needs you until the paper is ready${settings.dial === 'autonomous' && settings.citations === 'auto' ? '' : ', except the choices you asked for'}.`),
+        mins === null ? null : h('span', { class: 'gw-mono gw-plan-time', text: minutes(mins) })))),
+      h('p', { class: 'gw-facts' }, 'About ', h('strong', { text: minutes(Math.max(60, total)) }), ` for ${n(settings.words)} words${subject ? ', plus software evaluation time' : ''}. Nothing needs you until the paper is ready${settings.dial === 'autonomous' && settings.citations === 'auto' ? '' : ', except the choices you asked for'}.`),
       h('div', { class: 'gw-box' }, h('div', { class: 'gw-label', text: 'What leaves this machine' }), h('dl', { class: 'gw-leaves' }, ...leaves.flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { text: v })]))),
       h('p', { class: 'gw-note', text: `The paper appears in your documents as “${slug}-paper” as soon as it starts. It grows there, every referee finding becomes a thread under its passage, and you can edit and comment while the team works.` }),
     ]
@@ -289,7 +317,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       const response = await fetch(`/api/galley-papers/${encodeURIComponent(slug)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, settings, materials, modelRevision: context.modelRevision }),
+        body: JSON.stringify({ text, settings, materials, modelRevision: context.modelRevision, softwareCommit: softwareSubject(softwareLink)?.url }),
       })
       if (response.status === 409 && (await response.clone().text()).startsWith('Model settings changed.')) {
         context = await readContext()
@@ -322,6 +350,7 @@ interface StatusData {
   slug: string
   title: string | null
   seedTitle: string
+  softwareCommit?: string
   outcome: string | null
   running: boolean
   startedAt: string
@@ -354,6 +383,7 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
   close.focus()
 
   const draw = (d: StatusData) => {
+    const subject = softwareSubject(d.softwareCommit ?? '')
     const current = d.stages.findIndex((s) => !s.done)
     const done = d.outcome === 'ready_for_submission'
     const state = done
@@ -374,6 +404,7 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
       h('h2', { id: 'gw-title', class: 'gw-title', text: d.title ?? d.seedTitle ?? 'Untitled paper' }),
       state,
       h('p', { class: 'gw-note', text: `Started ${clock(d.startedAt)}${d.title ? ` · from “${d.seedTitle.length > 70 ? `${d.seedTitle.slice(0, 70)}…` : d.seedTitle}”` : ''}` }),
+      subject ? h('p', { class: 'gw-note' }, 'Software under study · ', h('a', { href: subject.url, target: '_blank', rel: 'noopener', title: subject.commit, text: `${subject.name} · ${subject.commit.slice(0, 12)}` })) : null,
       h('ol', { class: d.stages.length > 7 ? 'gw-stages gw-stages--dense' : 'gw-stages' }, ...d.stages.map((s, i) => h('li', { class: s.done ? 'is-done' : i === current && !done ? 'is-current' : '' },
         h('span', { class: 'gw-num', text: s.done ? '✓' : String(i + 1) }), h('span', { class: 'gw-stage', text: s.label })))),
       d.running && d.now.length

@@ -9,6 +9,7 @@ import { draft, fidelity, figure, frame as firstFrame } from './write.js'
 import { analyzeData } from './data.js'
 import { literatureReview } from './literature.js'
 import { simulateModel } from './simulate.js'
+import { softwareEvaluation } from './software.js'
 
 // One behavior writes the frame: once when the draft is checked, and again from the reviewed text.
 const frame: Behavior = { ...firstFrame, ready: (paper) => [...firstFrame.ready(paper), ...finalFrame(paper)] }
@@ -16,6 +17,8 @@ const frame: Behavior = { ...firstFrame, ready: (paper) => [...firstFrame.ready(
 export const LADDER: Behavior[] = [
   // Skeleton: a seed becomes a typeset paper.
   extract,
+  // A software paper builds its argument from the evaluation of the linked revision.
+  softwareEvaluation,
   // Aim: is this worth writing, and in which direction?
   position, reviewIdea, reformulate, selectDirection,
   // When asked for: a systematic review of the literature, by Canary, in the background.

@@ -6,6 +6,7 @@ import { systemBlock } from '../self.js'
 import { materialsBlock, measurementsBlock } from '../materials.js'
 import { simulationsBlock } from '../simulations.js'
 import { literatureBlock } from '../literature.js'
+import { softwareBlock } from '../software.js'
 import { authorYear, citationKey } from '../text.js'
 import type { Citation, Claim, ClaimStatus, Family, Seat, Work } from '../types.js'
 
@@ -60,7 +61,7 @@ export function describeClaim(paper: Paper, c: Claim): string {
       : c.status === 'assumed' ? 'evidence: none needed (common knowledge or a stated premise)'
         : 'evidence: none verified; present it only as a hypothesis, an expectation or an open question, or leave it out if the section works without it'
   const review = c.origin === 'review' ? `, finding of the systematic review, uncertainty ${c.uncertainty ?? 'moderate'}` : ''
-  return `- ${c.id} [${c.kind}${c.loadBearing ? ', load-bearing' : ''}${review}] ${c.text}\n  ${support}`
+  return `- ${c.id} [${c.kind}${c.loadBearing ? ', load-bearing' : ''}${review}] ${c.text}\n  ${support}${c.softwareEvidence?.length ? `\n  Software evaluation evidence: ${c.softwareEvidence.join(', ')}.` : ''}`
 }
 
 export function claimsBlock(paper: Paper, ids?: string[]): string {
@@ -78,7 +79,8 @@ export function briefBlock(paper: Paper): string {
   if (chosen) lines.push(`Selected direction: ${chosen.title}: ${chosen.question} (shift: ${chosen.shift})`)
   // A paper that is a systematic review carries the review's protocol into every prompt.
   const review = paper.config.literatureReview === 'load-bearing' ? literatureBlock(paper) : ''
-  const extra = [materialsBlock(paper), measurementsBlock(paper), review, simulationsBlock(paper), systemBlock(paper)].filter(Boolean)
+  const subject = paper.state.softwareSubject
+  const extra = [materialsBlock(paper), measurementsBlock(paper), subject && softwareBlock(subject, paper.state.softwareEvaluation), review, simulationsBlock(paper), systemBlock(paper)].filter(Boolean)
   return [lines.filter(Boolean).join('\n'), ...extra].join('\n\n')
 }
 
@@ -96,7 +98,7 @@ export function manuscriptBlock(paper: Paper, withAbstract = true, withLedger = 
   for (const section of outline?.sections ?? []) {
     parts.push(`[${section.id}] # ${section.title}\n\n${fillPlaceholders(sectionText(paper, section.id), record).text}`)
   }
-  if (outline && withLedger && paper.config.ledgerAppendix !== false) parts.push(`[Appendix A, generated from the claim ledger at typesetting: it changes when claims change, and is not edited directly] # Claim ledger\n\n${ledgerAppendix(paper)}`)
+  if (outline && withLedger && paper.config.ledgerAppendix !== false) parts.push(`[Appendix A, generated from the claim ledger at typesetting: it changes when claims change, and is not edited directly] # Claim ledger\n\n${fillPlaceholders(ledgerAppendix(paper), record).text}`)
   return parts.join('\n\n')
 }
 

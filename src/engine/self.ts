@@ -13,6 +13,7 @@ import type { Family } from './types.js'
 /** What each behavior does, as `galley ladder` prints it. */
 export const DOES: Record<string, string> = {
   extract: "reads the seed and lists its claims, the concern behind them, the contribution it states and its host field",
+  'software-evaluation': 'evaluates a pinned software commit with source inspection, attempted build and validation, repeated benchmarks and a separate process profile, and records the evidence and gaps',
   position: "writes searches and reads what they find to place the idea: its closest prior work, the shared bottleneck and the field's consensus",
   'review-idea': 'scores the idea on the seven impact factors before anything is written, names the weakest and gives a verdict: worth writing, reformulate, or no contribution',
   reformulate: 'when the idea should be reframed, proposes exactly three structurally different directions that keep the seed\'s explicit commitments',
