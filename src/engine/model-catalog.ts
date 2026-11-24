@@ -30,10 +30,10 @@ export interface CatalogModel {
 }
 
 export const PROVIDERS = {
-  claude: { family: 'claude', name: 'Anthropic', login: 'claude auth login', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  codex: { family: 'gpt', name: 'OpenAI', login: 'codex login', efforts: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
-  antigravity: { family: 'gemini', name: 'Google', login: 'agy', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-} satisfies Record<Provider, { family: Family; name: string; login: string; efforts: string[] }>
+  claude: { family: 'claude', name: 'Anthropic', login: 'claude auth login', prefix: 'claude-', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  codex: { family: 'gpt', name: 'OpenAI', login: 'codex login', prefix: 'gpt-', efforts: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] },
+  antigravity: { family: 'gemini', name: 'Google', login: 'agy', prefix: 'gemini-', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+} satisfies Record<Provider, { family: Family; name: string; login: string; prefix: string; efforts: string[] }>
 
 export function catalogModel(provider: Provider, selector: string, effort: string): CatalogModel {
   return { identity: provider === 'antigravity' ? selector : `${selector}-${effort}`, provider, selector, effort }
@@ -74,12 +74,14 @@ export const placeKeys = Object.keys(PLACES) as Place[]
 export function modelSpec(model: CatalogModel): ModelSpec {
   const { provider, selector, effort } = model
   if (!Object.hasOwn(PROVIDERS, provider) || !/^[a-z0-9][a-z0-9.-]{0,127}$/.test(selector)
-    || !PROVIDERS[provider].efforts.includes(effort) || model.identity !== catalogModel(provider, selector, effort).identity
+    || !selector.startsWith(PROVIDERS[provider].prefix) || !PROVIDERS[provider].efforts.includes(effort) || model.identity !== catalogModel(provider, selector, effort).identity
     || (provider === 'antigravity' && !selector.endsWith(`-${effort}`))) {
     throw new Error(`Invalid catalog model: ${model.identity}`)
   }
   return { family: PROVIDERS[provider].family, model: selector, effort }
 }
+
+export const specIdentity = (spec: ModelSpec) => spec.family === 'gemini' ? spec.model : `${spec.model}-${spec.effort}`
 
 export interface ModelRouting {
   slots: Record<Slot, CatalogModel>

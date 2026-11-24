@@ -244,7 +244,7 @@ export const verifyDisposition: Behavior = {
       key: `verify-disposition:${findings.map((f) => `${f.id}.${f.dispositions.length}`).join(',')}`, label: `${findings.length} answer(s) for ${family}`,
       run: async () => {
         const reply = await paper.ask<any>({
-          behavior: 'verify-disposition', light: true, target: findings.map((f) => f.id).join(','), seat: 'referee', family, referee: seat === 'human' ? 'challenger' : seat,
+          behavior: 'verify-disposition', light: true, target: findings.map((f) => f.id).join(','), seat: seat === 'human' ? 'challenger' : `referee:${seat}`, family,
           prompt: `${HOUSE}
 
 You raised these findings as a referee. The author answered each. Judge each answer against the current text.

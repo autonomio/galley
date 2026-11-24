@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { defaultConfig, lightSpecFor, specFor, type PaperConfig } from './config.js'
-import { adjudicatorModel, modelForPlace, modelSpec, readModelCatalog, resolveRouting, validateRouting, type Place } from './model-catalog.js'
+import { adjudicatorModel, modelForPlace, modelSpec, readModelCatalog, resolveRouting, specIdentity, validateRouting, type Place } from './model-catalog.js'
 import { callModel, ModelFailure, RateLimited, resetHintMs, type CallResult } from './models.js'
 import type { Schema } from './schema.js'
 import type { Family, Note, PaperState, Seat } from './types.js'
@@ -207,7 +207,7 @@ export class Paper {
     for (let wait = 0; ; wait++) {
       await acquire(family)
       let result: CallResult
-      const done = this.begin({ behavior: options.behavior, target: options.target, what: `${spec.model} (${options.seat})`, family })
+      const done = this.begin({ behavior: options.behavior, target: options.target, what: `${specIdentity(spec)} (${options.seat})`, family })
       try {
         result = await callModel({ spec, prompt: options.prompt, schema: options.schema, cacheDir: this.path('calls', 'cache') })
       } catch (error) {
@@ -217,8 +217,8 @@ export class Paper {
           // A provider that says when its quota resets is tried again just after that, not on the fixed schedule.
           const hint = resetHintMs(error.message)
           const ms = hint === null ? LIMIT_WAITS[wait] : Math.min(hint + 30_000, LIMIT_HINT_CAP)
-          this.journal({ event: 'provider_limit', behavior: options.behavior, target: options.target, family, wait_ms: ms, message: error.message })
-          this.say(`… ${options.behavior}: ${family} is at a usage limit or out of reach; waiting ${Math.max(1, Math.round(ms / 60_000))} min (${error.message.slice(0, 120)})`)
+          this.journal({ event: 'provider_limit', behavior: options.behavior, target: options.target, family, identity: specIdentity(spec), wait_ms: ms, message: error.message })
+          this.say(`… ${options.behavior}: ${specIdentity(spec)} is at a usage limit or out of reach; waiting ${Math.max(1, Math.round(ms / 60_000))} min (${error.message.slice(0, 120)})`)
           await sleep(ms)
           continue
         }

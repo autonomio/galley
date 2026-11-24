@@ -18,7 +18,7 @@ async function discover(provider: Provider): Promise<CatalogModel[]> {
       .flatMap((m) => (m.supported_reasoning_levels ?? []).map(({ effort }) => catalogModel(provider, m.slug, effort)))
   }
   if (provider === 'claude') {
-    const dir = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'cache', 'model-catalog')
+    const dir = join(homedir(), '.claude', 'cache', 'model-catalog')
     const files = readdirSync(dir).filter((name) => name.endsWith('.json'))
       .map((name) => ({ path: join(dir, name), time: statSync(join(dir, name)).mtimeMs }))
       .sort((a, b) => b.time - a.time)

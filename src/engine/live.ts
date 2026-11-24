@@ -165,7 +165,7 @@ function activity(s: PaperState, events: JournalEvent[]): LiveEntry[] {
     }
     if (e.event === 'provider_limit') {
       const family = e.family as Family
-      say(e, 'galley', `is waiting out ${FAMILY_NAMES[family] ?? family}'s usage limit (${Math.max(1, Math.round(Number(e.wait_ms) / 60000))} min), then carries on.`)
+      say(e, 'galley', `is waiting out ${e.identity ?? FAMILY_NAMES[family] ?? family}'s usage limit (${Math.max(1, Math.round(Number(e.wait_ms) / 60000))} min), then carries on.`)
       continue
     }
     if (e.event === 'note') {
@@ -271,7 +271,7 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
       if (e.event === 'call' || e.event === 'settled') break
       if (e.event !== 'provider_limit') continue
       const until = new Date(Date.parse(e.at) + Number(e.wait_ms)).toISOString()
-      if (Date.parse(until) > Date.now()) waiting = { family: e.family, name: FAMILY_NAMES[e.family as Family] ?? e.family, until }
+      if (Date.parse(until) > Date.now()) waiting = { family: e.family, name: e.identity ?? FAMILY_NAMES[e.family as Family] ?? e.family, until }
       break
     }
   }

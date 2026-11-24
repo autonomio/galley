@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { adjudicatorModel, modelForPlace, readModelCatalog, resolveRouting, saveModelCatalog } from '../../src/engine/model-catalog.js'
+import { adjudicatorModel, catalogModel, modelSpec, modelForPlace, readModelCatalog, resolveRouting, saveModelCatalog } from '../../src/engine/model-catalog.js'
 import { refereesFor } from '../../src/engine/behaviors/review.js'
 import { Paper } from '../../src/engine/paper.js'
 import { obj, str } from '../../src/engine/schema.js'
@@ -66,5 +66,6 @@ it('refuses duplicate or unknown models and invalid role assignments', () => {
   const catalog = readModelCatalog(path)
   expect(() => saveModelCatalog({ ...catalog, slots: { ...catalog.slots, primary: catalog.slots.secondary } }, path)).toThrow('different model identities')
   expect(() => saveModelCatalog({ ...catalog, slots: { ...catalog.slots, primary: 'unknown' } }, path)).toThrow('model in the catalog')
+  expect(() => modelSpec(catalogModel('claude', 'gpt-6.2-sol', 'high'))).toThrow('Invalid catalog model')
   expect(() => saveModelCatalog({ ...catalog, places: { ...catalog.places, author: 'independent' } }, path)).toThrow('Invalid slot for Author')
 })

@@ -113,7 +113,7 @@ function statusData(paper: Paper): Record<string, unknown> {
       const left = Math.round((Date.parse(e.at) + e.wait_ms - Date.now()) / 1000)
       const hint = resetHintMs(String(e.message ?? ''))
       const resetsIn = hint === null ? null : Math.max(0, Math.round((Date.parse(e.at) + hint - Date.now()) / 1000))
-      if (left > 0) waiting = { family: e.family, name: FAMILY_NAMES[e.family as Family] ?? e.family, seconds: left, resetsIn }
+      if (left > 0) waiting = { family: e.family, name: e.identity ?? FAMILY_NAMES[e.family as Family] ?? e.family, seconds: left, resetsIn }
       break
     }
   }
