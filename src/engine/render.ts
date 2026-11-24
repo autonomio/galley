@@ -120,7 +120,10 @@ export async function buildManuscript(paper: Paper): Promise<{ markdown: string;
   const evidencePackage = 'Every claim in this manuscript, the evidence it rests on and the verbatim passages of its sources are available as an evidence package accompanying it (claims, evidence and sources in the Resolvent format).'
   const reproduction = runsOf(paper).length ? ` The simulations can be rerun, and every simulated number checked against this manuscript, with the reproduction package that accompanies it (simulation/: node simulate.mjs --verify, or index.html in a browser).` : ''
   const subject = s.softwareSubject
-  const revision = subject ? `The software studied is [${subject.name}](${subject.url}) at commit \`${subject.commit}\`.\n\n` : ''
+  const revision = subject && paper.softwareRole === 'introduction'
+    ? `The software introduced in this paper is [${subject.name}](${subject.url}) at commit \`${subject.commit}\`.\n\n`
+    : subject && s.softwareEvaluation?.instrument?.run.status === 'completed'
+      ? `The study ran [${subject.name}](${subject.url}) at commit \`${subject.commit}\` as a research instrument.\n\n` : ''
   body.push(`# Data and code availability {.unnumbered}\n\n${revision}${decl.availability || `${s.brief?.aboutSystem ? `${sourceStatement()} ` : ''}${evidencePackage}${reproduction}`}`)
   body.push(`# Competing interests {.unnumbered}\n\n${declaration(decl.competing_interests)}`)
   body.push(`# Funding {.unnumbered}\n\n${declaration(decl.funding)}`)
@@ -559,12 +562,14 @@ function exportEvidence(paper: Paper, record: Record_): void {
     if (study) for (const id of c.softwareEvidence ?? []) {
       const index = Number(id.slice(1)) - 1
       const collection = id.startsWith('F') ? 'findings' : 'benchmarks'
-      const item = study[collection][index]
+      const item = id === 'I1' ? study.instrument : study[collection][index]
       if (!item) continue
-      const locator = `software-evaluation.json#/${collection}/${index}`
+      const locator = id === 'I1' ? 'software-evaluation.json#/instrument' : `software-evaluation.json#/${collection}/${index}`
       const sid = `S-${uuidish(`${s.slug}:software:${id}`)}`
       const eid = `E-${uuidish(`${s.slug}:software:${c.id}:${id}`)}`
-      const excerpt = 'finding' in item ? `${item.finding}\n${item.evidence}` : `${item.title}\n${item.conditions}`
+      const excerpt = 'finding' in item ? `${item.finding}\n${item.evidence}` : 'task' in item
+        ? `${item.task.title}\n${item.task.conditions}\n${item.result?.excerpt || (item.run.status === 'completed' ? item.run.stdout.excerpt : '')}`
+        : `${item.title}\n${item.conditions}`
       writeFileSync(join(root, 'sources', `${sid}.yaml`), yaml({ id: sid, kind: 'web', title: `${study.subject.name} software evaluation`, uri: null, date: s.createdAt.slice(0, 10), locator, excerpt, access: 'inspected' }))
       writeFileSync(join(root, 'evidence', `${eid}.yaml`), yaml({ id: eid, kind: 'external', summary: `Software evaluation ${id} at ${study.subject.commit}`, source_ids: [sid], independent: false, limitations: [], premise_claim_ids: [], claim_ids: [cid] }))
       evidenceIds.push(eid)

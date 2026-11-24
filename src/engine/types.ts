@@ -269,6 +269,7 @@ export interface PaperState {
   createdAt: string
   seed: { text: string; sha256: string }
   softwareSubject?: import('../core/software-subject.js').SoftwareSubject
+  softwareRole?: import('../core/software-subject.js').SoftwareRole
   brief?: Brief
   claims: Claim[]
   positioning: Positioning

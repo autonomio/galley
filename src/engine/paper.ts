@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { SOFTWARE_SUBJECT_HINT, softwareSubject } from '../core/software-subject.js'
+import { isSoftwareRole, SOFTWARE_ROLE_HINT, SOFTWARE_SUBJECT_HINT, softwareSubject, type SoftwareRole } from '../core/software-subject.js'
 import { defaultConfig, lightSpecFor, specFor, type PaperConfig } from './config.js'
 import { adjudicatorModel, modelForPlace, modelSpec, readModelCatalog, resolveRouting, specIdentity, validateRouting, type Place } from './model-catalog.js'
 import { callModel, ModelFailure, RateLimited, resetHintMs, type CallResult } from './models.js'
@@ -100,6 +100,14 @@ export class Paper {
     this.dir = dir
     this.state = state
     this.config = config
+    if (this.softwareRole === 'introduction') {
+      if (config.literatureReview === 'load-bearing') config.literatureReview = true
+      if (config.simulation === 'load-bearing') config.simulation = true
+    }
+  }
+
+  get softwareRole(): SoftwareRole | undefined {
+    return this.state.softwareSubject ? this.state.softwareRole ?? 'introduction' : undefined
   }
 
   static create(dir: string, seed: string, overrides: Partial<PaperConfig> = {}): Paper {
@@ -110,6 +118,8 @@ export class Paper {
     const commitLink = overrides.softwareCommit ?? config.softwareCommit
     const subject = commitLink ? softwareSubject(commitLink) : null
     if (commitLink && !subject) throw new Error(SOFTWARE_SUBJECT_HINT)
+    const softwareRole = overrides.softwareRole ?? config.softwareRole
+    if (softwareRole !== undefined && (!subject || !isSoftwareRole(softwareRole))) throw new Error(SOFTWARE_ROLE_HINT)
     const legacy = config.seats || config.models || config.lightModels || config.referees
     const routing = overrides.routing ?? config.routing ?? (legacy ? undefined : resolveRouting(readModelCatalog()))
     if (routing) validateRouting(routing)
@@ -122,7 +132,7 @@ export class Paper {
       slug,
       createdAt: new Date().toISOString(),
       seed: { text: seed, sha256: sha256(seed) },
-      ...(subject ? { softwareSubject: subject } : {}),
+      ...(subject ? { softwareSubject: subject, softwareRole: softwareRole ?? 'introduction' } : {}),
       claims: [],
       positioning: {},
       directions: [],

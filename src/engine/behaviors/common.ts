@@ -6,7 +6,7 @@ import { systemBlock } from '../self.js'
 import { materialsBlock, measurementsBlock } from '../materials.js'
 import { simulationsBlock } from '../simulations.js'
 import { literatureBlock } from '../literature.js'
-import { softwareBlock } from '../software.js'
+import { softwareBlock, softwarePaperPurpose } from '../software.js'
 import { authorYear, citationKey } from '../text.js'
 import type { Citation, Claim, ClaimStatus, Family, Seat, Work } from '../types.js'
 
@@ -80,7 +80,7 @@ export function briefBlock(paper: Paper): string {
   // A paper that is a systematic review carries the review's protocol into every prompt.
   const review = paper.config.literatureReview === 'load-bearing' ? literatureBlock(paper) : ''
   const subject = paper.state.softwareSubject
-  const extra = [materialsBlock(paper), measurementsBlock(paper), subject && softwareBlock(subject, paper.state.softwareEvaluation), review, simulationsBlock(paper), systemBlock(paper)].filter(Boolean)
+  const extra = [materialsBlock(paper), measurementsBlock(paper), subject && softwareBlock(subject, paper.softwareRole ?? 'introduction', paper.state.softwareEvaluation), review, simulationsBlock(paper), systemBlock(paper)].filter(Boolean)
   return [lines.filter(Boolean).join('\n'), ...extra].join('\n\n')
 }
 
@@ -91,6 +91,8 @@ export function sectionText(paper: Paper, sectionId: string): string {
 /** The manuscript as the referees and the frame read it: sections tagged with their ids. */
 export function manuscriptBlock(paper: Paper, withAbstract = true, withLedger = true): string {
   const parts: string[] = []
+  const purpose = softwarePaperPurpose(paper.softwareRole)
+  if (purpose) parts.push(`MANUSCRIPT PURPOSE: ${purpose}`)
   const { frame, outline } = paper.state
   // Production numbers are shown as they stand now, never as raw placeholders.
   const record = productionRecord(paper)

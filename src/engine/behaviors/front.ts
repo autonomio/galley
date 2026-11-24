@@ -4,7 +4,7 @@ import { canarySearch, SourceUnavailable, workFromHit, type QueryResult } from '
 import { BLUEPRINT, HOUSE, STYLE } from '../prompts.js'
 import { REVIEW_SECTION, withReviewSection } from '../literature.js'
 import type { Behavior } from '../scheduler.js'
-import { softwareEvidenceIds } from '../software.js'
+import { softwareEvidenceIds, softwarePaperPurpose } from '../software.js'
 import { arr, bool, enm, int, nstr, obj, str } from '../schema.js'
 import { squash } from '../text.js'
 import type { Claim, ClaimKind, Direction, EvidenceNeed, Factor, IdeaReview } from '../types.js'
@@ -22,11 +22,12 @@ export const extract: Behavior = {
     key: 'extract:seed', label: 'the seed',
     run: async () => {
       const subject = paper.state.softwareSubject
+      const role = paper.softwareRole
       const reply = await paper.ask<any>({
         behavior: 'extract', target: 'seed', seat: 'author', family: seatFamily(paper, 'author'),
         prompt: `${HOUSE}
 
-Read the seed below. It may be a rant, rough notes or transcribed speech. Recover what a paper could be made of.${subject ? `\nThe paper studies the software ${subject.name} at ${subject.url}. This subject was supplied separately. Keep the paper about that revision and attribute only statements in the seed to the seed.` : ''}
+Read the seed below. It may be a rant, rough notes or transcribed speech. Recover what a paper could be made of.${subject ? `\nThe selected software is ${subject.name} at ${subject.url}. ${softwarePaperPurpose(role)} The selection was supplied separately. Attribute only statements in the seed to the seed.` : ''}
 
 - has_subject: whether the seed has a subject a paper could be about at all.
 - concern: the human concern behind it, in one sentence, as an interpretation and not a diagnosis.
@@ -47,13 +48,13 @@ ${paper.state.seed.text}
         }),
       })
       const s = paper.state
-      s.brief = { hasSubject: !!subject || !!reply.has_subject, concern: reply.concern, contribution: reply.contribution, objectType: reply.object_type, field: reply.field, audience: reply.audience, aboutSystem: !!reply.about_system }
+      s.brief = { hasSubject: role === 'introduction' || !!reply.has_subject, concern: reply.concern, contribution: reply.contribution, objectType: reply.object_type, field: reply.field, audience: reply.audience, aboutSystem: !!reply.about_system }
       s.claims = (reply.claims ?? []).map((c: any, i: number): Claim => ({
         id: `C${i + 1}`, text: String(c.text).trim(), kind: c.kind,
         seedQuote: squash(s.seed.text).includes(squash(c.seed_quote || '')) ? c.seed_quote : '',
         origin: 'seed', need: needFor(c.kind), loadBearing: false, dependsOn: [], status: 'open', history: [],
       }))
-      if (!subject && (!s.brief.hasSubject || !s.claims.length)) {
+      if (!s.brief.hasSubject || (!role && !s.claims.length)) {
         s.outcome = 'no_subject'
         paper.note('extract', 'The seed has no subject a paper could be about.', true)
       }
@@ -261,7 +262,7 @@ Directions:
 ${s.directions.map((d) => `${d.id}: ${d.title}\n  Question: ${d.question}\n  Shift: ${d.shift}\n  Opens: ${d.opens}\n  Residue: ${d.residue}`).join('\n')}`,
           schema: obj({ choice: enm(['original', 'D1', 'D2', 'D3', 'none_viable']), reason: str() }),
         })
-        if (reply.choice === 'none_viable' && s.ideaReview!.verdict === 'no_contribution' && !s.softwareSubject) {
+        if (reply.choice === 'none_viable' && s.ideaReview!.verdict === 'no_contribution' && paper.softwareRole !== 'introduction') {
           s.outcome = 'no_contribution'
           paper.note('select-direction', `No contribution: ${reply.reason}`, true)
         } else {
@@ -313,7 +314,7 @@ Plan the argument of the paper. The seed is the person's; keep its concern and i
 - noun: the name the paper gives its central idea, method or artifact, if it has one (else an empty string).
 - opens: 3 to 6 concrete next papers strangers could write because this one exists.
 - claims: the complete set of claims the argument needs. For each seed claim give its id and action keep, reword or drop (with the reason). Add the claims the argument needs that the seed lacks (id null, action add): background claims about prior work and the state of the field that the paper must establish with citations, and contribution claims that state exactly what this paper delivers. kind is contribution, background, method, novelty or common_knowledge. need is external (must be cited: other people's published work), internal (backed by the authors' own work: what this paper presents, and systems, tools or results the authors themselves built, as the seed's "we" and "our" show) or none (common knowledge or a definition). load_bearing is true when the thesis falls if the claim falls. depends_on lists the ids of claims this one rests on (no cycles).
-Lift the weakest factor where the evidence allows it, but never claim more than can be supported.${s.softwareSubject ? '\nFor a claim established by the software evaluation, name its supporting F or B evidence IDs in software_evidence and use need internal. Use only the evidence and result placeholders shown below. Leave unresolved results out of the argument. Novelty and comparisons to external work still need external evidence.' : ''}
+Lift the weakest factor where the evidence allows it, but never claim more than can be supported.${paper.softwareRole === 'instrument' ? '\nFor a study claim established by the completed instrument task, use need internal and link I1 in software_evidence. Keep the thesis about the study question.' : s.softwareSubject ? '\nFor a claim established by the software evaluation, name its supporting F or B evidence IDs in software_evidence and use need internal. Use only the evidence and result placeholders shown below. Leave unresolved results out of the argument. Novelty and comparisons to external work still need external evidence.' : ''}
 A claim about the authors' data rests on the measurements: it names the ones it uses (A1, A2), has need internal, says only what they show, and writes any number from them as its placeholder ({{data.A1}}). A claim about a simulation rests on its results: it names the simulation (S1), has need internal, says only what the results show under the simulation's assumptions, and writes any number from them as its placeholder ({{sim.S1.profit.p95}}). Aim for about ${Math.max(8, Math.min(40, Math.round(paper.config.words / 230)))} claims in total, scaled to a paper of about ${paper.config.words} words.
 
 ${briefBlock(paper)}

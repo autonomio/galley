@@ -17,7 +17,7 @@ const frame: Behavior = { ...firstFrame, ready: (paper) => [...firstFrame.ready(
 export const LADDER: Behavior[] = [
   // Skeleton: a seed becomes a typeset paper.
   extract,
-  // A software paper builds its argument from the evaluation of the linked revision.
+  // Introductions evaluate the revision early. Instruments serve the chosen direction.
   softwareEvaluation,
   // Aim: is this worth writing, and in which direction?
   position, reviewIdea, reformulate, selectDirection,
