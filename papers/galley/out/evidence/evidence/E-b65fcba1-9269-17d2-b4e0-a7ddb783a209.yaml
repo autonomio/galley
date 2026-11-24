@@ -1,0 +1,8 @@
+id: "E-b65fcba1-9269-17d2-b4e0-a7ddb783a209"
+kind: "external"
+summary: "supported: The passage introduces The AI Scientist as a framework enabling frontier large language models to perform research independently across the full pipeline by generating novel research ideas, writing code, executing experiments, writing a full scientific paper, and running a simulated review process for evaluation."
+source_ids: ["S-c4a2f5ce-5ff9-a6a4-3f8d-96090e0e0bc3"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-b19fd6b8-edde-589a-d7c5-6cdb9971ced0"]

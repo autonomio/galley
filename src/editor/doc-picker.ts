@@ -1,9 +1,10 @@
 // The document picker: the open document's title with ▾, and a menu of every
-// document grouped by recency, each with its age.
+// document grouped by recency, each with its age and a button that deletes it.
 import { groupBucket, relTime } from '../core/time.js'
 import { UNTITLED } from '../markdown/title.js'
 import type { DocSummary } from '../types.js'
 import { el, escapeHtml, reveal } from './dom.js'
+import { icons } from './icons.js'
 
 export interface PickerState {
   docs: DocSummary[]
@@ -27,7 +28,7 @@ function truncate(s: string): string {
   return s.length > 28 ? s.slice(0, 27).trimEnd() + '…' : s
 }
 
-export function createDocPicker(handlers: { select(slug: string): void, opening(): void }): DocPicker {
+export function createDocPicker(handlers: { select(slug: string): void, opening(): void, remove?(slug: string): void }): DocPicker {
   const element = el('div', { class: 'galley-picker' })
   const trigger = el('button', {
     type: 'button',
@@ -58,17 +59,25 @@ export function createDocPicker(handlers: { select(slug: string): void, opening(
         const b = groupBucket(d.updated_at)
         if (b !== bucket) { parts.push(`<h3 class="galley-picker-bucket">${escapeHtml(b)}</h3>`); bucket = b }
         const title = d.title || UNTITLED
-        parts.push(`<button type="button" class="galley-picker-item${d.slug === state.current ? ' is-active' : ''}" role="menuitem" data-slug="${escapeHtml(d.slug)}" title="${escapeHtml(title)}">`
+        const active = d.slug === state.current ? ' is-active' : ''
+        parts.push(`<div class="galley-picker-row${active}" role="none">`
+          + `<button type="button" class="galley-picker-item${active}" role="menuitem" data-slug="${escapeHtml(d.slug)}" title="${escapeHtml(title)}">`
           + `<span class="galley-picker-item-title">${escapeHtml(title)}</span>`
-          + `<span class="galley-picker-item-time">${escapeHtml(relTime(d.updated_at))}</span></button>`)
+          + `<span class="galley-picker-item-time">${escapeHtml(relTime(d.updated_at))}</span></button>`
+          + (handlers.remove ? `<button type="button" class="galley-picker-delete" data-delete="${escapeHtml(d.slug)}" aria-label="${escapeHtml(`Delete “${title}”`)}" title="${escapeHtml(`Delete “${title}”`)}">${icons.trash}</button>` : '')
+          + '</div>')
       }
       next = parts.join('')
     }
     if (next === markup) return
-    const focused = (document.activeElement as HTMLElement | null)?.dataset?.slug
+    // Keyboard focus stays where it was across a redraw: on a document, or on the button that deletes one.
+    const active = document.activeElement as HTMLElement | null
+    const focused = !active || !menu.contains(active) ? null
+      : active.dataset.slug ? `[data-slug="${CSS.escape(active.dataset.slug)}"]`
+        : active.dataset.delete ? `[data-delete="${CSS.escape(active.dataset.delete)}"]` : null
     markup = next
     menu.innerHTML = next
-    if (focused) menu.querySelector<HTMLElement>(`[data-slug="${CSS.escape(focused)}"]`)?.focus()
+    if (focused) menu.querySelector<HTMLElement>(focused)?.focus()
   }
 
   function renderTitle(): void {
@@ -78,12 +87,16 @@ export function createDocPicker(handlers: { select(slug: string): void, opening(
     trigger.title = full
   }
 
+  // A dialog asking about a delete answers for itself: the menu stays open behind it, so several go in a row.
+  const inDialog = (target: EventTarget | null) => !!(target as HTMLElement | null)?.closest?.('dialog')
+
   function onOutside(e: MouseEvent): void {
-    if (element.contains(e.target as Node)) return
+    if (element.contains(e.target as Node) || inDialog(e.target)) return
     close()
   }
 
   function onKey(e: KeyboardEvent): void {
+    if (inDialog(e.target)) return
     if (e.key === 'Escape') {
       e.preventDefault()
       close()
@@ -126,6 +139,11 @@ export function createDocPicker(handlers: { select(slug: string): void, opening(
     else close()
   })
   menu.addEventListener('click', (e) => {
+    const remove = (e.target as HTMLElement).closest<HTMLElement>('.galley-picker-delete')
+    if (remove) {
+      if (remove.dataset.delete) handlers.remove?.(remove.dataset.delete)
+      return
+    }
     const item = (e.target as HTMLElement).closest<HTMLElement>('.galley-picker-item')
     if (!item) return
     const slug = item.dataset.slug || ''

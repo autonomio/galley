@@ -1,0 +1,6 @@
+id: "C-0baf7f3b-0d8d-5b6f-1f1c-5e019a23b548"
+class: "observed_fact"
+statement: "LLM-generated scholarly text can contain misattributed citations."
+uncertainty: "medium"
+evidence_ids: ["E-f66150d0-888b-77f7-b542-0c1957f46af3","E-8e27bbbf-bb34-8a3c-f05c-447169dad54b"]
+state: "active"

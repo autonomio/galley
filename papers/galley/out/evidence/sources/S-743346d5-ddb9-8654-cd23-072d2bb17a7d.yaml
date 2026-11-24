@@ -1,0 +1,8 @@
+id: "S-743346d5-ddb9-8654-cd23-072d2bb17a7d"
+kind: "publication"
+title: "Detecting Citation Hallucinations in Large Language Model Outputs (Student Abstract)"
+uri: "https://doi.org/10.1609/aaai.v40i48.42257"
+date: "2026"
+locator: "abstract"
+excerpt: "While their fluency accelerates knowledge synthesis, they frequently produce fabricated or erroneous references, known as citation hallucinations (CHs). Recent studies report hallucination rates ranging from 18% in GPT-4 to over 70% in other frontier models, with domain-specific rates as high as 88% in legal contexts."
+access: "inspected"

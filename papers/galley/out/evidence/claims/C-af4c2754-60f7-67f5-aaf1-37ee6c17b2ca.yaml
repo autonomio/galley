@@ -1,6 +1,6 @@
 id: "C-af4c2754-60f7-67f5-aaf1-37ee6c17b2ca"
 class: "derived_inference"
-statement: "The evidence has clear limits. It is a single self-referential run with no external seeds and no single-family or prior-system baselines. The human-in-the-loop controls were not used (dial autonomous, citations automatic). Verification used abstracts only, so it can confirm no more than an abstract states. 'Ready for submission' means every gate held on one revision. It does not mean the claims are correct or that the paper will have impact."
+statement: "Cross-family separation of duties, combined with in-run calibration, is a governance pattern for multi-agent writing that has to stay tied to evidence, and it can be used without galley's other components. It needs at least three model families, so that an adjudicator can come from neither the author's nor the referee's family, plus a journal of prompts and answers."
 uncertainty: "medium"
 evidence_ids: ["E-dddf7984-607f-f2e7-b9b4-66e1a5000cad"]
 state: "active"

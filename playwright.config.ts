@@ -17,13 +17,14 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     ...devices['Desktop Chrome'],
-    baseURL: `http://localhost:${PORT}`,
+    baseURL: `http://127.0.0.1:${PORT}`,
     viewport: { width: 1100, height: 800 },
   },
   webServer: {
-    command: `npx vite --port ${PORT} --strictPort`,
-    url: `http://localhost:${PORT}`,
-    env: { GALLEY_DIR: process.env.GALLEY_E2E_DIR, GALLEY_PAPERS: process.env.GALLEY_E2E_PAPERS },
+    command: `npx vite --host 127.0.0.1 --port ${PORT} --strictPort`,
+    url: `http://127.0.0.1:${PORT}`,
+    // The engine's start runs for real; the stand-in stops before the first model call.
+    env: { GALLEY_DIR: process.env.GALLEY_E2E_DIR, GALLEY_PAPERS: process.env.GALLEY_E2E_PAPERS, GALLEY_CLI: 'tests/e2e/support/engine.mjs' },
     reuseExistingServer: false,
     stdout: 'ignore',
   },

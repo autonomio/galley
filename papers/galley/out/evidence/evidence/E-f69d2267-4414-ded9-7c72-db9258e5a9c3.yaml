@@ -1,0 +1,8 @@
+id: "E-f69d2267-4414-ded9-7c72-db9258e5a9c3"
+kind: "external"
+summary: "narrower: The passage states that HaLLMark is a tool for capturing and visualizing the provenance of a writer's interaction with an LLM, without stating that it is an interactive writing tool or that it shows which specific parts of the text an LLM contributed."
+source_ids: ["S-819a68ec-a07a-7057-f0c3-0a4131cdcebd"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-7858fd78-29a3-a15b-3fc9-56658fbc7373"]

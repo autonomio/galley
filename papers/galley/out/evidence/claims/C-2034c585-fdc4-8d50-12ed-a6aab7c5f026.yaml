@@ -1,6 +1,0 @@
-id: "C-2034c585-fdc4-8d50-12ed-a6aab7c5f026"
-class: "derived_inference"
-statement: "Required skeleton behaviours (extract, plan, outline, draft, frame, typeset, ready) make a paper exist. Every other behaviour is an improver that can make the paper better but can never stop it. An improver that fails twice is skipped and its effect is recorded: a claim without evidence is hedged, a figure is left out. A provider usage limit is waited out for up to about six hours. An unavailable search index is waited for up to three hours, after which its claims are hedged."
-uncertainty: "medium"
-evidence_ids: ["E-1c9f1841-d2d9-a58a-063e-cc8b89c74cc3"]
-state: "active"

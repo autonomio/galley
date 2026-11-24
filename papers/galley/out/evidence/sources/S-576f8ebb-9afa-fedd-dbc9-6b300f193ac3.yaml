@@ -1,0 +1,8 @@
+id: "S-576f8ebb-9afa-fedd-dbc9-6b300f193ac3"
+kind: "publication"
+title: "LLM Evaluators Recognize and Favor Their Own Generations"
+uri: "https://doi.org/10.52202/079017-2197"
+date: "2024"
+locator: "abstract"
+excerpt: "One such bias is self-preference, where an LLM evaluator scores its own outputs higher than others' while human annotators consider them of equal quality."
+access: "inspected"

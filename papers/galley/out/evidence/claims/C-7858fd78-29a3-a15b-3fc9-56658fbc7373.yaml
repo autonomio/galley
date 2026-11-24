@@ -1,6 +1,6 @@
 id: "C-7858fd78-29a3-a15b-3fc9-56658fbc7373"
 class: "observed_fact"
-statement: "An analysis of 17.9 million papers across all scientific fields suggested that the highest-impact papers are primarily grounded in exceptionally conventional combinations of prior work while also featuring an intrusion of unusual combinations."
+statement: "HaLLMark is a tool that visualizes provenance in human–LLM co-writing."
 uncertainty: "medium"
-evidence_ids: ["E-e8faf2a6-a043-603c-129e-e670c7c14823","E-f7c5392f-186f-6063-4011-0200cc9a18c5"]
+evidence_ids: ["E-f69d2267-4414-ded9-7c72-db9258e5a9c3"]
 state: "active"

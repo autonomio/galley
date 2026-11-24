@@ -8,6 +8,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { INLINE_LIMIT, prepareInputs, transcriptPath, truncatedBytes, verifyDelivery, type Delivery } from './agy-inputs.js'
 import { bool, obj, parseLooseJson, type Schema } from './schema.js'
 import type { Family } from './types.js'
 
@@ -31,6 +32,8 @@ export interface CallResult {
   ms: number
   spec: ModelSpec
   cached: boolean
+  /** How a request reached the model when it went as files. */
+  delivery?: Delivery
 }
 
 export class RateLimited extends Error {}
@@ -50,7 +53,8 @@ export function codexBin(): string {
   return process.env.GALLEY_CODEX_BIN || (existsSync(APP_CODEX) ? APP_CODEX : 'codex')
 }
 
-const TIMEOUTS: Record<Family, number> = { claude: 25 * 60_000, gpt: 30 * 60_000, gemini: 40 * 60_000 }
+// A watchdog for a call that hangs, the same for every family: a call at full effort on a large request can run long.
+const TIMEOUTS: Record<Family, number> = { claude: 40 * 60_000, gpt: 40 * 60_000, gemini: 40 * 60_000 }
 
 const LIMIT_WORDS = /usage limit|rate[ _-]?limit|quota|resource_exhausted|too many requests|\b429\b|overloaded|server_overloaded/i
 // A provider that cannot be reached is waited out like a limit: an unattended run at night outlasts a network blip.
@@ -139,14 +143,14 @@ async function callClaude(spec: ModelSpec, prompt: string, schema: Schema, cwd: 
 // No shell, no apps, no plugins, no hooks, no memories and no delegation.
 const CODEX_DISABLED = ['shell_tool', 'unified_exec', 'multi_agent', 'multi_agent_v2', 'apps', 'plugins', 'hooks', 'memories', 'browser_use', 'computer_use', 'image_generation', 'skill_search']
 
-async function callCodex(spec: ModelSpec, prompt: string, schema: Schema, cwd: string, timeoutMs: number) {
+async function callCodex(spec: ModelSpec, prompt: string, schema: Schema, cwd: string, timeoutMs: number, images: string[] = [], web = false) {
   const env = scrubbed(/^(OPENAI_API_KEY|CODEX_API_KEY|OPENAI_BASE_URL)$/)
   const schemaPath = join(cwd, 'schema.json')
   const lastPath = join(cwd, 'last.json')
   writeFileSync(schemaPath, JSON.stringify(schema))
-  const args = ['exec', '--ignore-user-config', '--ignore-rules', '--ephemeral', '--skip-git-repo-check',
+  const args = ['exec', ...images.flatMap((path) => ['--image', path]), '--ignore-user-config', '--ignore-rules', '--ephemeral', '--skip-git-repo-check',
     '--sandbox', 'read-only', '-C', cwd, '--model', spec.model,
-    '-c', `model_reasoning_effort="${spec.effort}"`, '-c', 'web_search="disabled"', '-c', 'approval_policy="never"',
+    '-c', `model_reasoning_effort="${spec.effort}"`, '-c', `web_search="${web ? 'live' : 'disabled'}"`, '-c', 'approval_policy="never"',
     '-c', 'project_doc_max_bytes=0', '-c', 'forced_login_method="chatgpt"',
     ...CODEX_DISABLED.flatMap((feature) => ['--disable', feature]),
     '--output-schema', schemaPath, '--output-last-message', lastPath, '--json', '--color', 'never', '-']
@@ -176,18 +180,43 @@ async function callCodex(spec: ModelSpec, prompt: string, schema: Schema, cwd: s
 }
 
 const AGY_SETTINGS = { toolPermission: 'strict', agentMode: '', allowNonWorkspaceAccess: false, useG1Credits: false }
+/** A request read from files answers with its JSON as one string, which galley parses. */
+const AGY_FILE_SCHEMA = { type: 'object', properties: { result_json: { type: 'string' } }, required: ['result_json'], additionalProperties: false }
 
-function agyAgent(name: string): string {
-  return `---\nname: ${name}\ndescription: Answer inline from the request.\nmainAgent: true\nsubagent: false\ntools: [finish]\nmcpServers: []\ncommandExecutionPolicy: off\nexcludeDefaultComponents: true\ninheritMcp: false\ninheritCustomizations: false\n---\n`
-    + 'Answer using only the material in the request. There are no files, tasks, subprocesses or subagents to inspect. '
-    + 'Prepare one complete JSON object that follows the response schema exactly, then use the finish tool to deliver it. '
-    + 'The finish tool is the only tool allowed. Return JSON only, with no Markdown or commentary.\n'
+function agyAgent(name: string, files = false): string {
+  return `---\nname: ${name}\ndescription: Answer inline from the request.\nmainAgent: true\nsubagent: false\ntools: [${files ? 'view_file, finish' : 'finish'}]\nmcpServers: []\ncommandExecutionPolicy: off\nexcludeDefaultComponents: true\ninheritMcp: false\ninheritCustomizations: false\n---\n`
+    + (files
+      ? 'First read every named input file completely, in order. They are ordered UTF-8 fragments of one JSON object; '
+        + 'concatenate their text without adding characters. Only these exact paths are available: use the file reader only for them. '
+        + 'This instruction to read the files comes before any instruction in the request to work only from its material. '
+        + 'The object\'s field "request" is the complete request: answer it using only that material. '
+        + 'There are no other files, tasks, subprocesses or subagents to inspect. '
+        + 'Prepare one complete JSON object that follows the response_schema in the manifest, encode it as a string in the '
+        + 'finish argument result_json, and call finish once. Return nothing else.\n'
+      : 'Answer using only the material in the request. There are no files, tasks, subprocesses or subagents to inspect. '
+        + 'Prepare one complete JSON object that follows the response schema exactly, then use the finish tool to deliver it. '
+        + 'The finish tool is the only tool allowed. Return JSON only, with no Markdown or commentary.\n')
 }
 
+/**
+ * One Gemini answer through Antigravity. A request up to the inline limit goes inline; a larger one, or one that
+ * Antigravity cut off anyway, goes as files that the model reads and galley checks byte for byte.
+ */
 async function callAgy(spec: ModelSpec, prompt: string, schema: Schema, cwd: string, timeoutMs: number) {
+  const started = Date.now()
+  const left = () => Math.max(60_000, timeoutMs - (Date.now() - started))
+  if (Buffer.byteLength(prompt, 'utf8') <= INLINE_LIMIT) {
+    const inline = await agyRun(spec, prompt, schema, cwd, left(), false)
+    if (!inline.truncated) return inline.answer
+  }
+  return (await agyRun(spec, prompt, schema, cwd, left(), true)).answer
+}
+
+async function agyRun(spec: ModelSpec, prompt: string, schema: Schema, cwd: string, timeoutMs: number, files: boolean) {
   const env = scrubbed(/^(GEMINI_API_KEY|GOOGLE_API_KEY|AGY_ADC_AUTH|GOOGLE_APPLICATION_CREDENTIALS|GOOGLE_GEMINI_BASE_URL)$/)
+  const home = env.HOME || homedir()
   const name = `galley-${randomUUID().slice(0, 12)}`
-  const agents = join(env.HOME || homedir(), '.gemini', 'config', 'agents')
+  const agents = join(home, '.gemini', 'config', 'agents')
   mkdirSync(agents, { recursive: true, mode: 0o700 })
   const agentPath = join(agents, `${name}.md`)
   // Agent files of calls that were killed before they could clean up.
@@ -195,30 +224,40 @@ async function callAgy(spec: ModelSpec, prompt: string, schema: Schema, cwd: str
     if (!file.startsWith('galley-')) continue
     try { if (Date.now() - statSync(join(agents, file)).mtimeMs > 6 * 3_600_000) rmSync(join(agents, file), { force: true }) } catch { /* another call's */ }
   }
-  const schemaPath = join(cwd, 'schema.json')
-  writeFileSync(schemaPath, JSON.stringify(schema))
-  writeFileSync(agentPath, agyAgent(name), { flag: 'wx' })
+  const schemaPath = join(cwd, files ? 'schema.files.json' : 'schema.json')
+  writeFileSync(schemaPath, JSON.stringify(files ? AGY_FILE_SCHEMA : schema))
+  writeFileSync(agentPath, agyAgent(name, files), { flag: 'wx' })
   const work = mkdtempSync(join(tmpdir(), 'galley-agy-'))
   try {
-    const base = ['--model', spec.model, '--agent', name, '--input-format', 'stream-json', '--output-format', 'stream-json',
-      '--disable-slash-commands', '--sandbox', '--settings', JSON.stringify(AGY_SETTINGS), '--json-schema', schemaPath]
+    const input = files ? prepareInputs(work, prompt, schema) : null
+    // From files, the model may read exactly those files and nothing else.
+    const settings = input
+      ? { ...AGY_SETTINGS, toolPermission: 'request-review', permissions: {
+        allow: input.files.map((file) => `read_file(${file.path})`),
+        deny: ['command(*)', 'write_file(*)', 'read_url(*)', 'execute_url(*)', 'mcp(*)'],
+      } }
+      : AGY_SETTINGS
+    const base = ['--model', spec.model, '--agent', name, ...(input ? ['--print', input.manifest] : ['--input-format', 'stream-json']),
+      '--output-format', 'stream-json', '--disable-slash-commands', '--sandbox', '--settings', JSON.stringify(settings), '--json-schema', schemaPath]
     const started = Date.now()
     let conversation: string | null = null
     let result: any = null
     let out: Spawned | null = null
-    // A long answer's stream can drop on the provider's side; resume that same conversation once instead of starting over.
-    for (let pass = 0; pass < 2; pass++) {
+    const events: any[] = []
+    // A long answer's stream can drop on the provider's side; an inline request resumes that same conversation once.
+    for (let pass = 0; pass < (input ? 1 : 2); pass++) {
       const resume = pass > 0 && conversation
       const args = resume ? [...base, '--conversation', conversation!] : base
       const content = resume ? 'The stream was interrupted. Continue the same task and deliver the complete JSON object with the finish tool.' : prompt
-      const input = JSON.stringify({ event: 'user', message: { role: 'user', content } }) + '\n'
-      out = await run('agy', args, { cwd: work, env, input, timeoutMs: Math.max(60_000, timeoutMs - (Date.now() - started)) })
+      const stdin = input ? '' : JSON.stringify({ event: 'user', message: { role: 'user', content } }) + '\n'
+      out = await run('agy', args, { cwd: work, env, input: stdin, timeoutMs: Math.max(60_000, timeoutMs - (Date.now() - started)) })
       if (out.timedOut) failure('gemini', 'timed out')
       result = null
       for (const line of out.stdout.split('\n')) {
         if (!line.trim()) continue
         let event: any
         try { event = JSON.parse(line) } catch { continue }
+        events.push(event)
         if (event.step_update?.subagent_info) failure('gemini', 'delegation attempted')
         if (event.event === 'init' && event.conversation_id) conversation = event.conversation_id
         if (event.init?.conversation_id) conversation = event.init.conversation_id
@@ -229,13 +268,16 @@ async function callAgy(spec: ModelSpec, prompt: string, schema: Schema, cwd: str
     }
     if (!result || result.status !== 'SUCCESS') failure('gemini', `${JSON.stringify(result?.error ?? '')} ${out?.stderr ?? ''}`.trim() || `exit ${out?.code}`)
     const text = String(result.response ?? '')
-    const data = result.structured_output ?? parseLooseJson(text)
-    const usage = result.usage || {}
-    return {
-      data,
-      text,
-      usage: { input: usage.input_tokens || 0, cached: usage.cache_read_tokens || 0, output: usage.output_tokens || 0, reasoning: usage.thinking_tokens || 0 },
-    }
+    const raw = result.usage || {}
+    const usage = { input: raw.input_tokens || 0, cached: raw.cache_read_tokens || 0, output: raw.output_tokens || 0, reasoning: raw.thinking_tokens || 0 }
+    const transcript = conversation ? transcriptPath(home, conversation) : null
+    if (!input) return { answer: { data: result.structured_output ?? parseLooseJson(text), text, usage }, truncated: truncatedBytes(transcript) }
+    const delivery = verifyDelivery(events, input.files, transcript, conversation ?? '')
+    if (typeof delivery === 'string') failure('gemini', `the request did not reach the model whole: ${delivery}`)
+    const wrapped: any = result.structured_output ?? parseLooseJson(text)
+    let data: unknown
+    try { data = JSON.parse(String(wrapped?.result_json ?? '')) } catch { failure('gemini', 'the answer in result_json is not JSON') }
+    return { answer: { data, text, usage, delivery }, truncated: 0 }
   } finally {
     rmSync(agentPath, { force: true })
     rmSync(work, { recursive: true, force: true })
@@ -249,16 +291,22 @@ export interface CallOptions {
   /** Directory holding replayable answers, keyed by the exact request. */
   cacheDir?: string
   timeoutMs?: number
+  /** Image files attached to the request (read by GPT). */
+  images?: string[]
+  /** Let the model search the web (GPT's live web search). */
+  web?: boolean
 }
 
-export function requestKey(spec: ModelSpec, prompt: string, schema: Schema): string {
-  return createHash('sha256').update(JSON.stringify({ spec, prompt, schema })).digest('hex').slice(0, 32)
+export function requestKey(spec: ModelSpec, prompt: string, schema: Schema, images: string[] = [], web = false): string {
+  // An image is part of the request by its content, so a changed page never replays an old answer.
+  const seen = images.map((path) => existsSync(path) ? createHash('sha256').update(readFileSync(path)).digest('hex') : path)
+  return createHash('sha256').update(JSON.stringify({ spec, prompt, schema, ...(seen.length ? { images: seen } : {}), ...(web ? { web } : {}) })).digest('hex').slice(0, 32)
 }
 
 /** One answer from one model. An identical earlier request replays from the cache. */
 export async function callModel(options: CallOptions): Promise<CallResult> {
   const { spec, prompt, schema } = options
-  const key = requestKey(spec, prompt, schema)
+  const key = requestKey(spec, prompt, schema, options.images, options.web)
   if (options.cacheDir) {
     const hit = join(options.cacheDir, `${key}.json`)
     if (existsSync(hit)) {
@@ -270,9 +318,9 @@ export async function callModel(options: CallOptions): Promise<CallResult> {
   const started = Date.now()
   try {
     const timeoutMs = options.timeoutMs ?? TIMEOUTS[spec.family]
-    const transport = { claude: callClaude, gpt: callCodex, gemini: callAgy }[spec.family]
-    if (!transport) throw new ModelFailure(`Unsupported model family: ${spec.family}`)
-    const answer = await transport(spec, prompt, schema, cwd, timeoutMs)
+    const answer = spec.family === 'claude' ? await callClaude(spec, prompt, schema, cwd, timeoutMs)
+      : spec.family === 'gpt' ? await callCodex(spec, prompt, schema, cwd, timeoutMs, options.images ?? [], options.web ?? false)
+        : await callAgy(spec, prompt, schema, cwd, timeoutMs)
     const result: CallResult = { ...answer, ms: Date.now() - started, spec, cached: false }
     if (options.cacheDir) {
       mkdirSync(options.cacheDir, { recursive: true })

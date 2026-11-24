@@ -1,0 +1,8 @@
+id: "S-2cadab4c-8b25-3ac4-94eb-26cc6d81f3ba"
+kind: "publication"
+title: "Predicting scientific success based on coauthorship networks"
+uri: "https://doi.org/10.1140/epjds/s13688-014-0009-x"
+date: "2014"
+locator: "abstract"
+excerpt: "Analyzing a data set of over 100,000 publications from the field of Computer Science, we study how centrality in the coauthorship network differs between authors who have highly cited papers and those who do not. We further show that a Machine Learning classifier, based only on coauthorship network centrality metrics measured at the time of publication, is able to predict with high precision whether an article will be highly cited five years after publication."
+access: "inspected"

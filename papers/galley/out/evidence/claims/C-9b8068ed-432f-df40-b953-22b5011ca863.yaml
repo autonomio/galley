@@ -1,6 +1,6 @@
 id: "C-9b8068ed-432f-df40-b953-22b5011ca863"
 class: "derived_inference"
-statement: "Galley is released as open-source software: @autonomio/galley 0.1.0, under the MIT licence, at https://github.com/autonomio/galley."
+statement: "Galley is released as @autonomio/galley 0.1.0 under the MIT licence, with source code at https://github.com/autonomio/galley."
 uncertainty: "medium"
 evidence_ids: ["E-413315cf-e796-cf2d-fb1d-46d8a66825cd"]
 state: "active"

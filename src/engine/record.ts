@@ -4,9 +4,10 @@
 // they are always the run's own.
 import { existsSync, readFileSync } from 'node:fs'
 import type { Paper } from './paper.js'
+import { resolved } from './findings.js'
 import { simulationPlaceholders } from './simulations.js'
 import { softwareNumbers } from './software.js'
-import type { Family } from './types.js'
+import type { Family, Finding } from './types.js'
 
 export interface Record_ {
   [key: string]: string | number
@@ -24,7 +25,7 @@ export function productionRecord(paper: Paper): Record_ {
   const s = paper.state
   const active = s.claims.filter((c) => c.status !== 'dropped')
   const material = s.findings.filter((f) => f.severity !== 'minor')
-  const resolvedMaterial = material.filter((f) => f.status === 'adjudicated' || (['fixed', 'rebutted', 'limitation'].includes(f.status) && f.dispositions.at(-1)?.verification?.outcome !== 'disagrees'))
+  const agreed = (f: Finding, status: Finding['status']) => f.status === status && f.dispositions.at(-1)?.verification?.outcome === 'verified'
   return {
     'run.hours': ((last - first) / 3_600_000).toFixed(1),
     'run.calls': calls.length,
@@ -44,19 +45,28 @@ export function productionRecord(paper: Paper): Record_ {
     'run.citations_rejected': s.citations.filter((c) => c.status === 'rejected').length,
     'run.findings': s.findings.length,
     'run.findings_material': material.length,
-    'run.findings_resolved': resolvedMaterial.length,
+    'run.findings_resolved': material.filter(resolved).length,
     'run.findings_adjudicated': s.findings.filter((f) => f.status === 'adjudicated').length,
+    // How each material finding was settled; together they account for every one.
+    'run.findings_fixed': material.filter((f) => agreed(f, 'fixed')).length,
+    'run.findings_rebutted': material.filter((f) => agreed(f, 'rebutted')).length,
+    'run.findings_limitation': material.filter((f) => agreed(f, 'limitation')).length,
+    'run.findings_decided': material.filter((f) => f.status === 'adjudicated' && !f.adjudication?.setAside && !f.adjudication?.fallback).length,
+    'run.findings_set_aside': material.filter((f) => f.status === 'adjudicated' && f.adjudication?.setAside).length,
+    'run.findings_fallback': material.filter((f) => f.status === 'adjudicated' && f.adjudication?.fallback).length,
+    'run.findings_yours': material.filter((f) => f.status === 'noted' && f.assignee === 'humans').length,
+    'run.findings_open': material.filter((f) => !resolved(f)).length,
     'run.rounds': s.round,
     'run.calibration': s.calibration ? `${s.calibration.caught} of ${s.calibration.planted}` : 'none to check',
     'run.calibration_controls': s.calibration ? `${s.calibration.details.filter((d) => d.kind === 'control' && d.caught).length} of ${s.calibration.details.filter((d) => d.kind === 'control').length}` : 'none to check',
     'run.claims_review': active.filter((c) => c.origin === 'review').length,
-    // The systematic review's own numbers, as Canary reported them.
+    // The literature review's own numbers, as Canary reported them.
     ...Object.fromEntries(Object.entries(s.literature?.counts ?? {}).map(([key, value]) => [`lit.${key}`, value])),
     // Every simulated number, at the precision its Monte Carlo error supports.
     ...simulationPlaceholders(paper),
     ...softwareNumbers(s.softwareEvaluation),
     // Numbers from the authors' data, as galley computed them.
-    ...Object.fromEntries(Object.values(s.measurements ?? {}).map((m) => [`data.${m.id}`, m.value])),
+    ...Object.fromEntries(Object.values(s.measurements ?? {}).flatMap((m) => [[`data.${m.id}`, m.value], [`data.${m.id}.n`, m.n.toLocaleString('en-US')], ...(m.ci ? [[`data.${m.id}.ci`, m.ci]] : [])])),
   }
 }
 

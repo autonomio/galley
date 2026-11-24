@@ -27,15 +27,20 @@
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: var(--galley-sp-3);
+  gap: var(--galley-sp-2);
   min-height: var(--galley-size-bar);
-  padding: var(--galley-sp-2) var(--galley-sp-4);
+  padding: var(--galley-sp-1) var(--galley-sp-3) var(--galley-sp-1) var(--galley-sp-4);
   border-bottom: var(--galley-line-hair) solid var(--galley-line);
   background: var(--galley-canvas);
   transition: border-color var(--galley-dur-feedback) ease-out;
 }
-.galley-bar-left { display: inline-flex; align-items: center; gap: var(--galley-sp-1); flex-wrap: wrap; }
-.galley-bar-right { display: inline-flex; align-items: center; gap: var(--galley-sp-3); margin-left: auto; min-width: 0; }
+.galley-bar-left { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
+/* The title gives way before the actions: it has only the room left over, so a full row shortens it rather than running the actions into it. */
+.galley-bar-right { display: inline-flex; flex: 1 1 0; align-items: center; justify-content: flex-end; gap: var(--galley-sp-3); min-width: 0; }
+/* A divider between groups of controls. */
+.galley-bar-sep { flex: none; width: var(--galley-line-hair); height: var(--galley-sp-4); margin: 0 var(--galley-sp-1); background: var(--galley-line); }
+/* The host's own start and end of the row (slots bar-start, bar-end). */
+.galley-slot:is([data-slot="bar-start"], [data-slot="bar-end"]) { display: inline-flex; align-items: center; gap: 2px; flex: none; min-width: 0; }
 .galley-bar-btn {
   width: var(--galley-size-button);
   height: var(--galley-size-button);
@@ -56,7 +61,7 @@
 .galley-bar-btn[aria-pressed="true"] { color: var(--galley-text); }
 .galley-bar-btn:disabled { opacity: 0.4; cursor: default; }
 .galley-bar-btn svg { display: block; }
-.galley :is(.galley-bar-btn, .galley-picker-trigger, .galley-picker-item, .galley-note-btn, .galley-selection-btn, .galley-notice-close):focus-visible {
+.galley :is(.galley-bar-btn, .galley-picker-trigger, .galley-picker-item, .galley-note-btn, .galley-selection-btn, .galley-notice-close, .galley-card):focus-visible {
   outline: var(--galley-line-focus) solid var(--galley-accent);
   outline-offset: var(--galley-line-focus);
 }
@@ -67,6 +72,7 @@
   display: inline-flex;
   align-items: center;
   gap: calc(var(--galley-sp-unit) * 1.5);
+  min-width: 0;
   max-width: calc(var(--galley-sp-unit) * 90);
   height: calc(var(--galley-sp-unit) * 7);
   padding: 0 var(--galley-sp-2);
@@ -109,12 +115,24 @@
   color: var(--galley-text-muted);
 }
 .galley-picker-bucket:first-child { margin-top: var(--galley-sp-1); }
+/* A row: the document, its age, and after it the button that deletes it. */
+.galley-picker-row {
+  display: flex;
+  align-items: center;
+  gap: var(--galley-sp-1);
+  padding-right: var(--galley-sp-1);
+  border-radius: var(--galley-r-card);
+  transition: background var(--galley-dur-feedback) ease-out;
+}
+.galley-picker-row:hover, .galley-picker-row:focus-within { background: var(--galley-row-hover); }
+.galley-picker-row.is-active { background: var(--galley-accent-tint); }
 .galley-picker-item {
   display: flex;
+  flex: 1;
   align-items: center;
   justify-content: space-between;
   gap: var(--galley-sp-2);
-  width: 100%;
+  min-width: 0;
   padding: var(--galley-sp-2) var(--galley-sp-3);
   border: none;
   border-radius: var(--galley-r-card);
@@ -124,17 +142,84 @@
   line-height: var(--galley-lh-ui);
   text-align: left;
   cursor: pointer;
-  transition: background var(--galley-dur-feedback) ease-out;
 }
-.galley-picker-item:hover, .galley-picker-item:focus-visible { background: var(--galley-row-hover); }
-.galley-picker-item.is-active { background: var(--galley-accent-tint); }
 .galley-picker-item-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--galley-fw-strong); }
 .galley-picker-item-time { flex: 0 0 auto; font-size: var(--galley-fs-micro); color: var(--galley-text-muted); font-variant-numeric: tabular-nums; }
+.galley-picker-delete {
+  flex: none;
+  width: var(--galley-size-button);
+  height: var(--galley-size-button);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--galley-r-card);
+  background: transparent;
+  color: var(--galley-text-muted);
+  cursor: pointer;
+  transition: color var(--galley-dur-feedback) ease-out, background var(--galley-dur-feedback) ease-out;
+}
+.galley-picker-delete:hover { color: var(--galley-failed); background: var(--galley-failed-tint); }
+.galley-picker-delete svg { display: block; }
+.galley-picker-delete:focus-visible {
+  outline: var(--galley-line-focus) solid var(--galley-accent);
+  outline-offset: calc(var(--galley-line-focus) * -1);
+}
 .galley-picker-empty { padding: var(--galley-sp-3) var(--galley-sp-2); color: var(--galley-text-muted); font-size: var(--galley-fs-ui); }
 
+/* ---------- A question before a change (dialog.ts) ---------- */
+.galley-dialog {
+  width: min(calc(100vw - var(--galley-sp-6)), calc(var(--galley-sp-unit) * 112));
+  padding: var(--galley-sp-6);
+  border: var(--galley-line-hair) solid var(--galley-edge);
+  border-radius: var(--galley-r-panel);
+  background: var(--galley-surface);
+  color: var(--galley-text);
+  box-shadow: var(--galley-shadow-panel);
+  font-family: var(--galley-font-ui);
+  font-size: var(--galley-fs-ui);
+  line-height: var(--galley-lh-body);
+}
+.galley-dialog[open] { animation: galley-dialog-in var(--galley-dur-settle) var(--galley-ease-flow); }
+@keyframes galley-dialog-in { from { opacity: 0; transform: translateY(var(--galley-sp-1)) scale(0.98); } }
+.galley-dialog::backdrop { background: var(--galley-backdrop); }
+.galley-dialog-title {
+  margin: 0 0 var(--galley-sp-3);
+  font-family: var(--galley-font-display);
+  font-size: var(--galley-fs-dialog);
+  font-weight: var(--galley-fw-display);
+  line-height: var(--galley-lh-tight);
+  color: var(--galley-text-strong);
+  overflow-wrap: anywhere;
+}
+.galley-dialog-details p { margin: 0 0 var(--galley-sp-2); color: var(--galley-text-soft); }
+.galley-dialog-actions { display: flex; justify-content: flex-end; gap: var(--galley-sp-2); margin-top: var(--galley-sp-6); }
+.galley-dialog-btn {
+  height: calc(var(--galley-sp-unit) * 8);
+  padding: 0 var(--galley-sp-4);
+  border: var(--galley-line-hair) solid var(--galley-edge);
+  border-radius: var(--galley-r-card);
+  background: transparent;
+  color: var(--galley-text);
+  font: inherit;
+  font-weight: var(--galley-fw-strong);
+  cursor: pointer;
+  transition: background var(--galley-dur-feedback) ease-out, border-color var(--galley-dur-feedback) ease-out;
+}
+.galley-dialog-btn:hover { background: var(--galley-row-hover); }
+.galley-dialog-btn.is-primary { border-color: var(--galley-accent); background: var(--galley-accent); color: var(--galley-on-solid); }
+.galley-dialog-btn.is-danger { border-color: var(--galley-failed); background: var(--galley-failed); color: var(--galley-on-solid); }
+.galley-dialog-btn:is(.is-primary, .is-danger):hover { filter: brightness(1.12); }
+.galley-dialog-btn:focus-visible { outline: var(--galley-line-focus) solid var(--galley-accent); outline-offset: var(--galley-line-focus); }
+
 /* ---------- The page ---------- */
+/* The panes never scroll the window sideways: a pane sliding in from the
+   window's edge (the Activity pane does) is cut there, not added to its width. */
+.galley-body { flex: 1 1 auto; min-height: 0; display: flex; overflow-x: clip; }
 .galley-main {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -245,7 +330,9 @@
   border-bottom: var(--galley-line-focus) solid var(--galley-note-mark);
   transition: background var(--galley-dur-feedback) ease-out;
 }
-.galley-mark:hover { background: var(--galley-note-mark-hover); }
+/* Pointed at here or at its card, every rect of the passage lights; its thread open, it stays lit. */
+.galley-mark:hover, .galley-mark.is-hovered { background: var(--galley-note-mark-hover); }
+.galley-mark.is-open { background: var(--galley-highlight); }
 .galley-mark.is-orphan { border-bottom-style: dotted; border-bottom-color: var(--galley-text-muted); }
 .galley-mark.is-resolved { border-bottom-width: var(--galley-line-hair); border-bottom-style: dotted; border-bottom-color: var(--galley-edge); }
 .galley-highlight { position: absolute; pointer-events: none; border-radius: calc(var(--galley-sp-unit) * 0.75); background: var(--galley-highlight); animation: galley-fade-in var(--galley-dur-feedback) ease-out; }
@@ -421,9 +508,72 @@
 .galley-note-actions { display: flex; justify-content: flex-end; padding: 0 var(--galley-sp-3) var(--galley-sp-3); margin-top: calc(var(--galley-sp-2) * -1); }
 .galley-note.is-resolved .galley-thread { opacity: 0.75; }
 
-/* Room a host can fill: a strip under the toolbar, and a block above the text. */
+/* ---------- The comments column, beside the text (margin.ts) ---------- */
+/* Its room is kept free on the main column's right, so the page and its column are centred together. */
+.galley--margin .galley-main { padding-right: calc(var(--galley-sp-4) + var(--galley-sp-margin) + var(--galley-w-margin)); }
+.galley-margin { position: absolute; top: 0; left: 100%; width: var(--galley-w-margin); margin-left: var(--galley-sp-margin); }
+.galley-card {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--galley-sp-1);
+  padding: var(--galley-sp-2) var(--galley-sp-3);
+  border: var(--galley-line-hair) solid var(--galley-line);
+  border-radius: var(--galley-r-panel);
+  background: var(--galley-surface);
+  color: var(--galley-text-soft);
+  font-size: var(--galley-fs-row);
+  line-height: var(--galley-lh-ui);
+  text-align: left;
+  cursor: pointer;
+  animation: galley-fade-in var(--galley-dur-feedback) ease-out;
+  /* A card glides when the cards around it make way; placed for the first time it is simply there. */
+  transition: top var(--galley-dur-flow) var(--galley-ease-flow), border-color var(--galley-dur-feedback) ease-out, opacity var(--galley-dur-feedback) ease-out;
+}
+.galley-card:hover, .galley-card.is-hovered { border-color: var(--galley-attention-edge); }
+.galley-card.is-open { border-color: var(--galley-attention); box-shadow: var(--galley-shadow-menu); }
+/* Who wrote it, then its labels on the same line, wrapping under the name. */
+.galley-card-who { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; column-gap: var(--galley-sp-2); }
+.galley-card .galley-thread-face { width: calc(var(--galley-sp-unit) * 5); height: calc(var(--galley-sp-unit) * 5); }
+.galley-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--galley-sp-1); min-width: 0; min-height: calc(var(--galley-sp-unit) * 5); }
+.galley-card-head b { min-width: 0; max-width: 100%; margin-right: var(--galley-sp-1); overflow: hidden; color: var(--galley-text); font-weight: var(--galley-fw-strong); text-overflow: ellipsis; white-space: nowrap; }
+.galley-card-head .galley-note-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.galley-card-gone { color: var(--galley-text-muted); font-size: var(--galley-fs-micro); }
+.galley-card-text { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.galley-card-text code { font-family: var(--galley-font-mono); }
+.galley-card-text strong { color: var(--galley-text); font-weight: var(--galley-fw-strong); }
+.galley-card-replies { color: var(--galley-text-muted); font-size: var(--galley-fs-micro); }
+/* A settled thread keeps its place, quieter: one line, dimmed until it is pointed at or open. */
+.galley-card.is-resolved { opacity: 0.55; }
+.galley-card.is-resolved:is(:hover, :focus-visible, .is-hovered, .is-open) { opacity: 1; }
+.galley-card.is-resolved .galley-card-text { -webkit-line-clamp: 1; }
+.galley-card.is-resolved .galley-card-replies { display: none; }
+/* A note whose passage is gone stays where the passage was last seen. */
+.galley-card.is-orphan { border-style: dashed; }
+
+/* Room a host can fill: a strip under the toolbar, a block above the text, a pane beside the page and one before it. */
 .galley-slot[data-slot="header"] { flex: none; }
-.galley-slot[data-slot="header"]:empty, .galley-slot[data-slot="top"]:empty { display: none; }
+.galley-slot[data-slot="top"] { flex: none; width: 100%; max-width: var(--galley-w-page); margin: 0 auto; }
+.galley-slot[data-slot="side"] {
+  flex: none;
+  width: var(--galley-w-side);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: var(--galley-line-hair) solid var(--galley-line);
+  background: var(--galley-canvas);
+}
+.galley-slot[data-slot="start"] {
+  flex: none;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: var(--galley-line-hair) solid var(--galley-line);
+  background: var(--galley-canvas);
+}
+.galley-slot:empty { display: none; }
 
 /* ---------- Notices ---------- */
 .galley-notices {
@@ -482,7 +632,10 @@
 /* ---------- Writer mode: only the page, and the way out ---------- */
 .galley--writer .galley-bar { border-bottom-color: transparent; }
 .galley--writer .galley-bar-right,
-.galley--writer .galley-bar-btn:not(.is-kept) { display: none; }
+.galley--writer .galley-bar-sep,
+.galley--writer .galley-slot:not([data-slot="top"]),
+/* A dialog opened in writer mode (from a link) is a window of its own: its controls stay. */
+.galley--writer .galley-bar-btn:not(.is-kept):not(dialog .galley-bar-btn) { display: none; }
 
 /* ---------- Motion ---------- */
 .galley-reveal { animation: galley-reveal var(--galley-dur-settle) var(--galley-ease-spring); }
@@ -492,8 +645,62 @@
 }
 @keyframes galley-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
+/* Text arriving from elsewhere (motion.ts). New lines open their room one
+   after another as their ink comes up; a changed line eases to its new height
+   while its text settles; lines that are gone fade where they stood while the
+   line below closes their room; marks over the text travel with it. Only
+   heights, margins, opacity and translate move, and only on screen. */
+.galley-line.is-arriving {
+  overflow: hidden;
+  animation: galley-arrive var(--galley-dur-flow) var(--galley-ease-flow) both, galley-ink var(--galley-dur-ink) var(--galley-ease-flow) both;
+  animation-delay: calc(var(--galley-flow-i, 0) * var(--galley-dur-stagger));
+}
+.galley-line.is-revised { overflow: hidden; animation: galley-resize var(--galley-dur-flow) var(--galley-ease-flow), galley-settle var(--galley-dur-ink) var(--galley-ease-flow); }
+.galley-line.is-settling { animation: galley-settle var(--galley-dur-ink) var(--galley-ease-flow); }
+.galley-line.is-closing { animation: galley-close var(--galley-dur-flow) var(--galley-ease-flow); }
+.galley-layer > .is-following { animation: galley-follow calc(var(--galley-dur-flow) + var(--galley-flow-i, 0) * var(--galley-dur-stagger)) var(--galley-ease-flow); }
+.galley-ghost {
+  position: absolute;
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  color: var(--galley-text);
+  font-size: var(--galley-fs-read);
+  line-height: var(--galley-lh-read);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  animation: galley-leave var(--galley-dur-flow) var(--galley-ease-flow) both;
+}
+@keyframes galley-arrive { from { height: 0; margin-top: 0; margin-bottom: 0; } to { height: var(--galley-flow-h); } }
+@keyframes galley-ink { from { opacity: 0; translate: 0 calc(var(--galley-sp-unit) * 1.5); } }
+@keyframes galley-resize { from { height: var(--galley-flow-from); } to { height: var(--galley-flow-h); } }
+@keyframes galley-settle { from { opacity: 0.35; } }
+@keyframes galley-close { from { margin-top: var(--galley-flow-gap); } }
+@keyframes galley-follow { from { translate: 0 var(--galley-flow-dy); } }
+@keyframes galley-leave { from { height: var(--galley-flow-from); opacity: 1; } to { height: 0; opacity: 0; } }
+
+/* Narrow: the pane beside the page becomes a sheet over its lower part. */
+@media (max-width: 900px) {
+  .galley-slot[data-slot="side"] {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: var(--galley-z-menu);
+    width: auto;
+    height: min(60vh, 520px);
+    border-left: 0;
+    border-top: var(--galley-line-hair) solid var(--galley-line);
+    box-shadow: var(--galley-shadow-panel);
+  }
+}
+
 @media (max-width: 600px) {
-  .galley-bar { padding: var(--galley-sp-1) var(--galley-sp-2); gap: var(--galley-sp-2); }
+  .galley-bar { padding: var(--galley-sp-1) var(--galley-sp-2); gap: var(--galley-sp-1); }
+  /* One row still: the actions scroll sideways in their own room, the title gives way first. */
+  .galley-bar-left { flex: 1 1 auto; min-width: calc(var(--galley-size-button) * 3); overflow-x: auto; scrollbar-width: none; }
+  .galley-bar-left::-webkit-scrollbar { display: none; }
+  .galley-bar-right { flex: 0 1 auto; }
   .galley-main { padding: 0 var(--galley-sp-3); }
-  .galley-picker-trigger { max-width: 45vw; }
+  .galley-picker-trigger { max-width: 32vw; }
 }

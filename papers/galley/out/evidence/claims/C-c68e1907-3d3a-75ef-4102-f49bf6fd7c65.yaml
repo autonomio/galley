@@ -1,0 +1,6 @@
+id: "C-c68e1907-3d3a-75ef-4102-f49bf6fd7c65"
+class: "observed_fact"
+statement: "Mutation analysis assesses the adequacy of test data by introducing small syntactic faults (mutants) into a program."
+uncertainty: "medium"
+evidence_ids: ["E-752282ab-c615-65c1-137a-0f401b3aa15f","E-adef4c38-fc1a-10d5-c112-80d4232de481"]
+state: "active"

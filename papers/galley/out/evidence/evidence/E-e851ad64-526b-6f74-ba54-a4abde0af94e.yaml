@@ -1,0 +1,8 @@
+id: "E-e851ad64-526b-6f74-ba54-a4abde0af94e"
+kind: "external"
+summary: "supported: The passage states that OpenAlex is a fully-open scientific knowledge graph containing metadata for scholarly works, authors, venues, and institutions."
+source_ids: ["S-854c9cdb-d6d6-52ee-5b47-712096d87a98"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-21636ada-7395-1647-811a-5dd1709bc9e7"]

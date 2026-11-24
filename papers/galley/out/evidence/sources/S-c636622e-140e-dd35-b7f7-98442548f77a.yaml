@@ -1,8 +1,0 @@
-id: "S-c636622e-140e-dd35-b7f7-98442548f77a"
-kind: "publication"
-title: "PaperOrchestra: A Multi-Agent Framework for Automated AI Research Paper Writing"
-uri: "https://doi.org/10.48550/arxiv.2604.05018"
-date: "2026"
-locator: "abstract"
-excerpt: "We introduce PaperOrchestra, a multi-agent framework for automated AI research paper writing. It flexibly transforms unconstrained pre-writing materials into submission-ready LaTeX manuscripts, including comprehensive literature synthesis and generated visuals, such as plots and conceptual diagrams."
-access: "inspected"

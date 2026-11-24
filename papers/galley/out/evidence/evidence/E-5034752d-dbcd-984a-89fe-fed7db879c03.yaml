@@ -1,0 +1,8 @@
+id: "E-5034752d-dbcd-984a-89fe-fed7db879c03"
+kind: "assumption"
+summary: "Common knowledge or a stated premise."
+source_ids: ["S-6d036a4c-b74d-8c30-3869-37d9b610f947"]
+independent: false
+limitations: []
+premise_claim_ids: []
+claim_ids: ["C-b145f191-4f5e-e697-76d0-775d7405ad01"]

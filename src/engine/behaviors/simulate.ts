@@ -10,7 +10,7 @@ import type { SimulationRun } from '../simulations.js'
 import { briefBlock, live, seatFamily } from './common.js'
 import { aimSettled } from './front.js'
 
-const MAX_RUNS = 3
+const MAX_RUNS = 4
 
 export const simulateModel: Behavior = {
   id: 'simulate', stage: 'substance', improver: true, title: 'Simulate', attempts: 3,
@@ -31,10 +31,12 @@ export const simulateModel: Behavior = {
             behavior: 'simulate', target: round ? `repair-${round}` : 'design', seat: 'author', family: seatFamily(paper, 'author'),
             prompt: `${HOUSE}
 
-You are the author. This paper includes a Monte Carlo simulation, run on the authors' machine before the argument is planned; the plan is then made from its results. Design the simulation the argument needs: one, or up to ${MAX_RUNS} only when the argument compares separate models (a baseline and an alternative sharing a seed, say).
+You are the author. This paper includes a Monte Carlo simulation, run on the authors' machine before the argument is planned; the plan is then made from its results. Design the simulation the argument needs: one, or up to ${MAX_RUNS} when the argument compares separate models (a baseline and an alternative sharing a seed, say) or tests whether a conclusion survives a different setting of an input chosen by judgment.
 - Choose the method that fits: monte_carlo for independent uncertain inputs, correlated when inputs move together, sequential when the system evolves over time, with or without observations.
 - Every input's distribution rests on something stated: the seed, the authors' materials and measurements, or ranges published in the field. Give each input's basis in assumptions (name, basis); where the basis is the authors' judgment, say so. Do not claim precision the basis does not have.
+- Where a conclusion could turn on an input set by judgment, add a run that sets that input otherwise within its plausible range (neutral, or at its other end), with the same seed, so the paper can say whether the conclusion holds across that range or only under the setting assumed.
 - Outputs are the quantities the paper will argue from; events are the thresholds it cares about.
+- Simulate only what the model cannot settle by algebra. Where an output or event follows from the model's own formulas for every setting of the inputs (a ratio that always exceeds one, an ordering that always holds), derive it and state it as derived; sampling it adds no evidence. Use the draws for what depends on how the uncertain inputs combine.
 - Keep the model as small as the argument allows.
 - purpose: what the simulation shows for the paper, in one or two sentences.
 ${paper.config.simulation === 'load-bearing' ? '- The paper\'s main contribution rests on this simulation: design it to answer the paper\'s question decisively, with the baseline and the comparisons the argument needs, and enough draws or particles that the numbers the thesis rests on pass their precision checks.\n' : ''}

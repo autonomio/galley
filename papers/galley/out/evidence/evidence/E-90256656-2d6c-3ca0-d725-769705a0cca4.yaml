@@ -1,0 +1,8 @@
+id: "E-90256656-2d6c-3ca0-d725-769705a0cca4"
+kind: "external"
+summary: "narrower: The passage supports that an end-to-end agentic system already generates complete scientific manuscripts and peer-review-accepted workshop papers, but it does not state that the system is LLM-based and describes The AI Scientist-v2 rather than The AI Scientist (2024), code writing, or a simulated review process."
+source_ids: ["S-f46a4359-1292-8dd1-5f8c-f9beb8e04c75"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-b19fd6b8-edde-589a-d7c5-6cdb9971ced0"]

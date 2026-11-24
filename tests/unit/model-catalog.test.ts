@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { adjudicatorModel, catalogModel, modelSpec, modelForPlace, readModelCatalog, resolveRouting, saveModelCatalog } from '../../src/engine/model-catalog.js'
+import { adjudicationAssignment, adjudicatorModel, catalogModel, modelSpec, modelForPlace, readModelCatalog, resolveRouting, restrictRouting, saveModelCatalog } from '../../src/engine/model-catalog.js'
 import { refereesFor } from '../../src/engine/behaviors/review.js'
 import { Paper } from '../../src/engine/paper.js'
 import { obj, str } from '../../src/engine/schema.js'
@@ -68,4 +68,23 @@ it('refuses duplicate or unknown models and invalid role assignments', () => {
   expect(() => saveModelCatalog({ ...catalog, slots: { ...catalog.slots, primary: 'unknown' } }, path)).toThrow('model in the catalog')
   expect(() => modelSpec(catalogModel('claude', 'gpt-6.2-sol', 'high'))).toThrow('Invalid catalog model')
   expect(() => saveModelCatalog({ ...catalog, places: { ...catalog.places, author: 'independent' } }, path)).toThrow('Invalid slot for Author')
+})
+
+it('preserves the saved exact models when an existing project changes its allowed families', () => {
+  dir = mkdtempSync(join(tmpdir(), 'galley-models-'))
+  const routing = resolveRouting(readModelCatalog(join(dir, 'catalog.json')))
+  const path = join(dir, 'paper')
+  const paper = Paper.create(path, 'seed', { routing })
+  expect(paper.config.seats.author).toBe('claude')
+  expect(paper.webModel()?.model).toBe(routing.slots.secondary.selector)
+  const configPath = join(path, 'paper.json')
+  const config = JSON.parse(readFileSync(configPath, 'utf8'))
+  writeFileSync(configPath, JSON.stringify({ ...config, families: ['gpt', 'gemini'] }))
+  expect(paper.refreshFamilies()).toBe(true)
+  const selected = paper.config.routing!
+  expect(modelForPlace(selected, 'author').identity).toBe(routing.slots.secondary.identity)
+  expect(modelForPlace(selected, 'checker').identity).toBe(routing.slots.tertiary.identity)
+  expect(paper.webModel()?.model).toBe(routing.slots.secondary.selector)
+  expect(adjudicationAssignment(selected, modelForPlace(selected, 'checker'))).toBeUndefined()
+  expect(Paper.open(path).config.routing?.places).toEqual(restrictRouting(routing, ['gpt', 'gemini']).places)
 })

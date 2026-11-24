@@ -3,6 +3,7 @@
 // passage it changes; Accept applies it as one undoable, saved edit, Decline
 // closes it. Decisions go back to the paper's next run.
 import { icons, type Editor, type EditorAction, type EditProposal } from '../src/index.js'
+import type { Router } from './route.js'
 
 interface Proposal extends EditProposal {
   id: string
@@ -60,34 +61,50 @@ function row(editor: Editor, slug: string, proposal: Proposal, onDone: () => voi
   return card
 }
 
-export function proposalsAction(): EditorAction {
+/** `link` puts the panel in the address bar (view=proposals), so a link can open it. */
+export function proposalsAction(link?: Router): EditorAction {
   let panel: HTMLElement | null = null
-  const close = () => { panel?.remove(); panel = null }
+  const close = () => {
+    if (!panel) return
+    panel.remove()
+    panel = null
+    link?.shown('proposals', false)
+  }
+  link?.view('proposals', { set: (on, editor) => { if (on) void open(editor); else close() } })
+
+  async function open(editor: Editor): Promise<void> {
+    const slug = editor.slug
+    if (!slug || panel) return
+    panel = document.createElement('div')
+    panel.className = 'demo-proposals'
+    document.body.append(panel)
+    const render = async () => {
+      if (!panel) return
+      // A failed read still draws the panel, Close and all, or it would stay open with no way to shut it.
+      const all = await load(slug).catch(() => null)
+      const pending = (all ?? []).filter((p) => p.state === 'pending')
+      if (!panel) return
+      panel.replaceChildren()
+      const head = document.createElement('div')
+      head.className = 'demo-proposals-head'
+      head.textContent = !all ? 'The proposed changes could not be read' : pending.length ? `${pending.length} proposed change${pending.length === 1 ? '' : 's'}` : 'No proposed changes'
+      const x = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Close', className: 'demo-link' })
+      x.addEventListener('click', close)
+      head.append(x)
+      panel.append(head, ...pending.map((p) => row(editor, slug, p, render)))
+    }
+    link?.shown('proposals', true)
+    await render()
+  }
+
   return {
     id: 'proposals',
     label: 'Proposed changes',
     description: 'Changes the agents propose for this paper, each with its reason and its before and after. Accept applies one; Decline closes it.',
-    icon: icons.check,
+    icon: icons.pencil,
     async run(editor) {
-      if (panel) { close(); return }
-      const slug = editor.slug
-      if (!slug) return
-      panel = document.createElement('div')
-      panel.className = 'demo-proposals'
-      document.body.append(panel)
-      const render = async () => {
-        if (!panel) return
-        const pending = (await load(slug)).filter((p) => p.state === 'pending')
-        panel.replaceChildren()
-        const head = document.createElement('div')
-        head.className = 'demo-proposals-head'
-        head.textContent = pending.length ? `${pending.length} proposed change${pending.length === 1 ? '' : 's'}` : 'No proposed changes'
-        const x = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Close', className: 'demo-link' })
-        x.addEventListener('click', close)
-        head.append(x)
-        panel.append(head, ...pending.map((p) => row(editor, slug, p, render)))
-      }
-      await render()
+      if (panel) close()
+      else await open(editor)
     },
   }
 }

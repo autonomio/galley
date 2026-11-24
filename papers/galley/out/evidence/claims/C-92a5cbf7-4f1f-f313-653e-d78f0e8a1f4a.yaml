@@ -1,6 +1,6 @@
 id: "C-92a5cbf7-4f1f-f313-653e-d78f0e8a1f4a"
 class: "observed_fact"
-statement: "A metascience study suggests that papers with exceptional impact differ from other papers by featuring atypical combinations of prior work set inside an otherwise conventional body of references."
+statement: "Citation outcomes have been linked to the authors' position in coauthorship networks, a factor outside a paper's content."
 uncertainty: "medium"
-evidence_ids: ["E-151287a1-e189-8e14-f364-c71daae8b02f"]
+evidence_ids: ["E-f7f66644-c723-5acc-6942-1abd1a53ef33","E-348cb907-17ce-21d7-7002-b70b662d90f8"]
 state: "active"

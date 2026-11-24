@@ -1,6 +1,6 @@
 id: "C-99e53b18-6200-7826-b072-8e7cfca69d1e"
 class: "derived_inference"
-statement: "Before anything is written, galley challenges the seed. One behaviour scores it on seven impact factors and names the weakest. Another proposes three structurally different directions that keep the seed's explicit commitments. A family other than the proposer then picks the original idea or one of the directions. After review, the finished paper is scored again. These scores are heuristic self-assessments, not predictions of impact."
+statement: "Before writing the manuscript, Galley screens the seed against the authors' seven-factor impact heuristic, names the weakest factor and gives a verdict. On a reformulate verdict, it proposes three structurally different directions that keep the seed's explicit commitments. A family other than the proposer chooses the original idea or one of the three directions. Galley then addresses gaps through evidence search and can optionally analyze the authors' data or run a simulation on their machine."
 uncertainty: "medium"
 evidence_ids: ["E-cf844fdb-61d7-7ed0-ab76-600fe5749d46"]
 state: "active"

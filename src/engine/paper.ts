@@ -3,9 +3,9 @@
 import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { applyFamilies, defaultConfig, familiesOn, lightSpecFor, specFor, type PaperConfig } from './config.js'
 import { isSoftwareRole, SOFTWARE_ROLE_HINT, SOFTWARE_SUBJECT_HINT, softwareSubject, type SoftwareRole } from '../core/software-subject.js'
-import { defaultConfig, lightSpecFor, specFor, type PaperConfig } from './config.js'
-import { adjudicatorModel, modelForPlace, modelSpec, readModelCatalog, resolveRouting, specIdentity, validateRouting, type Place } from './model-catalog.js'
+import { adjudicatorModel, modelForPlace, modelSpec, readModelCatalog, resolveRouting, restrictRouting, specIdentity, SLOTS, type CatalogModel, type Place } from './model-catalog.js'
 import { callModel, ModelFailure, RateLimited, resetHintMs, type CallResult } from './models.js'
 import type { Schema } from './schema.js'
 import type { Family, Note, PaperState, Seat } from './types.js'
@@ -48,8 +48,13 @@ export interface AskOptions {
   prompt: string
   schema: Schema
   referee?: string
+  assignedModel?: CatalogModel
   /** Legacy papers settle single referee findings on their lighter settings. */
   light?: boolean
+  /** Image files to look at, such as typeset pages: GPT reads them; the prompt carries their text for the other families. */
+  images?: string[]
+  /** Let the model search the web; only GPT's calls can. */
+  web?: boolean
 }
 
 /** A model call or search in flight, for heartbeats and `galley status`. */
@@ -122,7 +127,7 @@ export class Paper {
     if (softwareRole !== undefined && (!subject || !isSoftwareRole(softwareRole))) throw new Error(SOFTWARE_ROLE_HINT)
     const legacy = config.seats || config.models || config.lightModels || config.referees
     const routing = overrides.routing ?? config.routing ?? (legacy ? undefined : resolveRouting(readModelCatalog()))
-    if (routing) validateRouting(routing)
+    if (routing) restrictRouting(routing, config.families)
     mkdirSync(dir, { recursive: true })
     if (!hasConfig || (!config.routing && routing) || overrides.routing) writeJsonAtomic(configPath, { ...config, routing })
     const slug = dir.split('/').filter(Boolean).pop()!
@@ -155,6 +160,17 @@ export class Paper {
 
   static open(dir: string): Paper {
     const state = JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8')) as PaperState
+    // An earlier engine marked a finding "noted" when its referee still disagreed. No finding is dropped now, so in a
+    // paper that is still being worked on such a finding is open again, for escalation, adjudication or a stated
+    // limitation to settle. A finding a person set aside stays theirs.
+    if (!state.outcome || state.outcome === 'ready_for_submission' || state.outcome === 'finished_with_open_defects') {
+      for (const f of state.findings ?? []) if (f.status === 'noted' && f.assignee !== 'humans') f.status = 'open'
+    }
+    // An earlier engine sent a figure back to be drawn again under its first drawing's step, which was settled, so it
+    // was never drawn and the paper could not be typeset again. Such a figure is now a redraw of its own.
+    for (const fig of state.figures ?? []) {
+      if (fig.status === 'planned' && fig.revise && !fig.redraws && `figure:${fig.id}` in (state.settled ?? {})) fig.redraws = 1
+    }
     return new Paper(dir, state, Paper.readConfig(dir))
   }
 
@@ -162,16 +178,38 @@ export class Paper {
     const path = join(dir, 'paper.json')
     const overrides: Partial<PaperConfig> = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}
     const base = defaultConfig()
+    // The seats follow the families the paper may use.
     const config = { ...base, ...overrides, seats: { ...base.seats, ...overrides.seats } }
     if (config.routing) {
+      config.routing = restrictRouting(config.routing, config.families)
       const routing = config.routing
-      validateRouting(routing)
       for (const seat of Object.keys(config.seats) as (keyof PaperConfig['seats'])[]) {
         config.seats[seat] = modelSpec(modelForPlace(routing, seat)).family
       }
-      config.referees = base.referees.map((ref) => ({ ...ref, family: modelSpec(modelForPlace(routing, ref.seat as Place)).family }))
+      config.referees = config.referees.map((r) => ({ ...r, family: modelSpec(modelForPlace(routing, r.seat as Place)).family }))
+    } else {
+      Object.assign(config, applyFamilies(config))
     }
+    // A paper that rests only on its world model searches nothing else: no systematic review, no sources from the web.
+    if (config.worldModel && config.worldModel.only !== false) { config.literatureReview = false; config.webSources = false }
     return config
+  }
+
+  /**
+   * A change of model families in paper.json (from the project's settings) takes effect at the next step of a running
+   * paper: the seats are dealt again for the families now on. Returns whether anything changed.
+   */
+  refreshFamilies(): boolean {
+    const path = this.path('paper.json')
+    if (!existsSync(path)) return false
+    let families: Family[] | undefined
+    try { families = JSON.parse(readFileSync(path, 'utf8')).families } catch { return false }
+    if (JSON.stringify(familiesOn({ families })) === JSON.stringify(familiesOn(this.config))) return false
+    const fresh = Paper.readConfig(this.dir)
+    this.config = { ...this.config, families: fresh.families, seats: fresh.seats, referees: fresh.referees, routing: fresh.routing }
+    this.journal({ event: 'families', families: familiesOn(this.config), seats: this.config.seats })
+    this.say(`Models now: ${familiesOn(this.config).join(', ')}; ${Object.entries(this.config.seats).map(([seat, f]) => `${seat} ${f}`).join(', ')}`)
+    return true
   }
 
   path(...parts: string[]): string {
@@ -202,8 +240,23 @@ export class Paper {
     this.save()
   }
 
-  modelFor(options: Pick<AskOptions, 'seat' | 'family' | 'light' | 'referee'>): ReturnType<typeof specFor> {
+  webModel(): ReturnType<typeof specFor> | undefined {
     const { routing } = this.config
+    if (!routing) return familiesOn(this.config).includes('gpt') ? specFor(this.config, 'gpt') : undefined
+    const checker = modelForPlace(routing, 'checker')
+    if (checker.provider === 'codex') return modelSpec(checker)
+    const slot = (routing.enabled ?? SLOTS).find((key) => routing.slots[key].provider === 'codex')
+    return slot ? modelSpec(routing.slots[slot]) : undefined
+  }
+
+  modelFor(options: Pick<AskOptions, 'seat' | 'family' | 'light' | 'referee' | 'assignedModel' | 'web'>): ReturnType<typeof specFor> {
+    const { routing } = this.config
+    if (options.web) {
+      const spec = this.webModel()
+      if (!spec) throw new ModelFailure('Web search needs a configured GPT model.')
+      return spec
+    }
+    if (options.assignedModel) return modelSpec(options.assignedModel)
     if (!routing) return options.light ? lightSpecFor(this.config, options.family) : specFor(this.config, options.family)
     const place = (options.referee ?? options.seat.replace(/^referee:/, '')) as Place
     if (options.seat === 'adjudicator') {
@@ -224,7 +277,7 @@ export class Paper {
       let result: CallResult
       const done = this.begin({ behavior: options.behavior, target: options.target, what: `${specIdentity(spec)} (${options.seat})`, family })
       try {
-        result = await callModel({ spec, prompt: options.prompt, schema: options.schema, cacheDir: this.path('calls', 'cache') })
+        result = await callModel({ spec, prompt: options.prompt, schema: options.schema, images: options.images, web: options.web, cacheDir: this.path('calls', 'cache') })
       } catch (error) {
         done()
         release(family)
@@ -249,6 +302,7 @@ export class Paper {
       writeJsonAtomic(this.path('calls', file), {
         behavior: options.behavior, target: options.target, seat: options.seat, spec,
         prompt: options.prompt, output: result.data, usage: result.usage, ms: result.ms, cached: result.cached,
+        ...(result.delivery ? { delivery: result.delivery } : {}),
       })
       this.journal({
         event: 'call', behavior: options.behavior, target: options.target, seat: options.seat, family,

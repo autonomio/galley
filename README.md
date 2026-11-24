@@ -18,7 +18,7 @@ node dist/engine/cli.js write my-seed.md --author "Your Name"
 
 The paper opens in this editor the moment it starts and grows there while it is written: a strip shows who is working on it and what each is doing, every referee finding is a thread under its passage, and your edits, notes and replies are taken in within seconds. A paper can also rest on your own datasets and documents (private datasets never leave your machine), include a systematic literature review that Canary carries out for it (`--literature-review yes`), and rest on a Monte Carlo simulation galley runs on your machine (`--simulation yes`). See [Papers](docs/PAPERS.md) for the ladder, the seats, the outputs and the editor loop.
 
-The first paper galley wrote introduces galley itself, from a seed of the author's own words with nothing added: `papers/galley/` (*Scope-Elastic Manuscript Compilation Narrows or Hedges Unsupported Claims Instead of Blocking Drafts*; `out/paper.pdf`, its sign-off sheet, evidence package and production journal). One untouched run took it from seed to manuscript in 2.8 hours: 121 model calls, 81 referee findings settled over two rounds, 11 citations verified against verbatim passages and 11 rejected, and 6 of 6 planted defects caught by the verifier.
+The first paper galley wrote introduces galley itself, from a seed of the author's own words with nothing added: `papers/galley/` (*Cross-Family Separation of Duties and In-Run Calibration in a Semi-Autonomous Scholarly Editor*; `out/paper.pdf`, its sign-off sheet, evidence package and production journal). One untouched run took it from seed to manuscript in 3.5 hours: 148 model calls, 87 referee findings settled over two rounds, 23 citations verified against verbatim passages and 13 rejected, and 6 of 6 planted defects caught by the verifier, with both unaltered controls accepted.
 
 ## Run it locally
 
@@ -32,9 +32,7 @@ npm run dev
 
 Open http://localhost:5174. Documents are kept as markdown files in `.galley-data/`; set `GALLEY_DIR` to use another folder. Add `?store=local` to the URL to keep documents in the browser instead, with no server involved.
 
-The Docker image serves the built editor and file API. Mount a volume at
-`/data` for documents and notes. Run paper generation on the developer host
-with the native model sessions and typesetter described in [Papers](docs/PAPERS.md).
+The address bar always says what is on screen, so any of it can be passed on as a link: `?doc=<name>` is the document, and `view=` what is open with it (`activity`, `writer`, `paper`, `files`, `choices`, `proposals`, joined by `+`); `comments=off` opens it with the comments hidden. Back and Forward walk the documents you opened. A paper's files have links of their own: `/papers/<doc>/paper.pdf` is its PDF, `/papers/<doc>/evidence.zip` one of its folders, `/papers/<doc>.zip` all of them, and `/papers/<doc>/` opens the list. Only what the paper made (its `out/` folder) is ever served.
 
 ## Adopt it in an app
 
@@ -93,7 +91,7 @@ Files are written atomically (temp file, fsync, rename). The default lock serial
 ```ts
 createEditor(el, {
   store,
-  toolbar: ['writer', 'new', 'import', 'copy', publishAction, 'delete'],
+  toolbar: ['writer', '|', 'new', 'import', 'copy', publishAction, '|', 'delete'],
   selectionActions: ['comment', createIssueAction],
   plugins: [reviewsPlugin],
   notify: (notice) => myToasts.show(notice),
@@ -101,11 +99,12 @@ createEditor(el, {
 })
 ```
 
-- **Toolbar actions**: `{ id, label, icon, run(editor, button) }`, optionally `pressed`, `disabled`, `shortcut`, `danger`. The built-ins are the same shape, named by id.
+- **Toolbar actions**: `{ id, label, icon, run(editor, button) }`, optionally `pressed`, `disabled`, `shortcut`, `danger`. The built-ins are the same shape, named by id; `'|'` draws a divider between groups. `icons` is the editor's own set (16×16, one stroke), and `iconButton({ label, description, icon, onClick })` makes a control that looks and behaves like a toolbar button, tip included, for anything a host puts in a slot or in a dialog of its own inside the editor. `confirmOn(button, icons.check)` shows a check on a button for a moment, as confirmation.
 - **Selection actions**: `{ id, label, icon, run(passage, editor) }`. The `passage` carries its source text, its range and its on-screen rect.
-- **Plugins**: `(editor) => cleanup`. They use `editor.on('open' | 'change' | 'status' | 'documents' | 'layout' | 'annotations' | 'writer-mode' | 'notice', …)`, draw in `editor.layer(name)` with `editor.rects(start, end)`, and redraw on `layout`. `editor.slot('header')` is a strip under the toolbar and `editor.slot('top')` a block above the text, for the host's own content.
+- **Plugins**: `(editor) => cleanup`. They use `editor.on('open' | 'change' | 'status' | 'documents' | 'layout' | 'annotations' | 'annotations-visible' | 'writer-mode' | 'notice', …)`, draw in `editor.layer(name)` with `editor.rects(start, end)`, and redraw on `layout`. Slots are room for the host's own content: `editor.slot('bar-start')` and `editor.slot('bar-end')` open and close the toolbar's row (a host's name, its own controls), so the top of the page stays one row; `'header'` is a strip under it, `'top'` a block above the text, `'side'` a pane beside the page, and `'start'` a pane before it, as wide as what it holds (the demo keeps every paper there). All but `'top'` hide in writer mode.
 - **Threads**: a note can carry an `author`, `replies`, `labels` and `resolved`; its panel then shows the conversation and takes replies. `options.me` names the writer in threads.
-- **Other writers**: `editor.receive(slug, content, version)` and `editor.annotations.receive(notes, version)` bring a change made elsewhere (an agent, another tab) into the open document, merged with the writer's own work and without moving the caret. A save refused because someone else wrote first merges the same way (`src/core/merge.ts`).
+- **The comments column**: every note is also a card in a column right of the text, level with its passage, cards stacked so none overlap (`src/editor/margin.ts`). Pressing a card opens its thread; pointing at a card or a passage lights the other. Where the window is too narrow for it, the column steps aside and the marks open the panel as before. `editor.annotations.setVisible(false)` hides every comment (marks, cards and panel) and `visible()` says which; the built-in `'comments'` toolbar action is the writer's switch for it.
+- **Other writers**: `editor.receive(slug, content, version)` and `editor.annotations.receive(notes, version)` bring a change made elsewhere (an agent, another tab) into the open document, merged with the writer's own work and without moving the caret. Only the lines that differ change (`surface.patchText`): the rest keep their elements, the line at the top of the screen stays where it is, and what changed on screen eases into place (`src/editor/motion.ts`, timed by the `--galley-dur-flow` tokens; still with `--galley-ctl-motion: 0` or reduced motion). A save refused because someone else wrote first merges the same way (`src/core/merge.ts`).
 - **Suggested edits** (for agents): `editor.edits.highlight(edit)`, `editor.edits.accept(edit, slug)`. An edit is bound to the document it was proposed for, applied with a conflict check, and withdrawn if it cannot be saved.
 - **The surface alone**: `createSurface(element, { onChange })` is the writing surface with no documents, storage or chrome.
 
@@ -124,9 +123,9 @@ Galley's CSS reads only `--galley-*` custom properties (`src/styles/tokens.css`)
 ```
 src/
   markdown/   the grammar (shared with any read-only renderer) and titles
-  core/       pure logic: write rules, save queue, history, anchoring, edits, tables
+  core/       pure logic: write rules, save queue, history, anchoring, edits, tables, line diffs and merges
   surface/    the contenteditable writing surface: rendering, caret, undo, gestures
-  editor/     createEditor: session (persistence), notes, marks, toolbar, picker
+  editor/     createEditor: session (persistence), notes, marks, the comments column, toolbar, picker, motion
   stores/     DocumentStore and its HTTP, memory and local implementations
   server/     file store, HTTP handler, Vite plugin (Node only)
   engine/     papers: behaviors, the scheduler, model transports, evidence, rendering (Node only)

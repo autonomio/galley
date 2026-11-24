@@ -1,0 +1,8 @@
+id: "E-adef4c38-fc1a-10d5-c112-80d4232de481"
+kind: "external"
+summary: "narrower: The passage states that mutation testing evaluates test set adequacy by creating program versions with few syntactic deviations called mutants, but it does not mention measuring the proportion of mutants that tests distinguish from the original program."
+source_ids: ["S-bcb19c8c-dc08-61e7-59bc-647f4544a049"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-c68e1907-3d3a-75ef-4102-f49bf6fd7c65"]
