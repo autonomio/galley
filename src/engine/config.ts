@@ -67,6 +67,8 @@ export interface PaperConfig {
   declarations?: { availability?: string; competing_interests?: string; funding?: string }
   /** The authors' own datasets, documents and links, copied into the paper's materials folder when it starts. */
   materials?: Material[]
+  /** The GitHub commit URL of the software this paper studies. */
+  softwareCommit?: string
   /** Include a systematic review of the literature, run by Canary: as its own section, or (load-bearing) as the paper's main contribution. */
   literatureReview?: boolean | 'load-bearing'
   /** Include a Monte Carlo simulation the author designs and galley runs on this machine: in support, or (load-bearing) as what the main contribution rests on. */

@@ -3,6 +3,7 @@
 import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { SOFTWARE_SUBJECT_HINT, softwareSubject } from '../core/software-subject.js'
 import { defaultConfig, lightSpecFor, specFor, type PaperConfig } from './config.js'
 import { adjudicatorModel, modelForPlace, modelSpec, readModelCatalog, resolveRouting, specIdentity, validateRouting, type Place } from './model-catalog.js'
 import { callModel, ModelFailure, RateLimited, resetHintMs, type CallResult } from './models.js'
@@ -106,6 +107,9 @@ export class Paper {
     const configPath = join(dir, 'paper.json')
     const hasConfig = existsSync(configPath)
     const config = hasConfig ? JSON.parse(readFileSync(configPath, 'utf8')) as Partial<PaperConfig> : overrides
+    const commitLink = overrides.softwareCommit ?? config.softwareCommit
+    const subject = commitLink ? softwareSubject(commitLink) : null
+    if (commitLink && !subject) throw new Error(SOFTWARE_SUBJECT_HINT)
     const legacy = config.seats || config.models || config.lightModels || config.referees
     const routing = overrides.routing ?? config.routing ?? (legacy ? undefined : resolveRouting(readModelCatalog()))
     if (routing) validateRouting(routing)
@@ -118,6 +122,7 @@ export class Paper {
       slug,
       createdAt: new Date().toISOString(),
       seed: { text: seed, sha256: sha256(seed) },
+      ...(subject ? { softwareSubject: subject } : {}),
       claims: [],
       positioning: {},
       directions: [],

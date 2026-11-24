@@ -2,6 +2,7 @@
 // The button opens the paper wizard (seed, materials, settings, start); on a
 // seed that already has a paper, it shows where that paper stands.
 import { icons, type Editor, type EditorAction } from '../src/index.js'
+import { softwareSubjectFromSeed } from '../src/core/software-subject.js'
 import { openPaperStatus, openPaperWizard } from './wizard.js'
 
 // The engine writes the paper's document within a moment of starting; open it once it exists.
@@ -29,7 +30,7 @@ export function writePaperAction(): EditorAction {
         return
       }
       const text = editor.text().trim()
-      if (text.split(/\s+/).length < 40) {
+      if (text.split(/\s+/).length < 40 && !softwareSubjectFromSeed(text)) {
         editor.notify({ source: 'paper', level: 'attention', message: 'Write a little more first: a paragraph or two of what you want to say.' })
         return
       }

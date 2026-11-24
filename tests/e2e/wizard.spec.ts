@@ -111,3 +111,58 @@ test('a seed that already has a paper shows where the paper stands, and opens th
   await status.getByRole('button', { name: 'Open the manuscript' }).click()
   await page.waitForFunction((s) => window.galley.slug === s, `${slug}-paper`)
 })
+
+test('a commit under study is previewed and sent separately from reference links', async ({ page }) => {
+  const slug = `software-${Date.now()}`
+  const sha = '0123456789abcdef'.repeat(2) + '01234567'
+  const commit = `https://github.com/example/solver/commit/${sha}`
+  writeFileSync(join(process.env.GALLEY_E2E_DIR!, `${slug}.md`), `# Solver\n\nIntroduce the software at ${commit}.\n`)
+  const gpt = { family: 'gpt', name: 'GPT', model: 'gpt-primary' }
+  const gemini = { family: 'gemini', name: 'Gemini', model: 'gemini-secondary' }
+  let posted: Record<string, unknown> | undefined
+  await page.route('**/api/galley-papers/_context', (route) => route.fulfill({ json: {
+    modelRevision: 'gpt-gemini',
+    providers: ['OpenAI', 'Google'],
+    seats: { author: gpt, checker: gemini, challenger: gemini, verifier: gemini },
+    referees: ['methods', 'field', 'citations', 'editor'],
+    refereeModels: ['gemini-secondary', 'gpt-tertiary', 'gemini-secondary', 'gpt-tertiary'],
+    adjudicator: 'gpt-tertiary',
+    defaults: { venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto' },
+  } }))
+  await page.route(`**/api/galley-papers/${slug}`, (route) => {
+    if (route.request().method() !== 'POST') return route.fulfill({ status: 404 })
+    posted = route.request().postDataJSON()
+    return route.fulfill({ status: 202, json: {} })
+  })
+  await page.goto('/')
+  await page.waitForFunction(() => !!window.galley?.slug)
+  await page.evaluate((s) => window.galley.open(s), slug)
+  await page.waitForFunction((s) => window.galley.slug === s, slug)
+  await page.locator('[data-action="write-paper"]').click()
+  const wizard = page.locator('dialog.gw')
+  await wizard.getByRole('button', { name: 'Next: Materials' }).click()
+  const software = wizard.getByLabel('Software under study')
+  await expect(software).toHaveValue(commit)
+  await software.fill('https://github.com/example/solver')
+  await wizard.getByRole('button', { name: 'Next: Settings' }).click()
+  await expect(software).toBeVisible()
+  await expect(software).toBeFocused()
+  await software.fill(commit)
+  await wizard.getByLabel('Link', { exact: true }).fill('https://github.com/example/reference')
+  await wizard.getByRole('button', { name: 'Add link' }).click()
+  await wizard.getByRole('button', { name: 'Next: Settings' }).click()
+  await expect(wizard.getByRole('checkbox', { name: /Systematic literature review/ })).toBeChecked()
+  await wizard.getByRole('button', { name: 'Next: Start' }).click()
+  await expect(wizard.locator('.gw-plan')).toContainText(`example/solver · ${sha.slice(0, 12)}`)
+  await expect(wizard.locator('.gw-plan')).toContainText('Inspect, build, validate, benchmark, and profile')
+  await expect(wizard.locator('.gw-plan')).toContainText('gpt-primary')
+  await expect(wizard.locator('.gw-plan')).not.toContainText('Claude')
+  await wizard.getByRole('button', { name: 'Start the paper' }).click()
+  await expect(wizard.getByRole('heading', { name: 'Writing the paper' })).toBeVisible()
+  expect(posted).toMatchObject({
+    softwareCommit: commit,
+    modelRevision: 'gpt-gemini',
+    materials: [{ name: 'https://github.com/example/reference', url: 'https://github.com/example/reference' }],
+    settings: { literatureReview: true, reviewRole: 'supporting' },
+  })
+})

@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import type { Paper } from './paper.js'
 import { simulationPlaceholders } from './simulations.js'
+import { softwareNumbers } from './software.js'
 import type { Family } from './types.js'
 
 export interface Record_ {
@@ -53,6 +54,7 @@ export function productionRecord(paper: Paper): Record_ {
     ...Object.fromEntries(Object.entries(s.literature?.counts ?? {}).map(([key, value]) => [`lit.${key}`, value])),
     // Every simulated number, at the precision its Monte Carlo error supports.
     ...simulationPlaceholders(paper),
+    ...softwareNumbers(s.softwareEvaluation),
     // Numbers from the authors' data, as galley computed them.
     ...Object.fromEntries(Object.values(s.measurements ?? {}).map((m) => [`data.${m.id}`, m.value])),
   }

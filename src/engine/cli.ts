@@ -18,6 +18,7 @@ import { basename, resolve } from 'node:path'
 import { LADDER } from './behaviors/index.js'
 import { answerChoice } from './behaviors/truth.js'
 import { defaultConfig, FAMILY_NAMES } from './config.js'
+import { SOFTWARE_SUBJECT_HINT, softwareSubject } from '../core/software-subject.js'
 import { budgetLine, canaryPython, canarySearch, openalexBudget, openalexKeyed, SEARCH_CREDITS } from './evidence.js'
 import { catalogRevision, modelForPlace, modelSpec, providerNames, readModelCatalog, resolveRouting, SLOTS, type ModelRouting, type Place } from './model-catalog.js'
 import { codexBin, resetHintMs, testModel } from './models.js'
@@ -66,6 +67,7 @@ function slugFromSeed(seed: string, file: string): string {
 
 /** What each behavior is doing, in words a person reads in the status view. */
 const DOING: Record<string, string> = {
+  'software-evaluation': 'Evaluating software',
   extract: 'Reading the seed', position: 'Searching the literature for prior art', 'review-idea': 'Reviewing the idea on seven factors', 'literature-review': 'Systematic review of the literature (Canary)', simulate: 'Designing and running the simulation',
   reformulate: 'Writing three directions', 'select-direction': 'Choosing a direction', analyze: 'Measuring your data', plan: 'Planning the argument',
   outline: 'Outlining', 'find-evidence': 'Finding evidence', verify: 'Verifying citations', reassess: 'Reassessing the thesis', calibrate: 'Calibrating the verifier',
@@ -84,6 +86,7 @@ function statusData(paper: Paper): Record<string, unknown> {
   const evidenceDone = !!s.outline && !s.citations.some((c) => c.status === 'selected') && !active.some((c) => c.need === 'external' && c.status === 'open')
   const stages: [string, string, boolean][] = [
     ['seed', 'Seed', !!s.brief],
+    ...(s.softwareSubject ? [['software', 'Software evaluation', paper.isSettled('software-evaluation:commit') || paper.config.off.includes('software-evaluation')] as [string, string, boolean]] : []),
     ['aim', 'Aim', !!s.plan || !!s.selectedDirection || s.ideaReview?.verdict === 'worth_writing'],
     ...(datasets ? [['data', 'Data', !!s.measurements] as [string, string, boolean]] : []),
     ...(paper.config.simulation ? [['simulation', 'Simulation', !!s.simulations] as [string, string, boolean]] : []),
@@ -122,6 +125,7 @@ function statusData(paper: Paper): Record<string, unknown> {
     slug: s.slug,
     title: paper.config.title || s.frame?.title || s.plan?.workingTitle || null,
     seedTitle: firstLine.slice(0, 120),
+    ...(s.softwareSubject ? { softwareCommit: s.softwareSubject.url } : {}),
     outcome: s.outcome ?? null,
     running,
     startedAt: s.createdAt,
@@ -234,6 +238,9 @@ async function main(): Promise<void> {
       const seed = readFileSync(seedFile, 'utf8')
       const dir = resolve(command === 'write' ? (b ?? `papers/${slugFromSeed(seed, seedFile)}`) : a)
       const author = flag('author')
+      const commitLink = flag('software-commit')
+      const subject = commitLink ? softwareSubject(commitLink) : null
+      if (commitLink && !subject) throw new Error(SOFTWARE_SUBJECT_HINT)
       // The authors' own materials: datasets stay private unless named shared.
       const sources = [...flags('material').map((source) => ({ source })), ...flags('shared-material').map((source) => ({ source, shared: true }))]
       const materials = sources.length ? await addMaterials(dir, sources) : []
@@ -242,6 +249,7 @@ async function main(): Promise<void> {
       Paper.create(dir, seed, {
         ...(routing ? { routing } : {}),
         ...(materials.length ? { materials } : {}),
+        ...(subject ? { softwareCommit: subject.url, literatureReview: !flag('literature-review') } : {}),
         ...(flag('rounds') ? { rounds: Math.max(1, Number(flag('rounds'))) } : {}),
         ...(author ? { authors: [{ name: author, ...(flag('affiliation') ? { affiliation: flag('affiliation') } : {}) }] } : {}),
         ...(flag('venue') ? { venue: flag('venue')! } : {}),
