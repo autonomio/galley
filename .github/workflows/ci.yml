@@ -15,6 +15,20 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Install manuscript typesetters
+        run: |
+          mkdir -p "$RUNNER_TEMP/galley-typesetters"
+          cd "$RUNNER_TEMP/galley-typesetters"
+          curl --fail --silent --show-error --location --retry 3 -o pandoc.tar.gz https://github.com/jgm/pandoc/releases/download/3.14/pandoc-3.14-linux-amd64.tar.gz
+          curl --fail --silent --show-error --location --retry 3 -o typst.tar.xz https://github.com/typst/typst/releases/download/v0.15.1/typst-x86_64-unknown-linux-musl.tar.xz
+          sha256sum --check <<'CHECKSUMS'
+          c5f4720cdefb3f7bdc5d07202ef579feef0d1370773c873804dd8fdaa8c4f1b8  pandoc.tar.gz
+          a6d077d0a95eed5a2eba715b2dae06be954f624ccbf85758a03f389ded33118c  typst.tar.xz
+          CHECKSUMS
+          tar -xzf pandoc.tar.gz
+          tar -xJf typst.tar.xz
+          echo "$PWD/pandoc-3.14/bin" >> "$GITHUB_PATH"
+          echo "$PWD/typst-x86_64-unknown-linux-musl" >> "$GITHUB_PATH"
       - run: npm run check
       - run: npm run build:demo
       - run: npx playwright install --with-deps chromium
