@@ -189,7 +189,9 @@ function executionBoundary(workspace: string) {
   if (platform() === 'darwin' && existsSync('/usr/bin/sandbox-exec')) {
     const work = `(subpath ${JSON.stringify(workspace)})`
     const toolchains = installed.length ? ` (subpath ${JSON.stringify(rust)})` : ''
-    const policy = `(version 1)(allow default)(deny network*)(deny file-read-data (subpath "/Users") (subpath "/Volumes") (subpath "/private/tmp") (subpath "/private/var/folders") (subpath "/Library/Keychains"))(allow file-read-data ${work}${toolchains})(deny file-write*)(allow file-write* ${work} (literal "/dev/null"))`
+    // Galley owns cancellation. A workload cannot signal the collector or
+    // other processes running under the same user account.
+    const policy = `(version 1)(allow default)(deny network*)(deny signal)(allow signal (target self))(deny file-read-data (subpath "/Users") (subpath "/Volumes") (subpath "/private/tmp") (subpath "/private/var/folders") (subpath "/Library/Keychains"))(allow file-read-data ${work}${toolchains})(deny file-write*)(allow file-write* ${work} (literal "/dev/null"))`
     return { prefix: ['/usr/bin/sandbox-exec', '-p', policy], env }
   }
   if (platform() === 'linux' && existsSync('/usr/bin/bwrap')) {

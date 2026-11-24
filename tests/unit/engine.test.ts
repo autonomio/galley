@@ -94,7 +94,7 @@ describe('software evidence', () => {
       const evaluation = emptySoftwareEvaluation(subject)
       evaluation.protocol = {
         paths: [], setup: [],
-        validation: [{ directory: '.', argv: ['/bin/sh', '-c', 'test -z "$GALLEY_TEST_SECRET" && ! test -r "$1"', 'test', import.meta.filename] }],
+        validation: [{ directory: '.', argv: ['/bin/sh', '-c', 'test -z "$GALLEY_TEST_SECRET" && ! test -r "$1" && ! kill -0 "$2"', 'test', import.meta.filename, String(process.pid)] }],
         workloads: [{ title: 'Synthetic workload', conditions: 'One process prints OK after sleeping.', command: { directory: '.', argv: ['/bin/sh', '-c', 'sleep 0.12 && printf OK'] } }],
       }
       vi.stubEnv('GALLEY_TEST_SECRET', 'fixture-value')
