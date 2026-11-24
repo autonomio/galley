@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
-import { SOFTWARE_SUBJECT_HINT, softwareSubject } from './src/core/software-subject.js'
+import { isSoftwareRole, SOFTWARE_ROLE_HINT, SOFTWARE_SUBJECT_HINT, softwareSubject } from './src/core/software-subject.js'
 import { catalogRevision, modelCatalogPath, readModelCatalog, resolveRouting } from './src/engine/model-catalog.js'
 import { modelSettingsHandler } from './src/server/model-settings.js'
 import { liveView } from './src/engine/live.js'
@@ -163,9 +163,10 @@ function papersPlugin(): Plugin {
         req.on('end', () => {
           let input
           try { input = JSON.parse(body) } catch { res.statusCode = 400; res.end('Invalid paper request.'); return }
-          const { text, settings = {}, materials = [], citations, modelRevision, softwareCommit } = input ?? {}
+          const { text, settings = {}, materials = [], citations, modelRevision, softwareCommit, softwareRole } = input ?? {}
           const subject = typeof softwareCommit === 'string' ? softwareSubject(softwareCommit) : null
           if (softwareCommit !== undefined && !subject) { res.statusCode = 400; res.end(SOFTWARE_SUBJECT_HINT); return }
+          if (softwareRole !== undefined && (!subject || !isSoftwareRole(softwareRole))) { res.statusCode = 400; res.end(SOFTWARE_ROLE_HINT); return }
           let routing: ReturnType<typeof resolveRouting>
           try {
             const catalog = readModelCatalog(modelCatalogPath(dir))
@@ -183,6 +184,7 @@ function papersPlugin(): Plugin {
           const s = settings as Record<string, unknown>
           const args: string[] = []
           if (subject) args.push('--software-commit', subject.url)
+          if (isSoftwareRole(softwareRole)) args.push('--software-role', softwareRole)
           const add = (name: string, value: unknown, ok: (v: string) => boolean) => { const v = String(value ?? '').trim(); if (v && ok(v)) args.push(`--${name}`, v) }
           add('author', s.author, (v) => v.length <= 200)
           add('affiliation', s.affiliation, (v) => v.length <= 300)

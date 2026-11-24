@@ -112,7 +112,8 @@ test('a seed that already has a paper shows where the paper stands, and opens th
   await page.waitForFunction((s) => window.galley.slug === s, `${slug}-paper`)
 })
 
-test('a commit under study is previewed and sent separately from reference links', async ({ page }) => {
+for (const role of ['introduction', 'instrument'] as const) test(`a linked commit is used for the selected ${role} role`, async ({ page }) => {
+  const label = role === 'introduction' ? 'Introduce our software' : 'Use as an instrument'
   const slug = `software-${Date.now()}`
   const sha = '0123456789abcdef'.repeat(2) + '01234567'
   const commit = `https://github.com/example/solver/commit/${sha}`
@@ -141,8 +142,13 @@ test('a commit under study is previewed and sent separately from reference links
   await page.locator('[data-action="write-paper"]').click()
   const wizard = page.locator('dialog.gw')
   await wizard.getByRole('button', { name: 'Next: Materials' }).click()
-  const software = wizard.getByLabel('Software under study')
+  const software = wizard.getByLabel('Software', { exact: true })
+  await expect(software).toHaveValue('')
+  await expect(wizard.getByRole('radiogroup', { name: 'Role in the paper' })).toBeHidden()
+  await wizard.getByRole('button', { name: 'Use commit from seed' }).click()
   await expect(software).toHaveValue(commit)
+  await wizard.getByRole('button', { name: 'Next: Settings' }).click()
+  await expect(wizard.getByRole('alert')).toContainText('Choose how this paper will use the software.')
   await software.fill('https://github.com/example/solver')
   await wizard.getByRole('button', { name: 'Next: Settings' }).click()
   await expect(software).toBeVisible()
@@ -150,19 +156,26 @@ test('a commit under study is previewed and sent separately from reference links
   await software.fill(commit)
   await wizard.getByLabel('Link', { exact: true }).fill('https://github.com/example/reference')
   await wizard.getByRole('button', { name: 'Add link' }).click()
+  await wizard.getByRole('radio', { name: new RegExp(label) }).check()
   await wizard.getByRole('button', { name: 'Next: Settings' }).click()
-  await expect(wizard.getByRole('checkbox', { name: /Systematic literature review/ })).toBeChecked()
+  const review = wizard.getByRole('checkbox', { name: /Systematic literature review/ })
+  if (role === 'introduction') {
+    await expect(review).toBeChecked()
+    await expect(wizard.getByRole('radio', { name: 'Main contribution' })).toHaveCount(0)
+  } else await expect(review).not.toBeChecked()
   await wizard.getByRole('button', { name: 'Next: Start' }).click()
   await expect(wizard.locator('.gw-plan')).toContainText(`example/solver · ${sha.slice(0, 12)}`)
-  await expect(wizard.locator('.gw-plan')).toContainText('Inspect, build, validate, benchmark, and profile')
+  await expect(wizard.locator('.gw-plan')).toContainText(role === 'introduction' ? 'Inspect, build, validate, benchmark, and profile' : 'Run the software for the study.')
+  await expect(wizard.locator('.gw-plan')).toContainText(label)
   await expect(wizard.locator('.gw-plan')).toContainText('gpt-primary')
   await expect(wizard.locator('.gw-plan')).not.toContainText('Claude')
   await wizard.getByRole('button', { name: 'Start the paper' }).click()
   await expect(wizard.getByRole('heading', { name: 'Writing the paper' })).toBeVisible()
   expect(posted).toMatchObject({
     softwareCommit: commit,
+    softwareRole: role,
     modelRevision: 'gpt-gemini',
     materials: [{ name: 'https://github.com/example/reference', url: 'https://github.com/example/reference' }],
-    settings: { literatureReview: true, reviewRole: 'supporting' },
+    settings: { literatureReview: role === 'introduction', reviewRole: 'supporting' },
   })
 })

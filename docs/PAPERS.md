@@ -33,13 +33,18 @@ node dist/engine/cli.js run papers/my-seed
 
 `write` and `new` take `--author`, `--affiliation`, `--venue`, `--words`, `--rounds 1|2`, `--citations auto|choose|mixed`, `--dial autonomous|assisted|propose`, `--literature-review yes|load-bearing` (a systematic review of the literature, below), `--simulation yes|load-bearing` (a Monte Carlo simulation, below), `--editor <dir>` (where the manuscript's editor document goes), and `--material <file or link>` and `--shared-material <dataset>` for your own materials (below), each as often as needed. Everything else is in the paper's `paper.json` (below).
 
-## Write about open-source software
+## Use or introduce software
 
-In **What the paper draws on**, enter the full GitHub commit link under **Software under study**. When the seed contains one commit link, the wizard fills it in for review. In the CLI use `--software-commit <url>`. The paper and any resumed run use that exact revision. The normal model assignments apply, and the supporting Canary review defaults to on.
+In **What the paper draws on**, enter the full GitHub commit link under **Software**, or select **Use commit from seed**. Choose how the paper uses that revision:
 
-The software evaluation starts from the commit tree and verified source excerpts. Galley prepares the build, validation, and representative workloads from those materials, checks out the needed paths, and runs the commands on the machine hosting Galley. Execution uses installed tools, no network, and an isolated writable workspace. It uses the macOS sandbox or Linux Bubblewrap where available. Each benchmark uses one warm-up and five measured runs, with a separate sampling pass for a process-level runtime profile. The benchmark measures the isolated command, including startup. Available results support the paper, and gaps go to the working notes.
+- **Use as an instrument.** The paper is about the research question in the seed. Galley attempts the corresponding task with the software and records its command and result. Attach study inputs as shared materials to make them available to the instrument. A completed task can supply evidence for the study.
+- **Introduce our software.** The paper introduces software the authors built. The software and what it enables are the contribution. Canary’s literature review defaults to on, as support for the introduction. Any simulation also serves the software contribution.
 
-The manuscript identifies the commit and draws its benchmark numbers from the run. `out/evidence/software-evaluation.json` holds the eight-dimension evaluation, source excerpts, commands, host details, runs, and profile samples.
+In the CLI use `--software-commit <url> --software-role instrument|introduction`. A commit link on its own uses the introduction role for existing CLI callers. A resumed run keeps its revision, role, and model assignments.
+
+Both roles start from the commit tree and verified source excerpts. Galley checks out the necessary paths and runs the commands on the host in an isolated workspace with installed tools and no network. The introduction applies the eight-dimension rubric. Each benchmark uses one warm-up and five measured runs, with a separate profiling pass. An instrument executes a study task and records its output. Available results support the paper, and gaps go to the working notes.
+
+The manuscript identifies the commit it introduces or used. The evidence package records the role of the software, source excerpts, commands, host details, and the available findings and results in `out/evidence/software-evaluation.json`.
 
 ## What comes out
 

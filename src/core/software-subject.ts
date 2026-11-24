@@ -5,6 +5,14 @@ export interface SoftwareSubject {
   url: string
 }
 
+export type SoftwareRole = 'instrument' | 'introduction'
+
+export function isSoftwareRole(value: unknown): value is SoftwareRole {
+  return value === 'instrument' || value === 'introduction'
+}
+
+export const SOFTWARE_ROLE_HINT = 'Choose how this paper will use the software.'
+
 export function softwareSubject(link: string): SoftwareSubject | null {
   const match = /^https:\/\/github\.com\/([a-z0-9][a-z0-9-]*)\/([a-z0-9_.-]+)\/commit\/([a-f0-9]{40})\/?$/i.exec(link.trim())
   if (!match || match[2] === '.' || match[2] === '..') return null

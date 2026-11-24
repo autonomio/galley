@@ -2,7 +2,7 @@
 // paper draws on, the settings that change the outcome, and an exact account of
 // what happens and what leaves this machine. Nothing starts until Start.
 import type { EditorAction } from '../src/index.js'
-import { SOFTWARE_SUBJECT_HINT, softwareSubject, softwareSubjectFromSeed } from '../src/core/software-subject.js'
+import { SOFTWARE_ROLE_HINT, SOFTWARE_SUBJECT_HINT, softwareSubject, softwareSubjectFromSeed, type SoftwareRole } from '../src/core/software-subject.js'
 
 interface Seat { family: string; name: string; model: string }
 interface Context {
@@ -20,6 +20,10 @@ interface Item { name: string; kind: 'dataset' | 'document' | 'link'; url?: stri
 
 const STEPS = ['Seed', 'Materials', 'Settings', 'Start'] as const
 const DATASET = /\.(csv|tsv|json)$/i
+const SOFTWARE_ROLES: [SoftwareRole, string, string][] = [
+  ['instrument', 'Use as an instrument', 'Run it for the study described in the seed. Supply input files as shared materials.'],
+  ['introduction', 'Introduce our software', 'Publish a paper about software the authors built.'],
+]
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...children: (Node | string | null | false | undefined)[]): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag)
@@ -68,7 +72,9 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   const words = text.split(/\s+/).filter(Boolean).length
   const paragraphs = text.split(/\n\s*\n/).filter((p) => p.trim()).length
   const items: Item[] = []
-  let softwareLink = softwareSubjectFromSeed(text)?.url ?? ''
+  const seedCommit = softwareSubjectFromSeed(text)
+  let softwareLink = ''
+  let softwareRole: SoftwareRole | undefined
   let reviewChosen = false
   let step = 0
   let context: Context | null = null
@@ -102,9 +108,15 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   function go(to: number): void {
     if (to > step && STEPS[step] === 'Materials') {
       const input = body.querySelector<HTMLInputElement>('#gw-software')!
-      input.setCustomValidity(softwareLink.trim() && !softwareSubject(softwareLink) ? SOFTWARE_SUBJECT_HINT : '')
+      const subject = softwareSubject(softwareLink)
+      input.setCustomValidity(softwareLink.trim() && !subject ? SOFTWARE_SUBJECT_HINT : '')
       if (!input.reportValidity()) return
-      if (!reviewChosen) settings.literatureReview = !!context?.defaults.literatureReview || !!softwareSubject(softwareLink)
+      if (subject && !softwareRole) {
+        body.querySelector<HTMLElement>('#gw-software-role-error')!.hidden = false
+        body.querySelector<HTMLInputElement>('[name=gw-software-role]')?.focus()
+        return
+      }
+      if (!reviewChosen) settings.literatureReview = !!context?.defaults.literatureReview || !!subject && softwareRole === 'introduction'
     }
     step = Math.max(0, Math.min(STEPS.length - 1, to))
     render()
@@ -157,10 +169,29 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       id: 'gw-software', type: 'url', class: 'gw-input', value: softwareLink,
       placeholder: 'https://github.com/owner/repo/commit/…', 'aria-describedby': 'gw-software-help',
     })
-    software.addEventListener('input', () => {
+    const roleError = h('div', { id: 'gw-software-role-error', hidden: true }, h('p', { class: 'gw-error', role: 'alert', text: SOFTWARE_ROLE_HINT }))
+    const roleChoices = h('div', { hidden: !softwareLink.trim(), role: 'radiogroup', 'aria-label': 'Role in the paper', 'aria-describedby': 'gw-software-help' },
+      h('div', { class: 'gw-choices' }, ...SOFTWARE_ROLES.map(([role, label, help]) => {
+        const input = h('input', { type: 'radio', name: 'gw-software-role', value: role, checked: softwareRole === role })
+        input.addEventListener('change', () => { softwareRole = role; roleError.hidden = true })
+        return h('label', { class: 'gw-choice' }, input, h('span', {}, h('span', { class: 'gw-choice-label', text: label }), h('span', { class: 'gw-help', text: help })))
+      })), roleError)
+    const useSeed = seedCommit ? h('button', { type: 'button', class: 'gw-btn', text: 'Use commit from seed', onclick: () => {
+      software.value = seedCommit.url
+      updateSoftwareLink()
+      roleChoices.querySelector('input')?.focus()
+    } }) : null
+    function updateSoftwareLink(): void {
       softwareLink = software.value
       software.setCustomValidity('')
-    })
+      roleChoices.hidden = !softwareLink.trim()
+      if (roleChoices.hidden) {
+        softwareRole = undefined
+        roleError.hidden = true
+        for (const radio of roleChoices.querySelectorAll('input')) radio.checked = false
+      }
+    }
+    software.addEventListener('input', updateSoftwareLink)
     const list = items.length
       ? h('ul', { class: 'gw-list' }, ...items.map((item, i) => h('li', { class: 'gw-row' },
         h('span', { class: `gw-kind gw-kind--${item.kind}`, 'aria-hidden': 'true' }),
@@ -177,8 +208,9 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       drop,
       h('div', { class: 'gw-linkrow' }, url, h('button', { type: 'button', class: 'gw-btn', text: 'Add link', onclick: addLink })),
       list,
-      h('div', { class: 'gw-field' }, h('label', { class: 'gw-label', for: 'gw-software', text: 'Software under study' }), software,
-        h('p', { id: 'gw-software-help', class: 'gw-help', text: 'For a paper about software, enter its GitHub commit link. Galley evaluates that version when the paper starts.' })),
+      h('div', { class: 'gw-field' }, h('label', { class: 'gw-label', for: 'gw-software', text: 'Software' }),
+        h('div', { class: 'gw-linkrow' }, software, useSeed),
+        h('p', { id: 'gw-software-help', class: 'gw-help', text: 'Enter an exact GitHub commit link and choose the software’s role in the paper.' }), roleChoices),
       privateSets ? h('p', { class: 'gw-note' }, h('strong', { text: 'Private datasets stay on this machine. ' }), 'The models see only a summary of each column and the results galley computes here, and every number the paper states about your data comes from those results.') : null,
       sharedSets ? h('p', { class: 'gw-note', text: 'Shared datasets: the models also read their first 15 rows.' }) : null,
       read ? h('p', { class: 'gw-note', text: 'Documents and links are read by the models that write and review the paper.' }) : null,
@@ -242,6 +274,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
     })
     const option = h('label', { class: 'gw-choice' }, box, h('span', {}, h('span', { class: 'gw-choice-label', text: label }), h('span', { class: 'gw-help', text: help })))
     if (!settings[key]) return option
+    if (softwareRole === 'introduction') return h('div', { class: 'gw-option' }, option, h('p', { class: 'gw-help gw-role', text: supporting }))
     return h('div', { class: 'gw-option' }, option, h('div', { class: 'gw-role' },
       segmented([['Supporting', 'supporting'], ['Main contribution', 'load-bearing']], settings[role], (v) => { settings[role] = v; render() }, `${label}: its part in the paper`),
       h('p', { class: 'gw-help', text: settings[role] === 'load-bearing' ? central : supporting })))
@@ -258,21 +291,29 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   // ---------------------------------------------------------------- 4. start
   function startStep(): (Node | null)[] {
     const subject = softwareSubject(softwareLink)
+    const reviewRole = softwareRole === 'introduction' ? 'supporting' : settings.reviewRole
+    const simulationRole = softwareRole === 'introduction' ? 'supporting' : settings.simulationRole
     const s = context?.seats
     const m = (seat: keyof Context['seats']) => s?.[seat]?.model ?? seat
     const datasets = items.filter((i) => i.kind === 'dataset')
     const searches = context?.openalexKey ? 'two' : 'one'
     const reviewModels = context?.review ? `${context.review.research} research · ${context.review.audit} audit` : 'Canary research and audit'
+    const softwareStep: [string, string, string, null][] = subject ? [[
+      softwareRole === 'instrument' ? 'Use as an instrument' : 'Introduce our software',
+      `${subject.name} · ${subject.commit.slice(0, 12)}. ${softwareRole === 'instrument' ? 'Run the software for the study.' : 'Inspect, build, validate, benchmark, and profile this commit.'}`,
+      'Galley host', null,
+    ]] : []
     // A step that runs alongside the others shows its own time but adds little to the whole.
     const plan: [string, string, string, number | null, boolean?][] = [
       ['Read your seed', 'claims, concern, contribution and host field', m('author'), 1],
       ...(items.length ? [['Read your materials', datasets.length ? 'profile datasets here; read documents and links' : 'read documents and links', 'this machine', 1] as [string, string, string, number]] : []),
-      ...(subject ? [['Evaluate software', `${subject.name} · ${subject.commit.slice(0, 12)}. Inspect, build, validate, benchmark, and profile this commit.`, 'Galley host', null] as [string, string, string, null]] : []),
+      ...(softwareRole === 'introduction' ? softwareStep : []),
       ['Place the idea', '7 literature searches through Canary: closest work, bottleneck, consensus', m('checker'), 3],
       ['Challenge the idea', 'seven impact factors; three directions; one chosen', `${m('challenger')} · ${m('checker')}`, 10],
-      ...(settings.literatureReview ? [['Systematic review', `Canary plans the search, screens candidates and targets ${context?.review?.papers ?? 50} full papers. A separate session audits the findings without a fixed time limit. ${settings.reviewRole === 'load-bearing' ? 'The paper rests on the review, so the plan waits for it.' : 'The review runs alongside the steps below.'}`, reviewModels, 40, settings.reviewRole !== 'load-bearing'] as [string, string, string, number, boolean]] : []),
+      ...(softwareRole === 'instrument' ? softwareStep : []),
+      ...(settings.literatureReview ? [['Systematic review', `Canary plans the search, screens candidates and targets ${context?.review?.papers ?? 50} full papers. A separate session audits the findings without a fixed time limit. ${reviewRole === 'load-bearing' ? 'The paper rests on the review, so the plan waits for it.' : 'The review runs alongside the steps below.'}`, reviewModels, 40, reviewRole !== 'load-bearing'] as [string, string, string, number, boolean]] : []),
       ...(datasets.length ? [['Measure your data', 'the analyses the claims need, computed on this machine', `${m('author')} · this machine`, 3] as [string, string, string, number]] : []),
-      ...(settings.simulation ? [['Simulate', `the author writes the Monte Carlo model and the basis of every input; galley runs it on this machine${settings.simulationRole === 'load-bearing' ? '; the paper\'s main contribution rests on it' : ''}`, `${m('author')} · this machine`, 5] as [string, string, string, number]] : []),
+      ...(settings.simulation ? [['Simulate', `the author writes the Monte Carlo model and the basis of every input; galley runs it on this machine${simulationRole === 'load-bearing' ? '; the paper\'s main contribution rests on it' : ''}`, `${m('author')} · this machine`, 5] as [string, string, string, number]] : []),
       ['Plan and outline', 'thesis, claims, sections, figures', m('author'), 8],
       ['Find and verify evidence', `${searches} search${searches === 'one' ? '' : 'es'} per claim; verbatim passages; verifier verdict; planted-defect calibration`, `${m('checker')} · ${m('verifier')}`, 20],
       ['Draft', 'every section, checked against its claims', `${m('author')} · ${m('checker')}`, 25],
@@ -317,7 +358,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       const response = await fetch(`/api/galley-papers/${encodeURIComponent(slug)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, settings, materials, modelRevision: context.modelRevision, softwareCommit: softwareSubject(softwareLink)?.url }),
+        body: JSON.stringify({ text, settings: softwareRole === 'introduction' ? { ...settings, reviewRole: 'supporting', simulationRole: 'supporting' } : settings, materials, modelRevision: context.modelRevision, softwareCommit: softwareSubject(softwareLink)?.url, softwareRole }),
       })
       if (response.status === 409 && (await response.clone().text()).startsWith('Model settings changed.')) {
         context = await readContext()
@@ -351,6 +392,7 @@ interface StatusData {
   title: string | null
   seedTitle: string
   softwareCommit?: string
+  softwareRole?: SoftwareRole
   outcome: string | null
   running: boolean
   startedAt: string
@@ -404,7 +446,7 @@ export function openPaperStatus(slug: string, open?: (manuscript: string) => voi
       h('h2', { id: 'gw-title', class: 'gw-title', text: d.title ?? d.seedTitle ?? 'Untitled paper' }),
       state,
       h('p', { class: 'gw-note', text: `Started ${clock(d.startedAt)}${d.title ? ` · from “${d.seedTitle.length > 70 ? `${d.seedTitle.slice(0, 70)}…` : d.seedTitle}”` : ''}` }),
-      subject ? h('p', { class: 'gw-note' }, 'Software under study · ', h('a', { href: subject.url, target: '_blank', rel: 'noopener', title: subject.commit, text: `${subject.name} · ${subject.commit.slice(0, 12)}` })) : null,
+      subject ? h('p', { class: 'gw-note' }, `${SOFTWARE_ROLES.find(([role]) => role === (d.softwareRole ?? 'introduction'))?.[1] ?? 'Software'} · `, h('a', { href: subject.url, target: '_blank', rel: 'noopener', title: subject.commit, text: `${subject.name} · ${subject.commit.slice(0, 12)}` })) : null,
       h('ol', { class: d.stages.length > 7 ? 'gw-stages gw-stages--dense' : 'gw-stages' }, ...d.stages.map((s, i) => h('li', { class: s.done ? 'is-done' : i === current && !done ? 'is-current' : '' },
         h('span', { class: 'gw-num', text: s.done ? '✓' : String(i + 1) }), h('span', { class: 'gw-stage', text: s.label })))),
       d.running && d.now.length

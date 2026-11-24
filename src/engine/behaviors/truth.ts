@@ -6,6 +6,7 @@ import type { Paper } from '../paper.js'
 import { HOUSE } from '../prompts.js'
 import type { Behavior, Target } from '../scheduler.js'
 import { arr, enm, nstr, obj, str } from '../schema.js'
+import { softwarePaperPurpose } from '../software.js'
 import { isVerbatim, overlap } from '../text.js'
 import type { Candidate, Citation, Claim } from '../types.js'
 import { activeClaims, claim, keyFor, live, seatFamily, setClaim } from './common.js'
@@ -267,7 +268,7 @@ export const reassess: Behavior = {
           behavior: 'reassess', target: ids, seat: 'challenger', family: seatFamily(paper, 'challenger'),
           prompt: `${HOUSE}
 
-Load-bearing claims of this paper found no verified evidence. Decide what that means for the thesis.
+Load-bearing claims of this paper found no verified evidence. Decide what that means for the thesis.${paper.softwareRole ? `\n${softwarePaperPurpose(paper.softwareRole)}` : ''}
 - stands: the thesis holds without them as stated, because they can be stated as hypotheses, scoped, or argued from the paper's own material.
 - narrowed: the thesis holds in a narrower form; give the narrowed thesis.
 - fails: no honest version of the thesis survives.

@@ -2,6 +2,7 @@
 // overrides any of these; nothing else does.
 import { LEGACY_MODELS, LEGACY_LIGHT_MODELS, modelSpec, type ModelRouting } from './model-catalog.js'
 import type { Material } from './materials.js'
+import type { SoftwareRole } from '../core/software-subject.js'
 import type { ModelSpec } from './models.js'
 import type { Family, Seat } from './types.js'
 
@@ -69,6 +70,7 @@ export interface PaperConfig {
   materials?: Material[]
   /** The GitHub commit URL of the software this paper studies. */
   softwareCommit?: string
+  softwareRole?: SoftwareRole
   /** Include a systematic review of the literature, run by Canary: as its own section, or (load-bearing) as the paper's main contribution. */
   literatureReview?: boolean | 'load-bearing'
   /** Include a Monte Carlo simulation the author designs and galley runs on this machine: in support, or (load-bearing) as what the main contribution rests on. */

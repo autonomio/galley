@@ -21,8 +21,9 @@ import { DOES, systemBlock } from '../../src/engine/self.js'
 import { cleanCsl, openalexKey, searchWait } from '../../src/engine/evidence.js'
 import type { Citation, Finding } from '../../src/engine/types.js'
 import { calibrationItems } from '../../src/engine/behaviors/close.js'
+import { briefBlock, manuscriptBlock } from '../../src/engine/behaviors/common.js'
 import { analyze, parseTable, profileDataset, profileText, type AnalysisSpec } from '../../src/engine/materials.js'
-import { checkoutSoftware, emptySoftwareEvaluation, executeSoftware, readSoftware, softwareNumbers } from '../../src/engine/software.js'
+import { checkoutSoftware, emptySoftwareEvaluation, executeSoftware, readSoftware, softwareEvidenceIds, softwareNumbers } from '../../src/engine/software.js'
 
 describe('software evidence', () => {
   const sha = 'a1b2c3d4'.repeat(5)
@@ -68,6 +69,23 @@ describe('software evidence', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
+  it('keeps the selected purpose and supporting roles across resume', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'galley-software-roles-'))
+    try {
+      const intro = Paper.create(join(dir, 'intro'), 'Introduce the solver.', { softwareCommit: url, softwareRole: 'introduction', literatureReview: 'load-bearing', simulation: 'load-bearing' })
+      const instrument = Paper.create(join(dir, 'instrument'), 'Use the solver to study convergence.', { softwareCommit: url, softwareRole: 'instrument', literatureReview: 'load-bearing' })
+      const resumed = Paper.open(intro.dir)
+      expect(resumed.softwareRole).toBe('introduction')
+      expect(resumed.config).toMatchObject({ literatureReview: true, simulation: true })
+      expect(briefBlock(resumed)).toContain('software and what it enables are the contribution')
+      expect(manuscriptBlock(resumed)).toContain('authors’ publication introducing the open-source software they built')
+      expect(Paper.open(instrument.dir).softwareRole).toBe('instrument')
+      expect(instrument.config.literatureReview).toBe('load-bearing')
+      expect(briefBlock(instrument)).toContain('linked software is a research instrument')
+      expect(manuscriptBlock(instrument)).toContain('study addresses the research question in the seed')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it('checks out only requested paths at the selected revision', async () => {
     const workspace = mkdtempSync(join(tmpdir(), 'galley-fixture-'))
     const git = (...args: string[]) => execFileSync('git', args, { cwd: workspace, encoding: 'utf8' }).trim()
@@ -110,6 +128,23 @@ describe('software evidence', () => {
       rmSync(workspace, { recursive: true, force: true })
     }
   }, 15_000)
+
+  it.runIf(process.platform === 'darwin')('runs the study instrument once and records its generated result', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'galley-instrument-test-'))
+    try {
+      const evaluation = emptySoftwareEvaluation(subject, 'instrument')
+      writeFileSync(join(workspace, 'input.txt'), 'a\nb\nc\n')
+      evaluation.protocol = {
+        paths: [], setup: [], validation: [],
+        workloads: [{ title: 'Count observations', conditions: 'Three input lines.', command: { directory: '.', argv: ['/bin/sh', '-c', 'wc -l < input.txt > result.txt'] }, resultFile: 'result.txt' }],
+      }
+      await executeSoftware(evaluation, workspace, workspace)
+      expect(evaluation.instrument).toMatchObject({ run: { status: 'completed' }, result: { excerpt: expect.stringMatching(/^\s*3\s*$/) } })
+      expect(evaluation.benchmarks).toEqual([])
+      expect(evaluation.gaps).toEqual([])
+      expect(softwareEvidenceIds(evaluation)).toEqual(['I1'])
+    } finally { rmSync(workspace, { recursive: true, force: true }) }
+  })
 })
 
 describe('text rules', () => {
