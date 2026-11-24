@@ -6,7 +6,7 @@ Markdown is drawn as you type and every marker stays in the text, so what is sav
 
 ## Write a paper
 
-Galley also writes papers. Give it a seed (a rant, notes, a transcribed talk) and atomic behaviors turn it into a pre-publication manuscript: Claude Opus 5.5, GPT-6.2 Sol and Gemini 4 Carbon take different seats, every citation is verified against a verbatim passage by a family that did not propose it, referees from the other families review the draft until their findings are resolved, and the result is typeset as a PDF with LaTeX, Word, a sign-off sheet and an evidence package.
+Galley also writes papers. Give it a seed (a rant, notes, a transcribed talk) and atomic behaviors turn it into a pre-publication manuscript: models assigned in **Settings → Models** take different seats, citations are checked against verbatim passages, and referees review the draft until their findings are resolved, and the result is typeset as a PDF with LaTeX, Word, a sign-off sheet and an evidence package.
 
 ```bash
 npm install && npm run build

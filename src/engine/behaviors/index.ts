@@ -28,7 +28,7 @@ export const LADDER: Behavior[] = [
   // Truth: every external claim gets a verified passage, or is hedged.
   findEvidence, verify, reassess, calibrate,
   draft, figure, fidelity, frame,
-  // Referees: other families review; the author answers; a third family settles.
+  // Referees review; the author answers; the adjudicator settles disputes.
   referee, closeRound, respond, verifyDisposition, adjudicate,
   // Close: the ledger is made to say what the reviewed text says, then the paper is profiled and typeset.
   reconcile, reprofile, typeset, ready,

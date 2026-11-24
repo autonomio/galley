@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FAMILY_NAMES, specFor } from './config.js'
+import { modelForPlace, placeKeys } from './model-catalog.js'
 import type { Paper } from './paper.js'
 import type { Family } from './types.js'
 
@@ -33,8 +34,8 @@ export const DOES: Record<string, string> = {
   'close-round': 'ends a referee round once every seat has reported',
   respond: 'the author answers each material finding: fixed with exact edits, rebutted, stated as a limitation, or needs evidence (a new claim that goes through search and verification before the author answers again)',
   'verify-disposition': 'the referee who raised a finding judges the answer to it',
-  adjudicate: 'a third family settles a finding still disputed after the attempt cap',
-  reconcile: "once review is done, a family other than the author's reads the final text against every claim in the ledger: each is confirmed, narrowed to the text's wording, or dropped as no longer stated, so the ledger, the evidence package and the sign-off sheet say what the manuscript says",
+  adjudicate: 'the adjudicator settles a finding still disputed after the attempt cap',
+  reconcile: "once review is done, the checker reads the final text against every claim in the ledger: each is confirmed, narrowed to the text's wording, or dropped as no longer stated, so the ledger, the evidence package and the sign-off sheet say what the manuscript says",
   reprofile: 'scores the finished paper against the seven impact factors',
   typeset: 'whenever the text changes, renders the PDF, a line-numbered review PDF, LaTeX, Word, the editor document, the evidence package and the sign-off sheet',
   ready: 'marks the paper ready for submission once every gate holds on one revision',
@@ -44,8 +45,8 @@ const RULES = [
   'The skeleton (the required behaviors) makes a paper exist; every other behavior is an improver that makes it better without being able to stop it.',
   'Behaviors are atomic: each reads the paper\'s state, does one thing and writes its result. The scheduler scans the ladder from the top, runs whatever is ready, and scans again from the top after anything settles; no behavior knows what comes next.',
   'Each model family runs through its own command-line client with no tools and no delegation, answering in a strict JSON schema. Every prompt and answer is stored in the paper\'s folder, and a rerun replays them without calling a model.',
-  'No family reviews its own work. A citation rests on a passage that code confirms is copied verbatim from the cited work\'s abstract; the checker proposes it and the verifier, another family, judges it. A cited work with a DOI takes its bibliographic record from the DOI registry.',
-  'Every manuscript ends with its claim ledger (every claim, its kind, its standing, whether the seed or the system made it, and its sources) and a statement of how it was produced with a production record generated from the run\'s journal. The run also writes a sign-off sheet of what only the authors can decide (declarations, claims the system added, claims stated as hypotheses, decisions a third family made, skipped steps), an evidence package of claims, evidence and sources in the Resolvent format, and the production journal itself.',
+  'A citation rests on a passage that code confirms is copied verbatim from the cited work’s abstract; the checker proposes it and the verifier judges it. A cited work with a DOI takes its bibliographic record from the DOI registry.',
+  'Every manuscript ends with its claim ledger (every claim, its kind, its standing, whether the seed or the system made it, and its sources) and a statement of how it was produced with a production record generated from the run\'s journal. The run also writes a sign-off sheet of what only the authors can decide (declarations, claims the system added, claims stated as hypotheses, adjudication decisions, skipped steps), an evidence package of claims, evidence and sources in the Resolvent format, and the production journal itself.',
   'A person can be in the loop at any point without being required: the paper is written into the editor from its first step and kept in step while it runs; edits made there become the person\'s revision once they pause typing, and a section they write before the author reaches it is theirs; a comment, or a reply in any thread, becomes work that the agents take over by default, the person keeps (@humans) or both share (@both, as proposed changes they accept or decline); with citation choices on, each claim waits for the person to pick among its candidate sources (a, b, c), let the system pick, or state it without a source; the dial makes load-bearing citations and critical answers, or every answer, wait for the person.',
 ]
 
@@ -86,13 +87,17 @@ export function systemBlock(paper: Paper): string {
   if (!ladder.length || !paper.state.brief?.aboutSystem) return ''
   const c = paper.config
   const who = (family: Family) => `${FAMILY_NAMES[family]} (${specFor(c, family).model})`
+  const routing = c.routing
+  const assignments = routing
+    ? placeKeys.map((place) => `${place}: ${routing.places[place] === 'independent' ? 'an independent third model from the three slots' : modelForPlace(routing, place).identity}`).join('; ')
+    : `author ${who(c.seats.author)}; checker ${who(c.seats.checker)}; challenger ${who(c.seats.challenger)}; verifier ${who(c.seats.verifier)}; referees rotate between the families other than the author’s; adjudicator is the third family`
   const pkg = packageInfo()
   const repo = repositoryUrl(pkg)
   const dial = { autonomous: 'autonomous (no step waits for a person)', assisted: 'assisted (load-bearing citations and answers to critical findings wait for a person)', propose: 'propose (every answer to a referee waits for a person to accept it)' }[c.dial]
   return [
     'THE SYSTEM THIS MANUSCRIPT IS ABOUT, WHICH IS ALSO PRODUCING IT. Generated from galley\'s own ladder, seats and package metadata for this run, so it is accurate; it is not part of the seed. What the manuscript says about how galley works rests on this, stated as the authors\' own work; the seed says what the paper is and argues. The numbers of this run are in the production record (the run.* placeholders) and in a generated section of the manuscript.',
     pkg.name ? `Package: ${pkg.name}${pkg.version ? ` ${pkg.version}` : ''}${pkg.license ? `, ${pkg.license} licence` : ''}${repo ? `, source at ${repo}` : ''}.` : '',
-    `Seats in this run: author ${who(c.seats.author)}; checker ${who(c.seats.checker)}; challenger ${who(c.seats.challenger)}; verifier ${who(c.seats.verifier)}; referees: ${c.referees.map((r) => r.seat).join(', ')} seats, drawn from the families other than the author's and rotated between rounds; adjudicator: the family that is neither the author's nor the referee's.`,
+    `Seats in this run: ${assignments}.`,
     `Settings in this run: dial ${dial}; citations ${c.citations}; ${c.rounds} referee round(s); up to ${c.fixAttempts} answers per finding before adjudication; up to ${c.candidatesPerClaim} candidate works per claim; about ${c.words} words; venue ${c.venue}.`,
     `The ladder (${ladder.length} behaviors, scanned in this order):`,
     ...ladder.map((b, i) => `${i + 1}. ${b.id} (${b.stage}, ${b.improver ? 'improver' : 'required'}): ${DOES[b.id] ?? b.title}`),

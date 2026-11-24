@@ -1,6 +1,6 @@
 // One call to one model family through its own CLI, as a single answer with
-// no tools and no delegation. Claude runs as Opus 5.5 through `claude`, GPT as
-// Sol 6.2 through Codex, Gemini as Carbon through Antigravity (`agy`). Each
+// no tools and no delegation. The catalog supplies the exact selector for
+// Claude Code, Codex or Antigravity (`agy`). Each
 // transport follows an integration already proven in production use: Codex as
 // Canary calls it, Antigravity with a single-tool agent file.
 import { spawn } from 'node:child_process'
@@ -8,7 +8,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parseLooseJson, type Schema } from './schema.js'
+import { bool, obj, parseLooseJson, type Schema } from './schema.js'
 import type { Family } from './types.js'
 
 export interface ModelSpec {
@@ -117,7 +117,11 @@ async function callClaude(spec: ModelSpec, prompt: string, schema: Schema, cwd: 
   if (out.timedOut) failure('claude', 'timed out')
   let reply: any
   try { reply = JSON.parse(out.stdout) } catch { failure('claude', `unreadable output (exit ${out.code}): ${out.stderr || out.stdout}`) }
-  if (reply.is_error) failure('claude', String(reply.result || reply.terminal_reason || 'error'))
+  if (out.code !== 0 || reply.is_error) failure('claude', String(reply.result || reply.terminal_reason || 'error'))
+  const reported = Object.keys(reply.modelUsage ?? {})
+  if (reported.length && !reported.some((id) => id === spec.model || (id.startsWith(`${spec.model}-`) && /^\d{8}$/.test(id.slice(spec.model.length + 1))))) {
+    failure('claude', `requested ${spec.model}, reported ${reported.join(', ')}`)
+  }
   const usage = reply.usage || {}
   const data = reply.structured_output ?? parseLooseJson(String(reply.result ?? ''))
   return {
@@ -163,7 +167,10 @@ async function callCodex(spec: ModelSpec, prompt: string, schema: Schema, cwd: s
     if (event.type === 'error' || event.type === 'turn.failed') errors.push(String(event.message || event.error?.message || line))
     if (event.item?.type === 'collab_tool_call' || event.item?.type === 'subagent') errors.push('delegation attempted')
   }
-  if (!existsSync(lastPath)) failure('gpt', errors.join(' | ') || out.stderr || `exit ${out.code}`)
+  const fallback = out.stderr.split('\n').find((line) => /model.+fall(?:ing|s)? back|fall(?:ing|s)? back.+model/i.test(line) && !/metadata|model info/i.test(line))
+  if (out.code !== 0 || errors.length || fallback || !existsSync(lastPath)) {
+    failure('gpt', errors.join(' | ') || fallback || out.stderr || `exit ${out.code}`)
+  }
   const text = readFileSync(lastPath, 'utf8')
   return { data: parseLooseJson(text), text, usage }
 }
@@ -263,9 +270,9 @@ export async function callModel(options: CallOptions): Promise<CallResult> {
   const started = Date.now()
   try {
     const timeoutMs = options.timeoutMs ?? TIMEOUTS[spec.family]
-    const answer = spec.family === 'claude' ? await callClaude(spec, prompt, schema, cwd, timeoutMs)
-      : spec.family === 'gpt' ? await callCodex(spec, prompt, schema, cwd, timeoutMs)
-        : await callAgy(spec, prompt, schema, cwd, timeoutMs)
+    const transport = { claude: callClaude, gpt: callCodex, gemini: callAgy }[spec.family]
+    if (!transport) throw new ModelFailure(`Unsupported model family: ${spec.family}`)
+    const answer = await transport(spec, prompt, schema, cwd, timeoutMs)
     const result: CallResult = { ...answer, ms: Date.now() - started, spec, cached: false }
     if (options.cacheDir) {
       mkdirSync(options.cacheDir, { recursive: true })
@@ -275,4 +282,11 @@ export async function callModel(options: CallOptions): Promise<CallResult> {
   } finally {
     rmSync(cwd, { recursive: true, force: true })
   }
+}
+
+/** A connection check uses the same exact selector, effort and native client as a paper. */
+export async function testModel(spec: ModelSpec, timeoutMs: number): Promise<CallResult> {
+  const result = await callModel({ spec, prompt: 'Reply with the JSON object {"ok": true}.', schema: obj({ ok: bool() }), timeoutMs })
+  if ((result.data as { ok?: boolean })?.ok !== true) throw new ModelFailure('Unexpected probe answer.')
+  return result
 }

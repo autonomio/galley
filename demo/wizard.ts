@@ -5,6 +5,10 @@ import type { EditorAction } from '../src/index.js'
 
 interface Seat { family: string; name: string; model: string }
 interface Context {
+  modelRevision: string
+  providers: string[]
+  refereeModels: string[]
+  adjudicator: string
   openalexKey: boolean
   seats: Record<'author' | 'checker' | 'challenger' | 'verifier', Seat>
   referees: string[]
@@ -79,11 +83,16 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   document.body.append(dialog)
   dialog.showModal()
 
-  fetch('/api/galley-papers/_context').then((r) => r.ok ? r.json() : null).then((c: Context | null) => {
+  async function readContext(): Promise<Context> {
+    const response = await fetch('/api/galley-papers/_context', { cache: 'no-store' })
+    if (!response.ok) throw new Error('Model settings could not be loaded.')
+    return response.json()
+  }
+  void readContext().then((c) => {
     context = c
-    if (c) Object.assign(settings, { venue: c.defaults.venue, words: c.defaults.words, rounds: c.defaults.rounds, dial: c.defaults.dial, citations: c.defaults.citations, literatureReview: !!c.defaults.literatureReview, simulation: !!c.defaults.simulation })
+    Object.assign(settings, { venue: c.defaults.venue, words: c.defaults.words, rounds: c.defaults.rounds, dial: c.defaults.dial, citations: c.defaults.citations, literatureReview: !!c.defaults.literatureReview, simulation: !!c.defaults.simulation })
     render()
-  }).catch(() => render())
+  }).catch((error: Error) => { hint.textContent = error.message })
 
   function go(to: number): void {
     step = Math.max(0, Math.min(STEPS.length - 1, to))
@@ -180,7 +189,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       field('Venue', h('span', {}, input('venue', 'Venue', 'gw-venues'), h('datalist', { id: 'gw-venues' }, ...['preprint (arXiv)', 'preprint (bioRxiv)', 'preprint (medRxiv)', 'preprint (SSRN)', 'preprint (EdArXiv)', 'journal article'].map((v) => h('option', { value: v })))), 'Shapes the outline and how the referees read the paper.'),
       field('Length', segmented([3000, 5000, 7000, 9000].map((w) => [`${n(w)} words`, w] as [string, number]), settings.words, (v) => { settings.words = v; render() }, 'Length')),
       field('Also include', h('div', { class: 'gw-choices' }, toggle('literatureReview', 'Systematic literature review', `Canary searches OpenAlex, screens the candidates, aims to read ${context?.review?.papers ?? 50} full papers and checks every finding in a separate audit session.`, 'A review section after the introduction, beside the paper\'s own contribution; it runs alongside the other steps.', 'The paper is the systematic review: its thesis and contribution are what the review establishes, and the plan waits for the review to finish.'), toggle('simulation', 'Monte Carlo simulation', 'The author designs the simulation the argument needs (plain, correlated or sequential Monte Carlo) and galley runs it on this machine; every simulated number in the paper is filled in from the run.', 'Its results support the paper\'s own contribution where they help.', 'The paper\'s thesis rests on what the simulation shows: its contribution claims are claims about the results, and the paper is built around the model.'))),
-      field('Review', segmented([['1 round', 1], ['2 rounds', 2]], settings.rounds, (v) => { settings.rounds = v; render() }, 'Referee rounds'), `Four referee seats a round: ${context?.referees.join(', ') ?? 'methods, field, citations, editor'}, from the families that did not write the text. About 50 min a round.`),
+      field('Review', segmented([['1 round', 1], ['2 rounds', 2]], settings.rounds, (v) => { settings.rounds = v; render() }, 'Referee rounds'), `Four referee seats a round: ${context?.referees.join(', ') ?? 'methods, field, citations, editor'}. About 50 min a round.`),
       field('Your part', choice('dial', [
         ['autonomous', 'Autonomous', 'Nothing waits for you. You review the finished paper.'],
         ['assisted', 'Assisted', 'Sources for load-bearing claims, and answers to critical findings, wait for you.'],
@@ -191,7 +200,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
         ['mixed', 'You pick the load-bearing ones', 'Those claims wait for you to choose among sources a, b and c.'],
         ['choose', 'You pick every one', 'Every claim that needs a source waits for your choice.'],
       ])),
-      field('Seats', h('table', { class: 'gw-seats' }, h('tbody', {}, seatRow('author', seats?.author), seatRow('checker', seats?.checker), seatRow('challenger', seats?.challenger), seatRow('verifier', seats?.verifier))), 'No family judges its own work; a third family settles what an author and a referee cannot agree on.'),
+      field('Seats', h('table', { class: 'gw-seats' }, h('tbody', {}, seatRow('author', seats?.author), seatRow('checker', seats?.checker), seatRow('challenger', seats?.challenger), seatRow('verifier', seats?.verifier))), 'The model assignments in Settings govern this run.'),
       field('Literature', h('p', { class: 'gw-facts' }, 'Canary over OpenAlex · ', context ? (context.openalexKey ? h('span', { text: 'key found: two searches per claim' }) : h('span', { class: 'gw-attention', text: 'no key: one search per claim, about 100 searches a day for everyone on this network' })) : 'checking…')),
     ]
   }
@@ -238,14 +247,14 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       ...(datasets.length ? [['Measure your data', 'the analyses the claims need, computed on this machine', `${m('author')} · this machine`, 3] as [string, string, string, number]] : []),
       ...(settings.simulation ? [['Simulate', `the author writes the Monte Carlo model and the basis of every input; galley runs it on this machine${settings.simulationRole === 'load-bearing' ? '; the paper\'s main contribution rests on it' : ''}`, `${m('author')} · this machine`, 5] as [string, string, string, number]] : []),
       ['Plan and outline', 'thesis, claims, sections, figures', m('author'), 8],
-      ['Find and verify evidence', `${searches} search${searches === 'one' ? '' : 'es'} per claim; verbatim passages; another family's verdict; planted-defect calibration`, `${m('checker')} · ${m('verifier')}`, 20],
+      ['Find and verify evidence', `${searches} search${searches === 'one' ? '' : 'es'} per claim; verbatim passages; verifier verdict; planted-defect calibration`, `${m('checker')} · ${m('verifier')}`, 20],
       ['Draft', 'every section, checked against its claims', `${m('author')} · ${m('checker')}`, 25],
-      ['Review', `${settings.rounds} round${settings.rounds === 1 ? '' : 's'} of four referees; each answer judged by the referee who raised it`, `${m('checker')} · ${m('verifier')}`, 50 * settings.rounds],
+      ['Review', `${settings.rounds} round${settings.rounds === 1 ? '' : 's'} of four referees; each answer judged by the referee who raised it${context?.adjudicator ? `; disputes: ${context.adjudicator}` : ''}`, (context?.refereeModels ?? []).join(' · '), 50 * settings.rounds],
       ['Finish', 'ledger reconciled with the text; title and abstract; typeset', `${m('checker')} · ${m('author')}`, 10],
     ]
     const total = plan.reduce((a, p) => a + (p[4] ? 5 : p[3]), 0) + Math.round((settings.words - 7000) / 1000) * 3
     const leaves = [
-      [items.some((i) => i.kind !== 'dataset') ? 'Your seed, documents and links' : 'Your seed', 'go to the providers of the three model families (Anthropic, OpenAI, Google).'],
+      [items.some((i) => i.kind !== 'dataset') ? 'Your seed, documents and links' : 'Your seed', `go to the selected model providers${context?.providers?.length ? ` (${context.providers.join(', ')})` : ''}.`],
       ...(datasets.some((d) => d.private) ? [['Private datasets', 'never leave this machine; the models see column summaries and computed results.']] : []),
       ...(datasets.some((d) => !d.private) ? [['Shared datasets', 'their summaries and first 15 rows go to the model providers.']] : []),
       ['Search terms', 'go to OpenAlex through Canary.'],
@@ -267,14 +276,25 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
     next.disabled = true
     next.textContent = 'Starting…'
     try {
+      if (!context) {
+        context = await readContext()
+        render()
+        hint.textContent = 'Review the model assignments before starting.'
+        next.disabled = false
+        return
+      }
       const materials = await Promise.all(items.map(async (item) => item.kind === 'link'
         ? { name: item.name, url: item.url }
         : { name: item.name, private: item.private, data: await base64(item.file!) }))
       const response = await fetch(`/api/galley-papers/${encodeURIComponent(slug)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, settings, materials }),
+        body: JSON.stringify({ text, settings, materials, modelRevision: context.modelRevision }),
       })
+      if (response.status === 409 && (await response.clone().text()).startsWith('Model settings changed.')) {
+        context = await readContext()
+        render()
+      }
       if (!response.ok) throw new Error(await response.text())
       const at = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
       trail.querySelectorAll('li').forEach((li) => li.classList.add('is-done'))
