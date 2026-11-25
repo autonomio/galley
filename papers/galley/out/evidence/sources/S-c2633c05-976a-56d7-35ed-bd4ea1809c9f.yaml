@@ -1,0 +1,8 @@
+id: "S-c2633c05-976a-56d7-35ed-bd4ea1809c9f"
+kind: "reasoning"
+title: "Argument plan of the manuscript"
+uri: null
+date: "2026-11-19"
+locator: "C46"
+excerpt: "Multi-agent LLM systems for scholarly work, such as SciSage, DeepReviewer 2.0 and DeepSciVerify, automate manuscript writing, peer review or scientific claim verification by dividing these tasks among role-specialized agents."
+access: "inspected"

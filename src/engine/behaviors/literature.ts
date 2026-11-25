@@ -1,7 +1,7 @@
-// The systematic review, when the paper asks for one: the author writes the
-// review question, Canary does the review, and its findings join the ledger
-// for the review section. It runs in the background, alongside the rest of
-// the paper; only drafting the review section waits for it.
+// The literature review, when the paper asks for one and always for a thesis: the
+// author writes the review question, Canary does the review, and its findings join
+// the ledger. For a paper it runs in the background, alongside the rest; only
+// drafting the review section waits for it. A thesis is formulated from it.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { awaitReview, importReview, REVIEW_SECTION, reviewBundle, submitReview } from '../literature.js'
 import { HOUSE } from '../prompts.js'
@@ -9,23 +9,24 @@ import type { Behavior } from '../scheduler.js'
 import { obj, str } from '../schema.js'
 import { briefBlock, live, now, seatFamily } from './common.js'
 import { aimSettled } from './front.js'
+import { STANCE_REVIEW } from './thesis.js'
 
 export const literatureReview: Behavior = {
-  id: 'literature-review', stage: 'substance', improver: true, title: 'Systematic literature review', attempts: 2,
+  id: 'literature-review', stage: 'substance', modes: ['paper', 'thesis'], improver: true, title: 'Literature review', attempts: 2,
   ready: (paper) => {
     const s = paper.state
     if (!paper.config.literatureReview || !live(paper) || !s.brief?.hasSubject || !aimSettled(paper)) return []
     if (s.literature && s.literature.status !== 'running') return []
     return [{
-      key: 'literature-review:paper', label: 'systematic review (Canary)', background: true,
+      key: 'literature-review:paper', label: 'literature review (Canary)', background: true,
       run: async () => {
         if (!s.literature) {
           const reply = await paper.ask<any>({
             behavior: 'literature-review', target: 'question', seat: 'author', family: seatFamily(paper, 'author'),
             prompt: `${HOUSE}
 
-Write the question for a systematic review of the published literature that this paper needs: what is already known about its subject. Canary will search the literature with it, screen the candidates, read the full papers and report what they establish.
-- One question in plain words, at most 30 words, about the evidence in the field, not about this paper or what it contributes.
+Write the question for a review of the published literature that this ${paper.config.mode === 'thesis' ? 'thesis' : 'paper'} needs: what is already known about its subject. Canary will search the literature with it, screen the candidates, read the full papers and report what they establish.
+${paper.config.mode === 'thesis' ? `${STANCE_REVIEW[paper.config.stance ?? 'extend']}\n` : ''}- One question in plain words, at most 30 words, about the evidence in the field, not about this ${paper.config.mode === 'thesis' ? 'thesis' : 'paper'} or what it contributes.
 - Specific enough to judge a study in or out (name the population, phenomenon or intervention, and the outcome, where they apply), broad enough that published studies answer it.
 - In the words the field's own papers use.
 
@@ -45,7 +46,7 @@ Return question.`,
           paper.say(`… literature-review: Canary run ${lit.key} started: ${lit.question}`)
           paper.save()
         }
-        const done = paper.begin({ behavior: 'literature-review', target: 'review', what: `Canary systematic review ${lit.key}` })
+        const done = paper.begin({ behavior: 'literature-review', target: 'review', what: `Canary literature review ${lit.key}` })
         let status: string
         try {
           status = await awaitReview(lit.key)

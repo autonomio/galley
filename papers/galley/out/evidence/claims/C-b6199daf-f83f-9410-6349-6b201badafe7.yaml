@@ -1,6 +1,6 @@
 id: "C-b6199daf-f83f-9410-6349-6b201badafe7"
 class: "derived_inference"
-statement: "A person can comment anywhere in the document or edit it directly. Edits become that person's revision on the next run. Each comment becomes a thread that agents take over by default, that the person keeps (@humans), or that both share (@both). A dial can make load-bearing citations and critical answers, or every answer, wait for the person."
+statement: "Galley runs several model families in separate seats. In this run Claude Opus 5.5 is the author, GPT-6.2 Sol is the checker, and Gemini 4 Carbon is the challenger and the verifier. Referees come from the families other than the author's, and the adjudicator comes from the family that is neither the author's nor the referee's."
 uncertainty: "medium"
 evidence_ids: ["E-61e90f3e-f181-00fa-2ddf-7e7dd66154f5"]
 state: "active"

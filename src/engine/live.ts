@@ -3,7 +3,7 @@
 // the paper stands, its working notes, and what has happened, in the words a
 // person reads. A host polls it beside the editor; the editor's copy carries
 // the text and the threads themselves.
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { modelForPlace, type Place } from './model-catalog.js'
 import { Paper } from './paper.js'
@@ -49,8 +49,14 @@ export interface LiveView {
   /** The editor document the paper is written into. */
   doc: string
   title: string
+  /** A paper, or a thesis handed back as a brief. */
+  mode: 'paper' | 'thesis'
   running: boolean
   outcome: string | null
+  /** Finished: a paper ready for submission or finished with defects open, or a thesis whose brief is written. */
+  ready: boolean
+  /** Defects a reader would see that the last reading of a finished paper left open; 0 when it is ready. */
+  open: number
   stage: { id: string, label: string }
   stages: { id: string, label: string, done: boolean }[]
   /** Everyone at work on the paper, in a stable order, with the family behind each seat when known. */
@@ -61,6 +67,15 @@ export interface LiveView {
   waiting: { family: Family, name: string, until: string } | null
   notes: WorkingNote[]
   activity: LiveEntry[]
+  /** When anything in the paper's folder last changed. */
+  updated: string | null
+  /** When the paper was started. */
+  started: string | null
+  /** How far the writing and the review have come, as numbers: what the working notes say in words. */
+  progress: {
+    sections: { written: number, total: number } | null
+    review: { round: number, rounds: number, findings: number, open: number } | null
+  }
 }
 
 const SEATS: Record<string, string> = { author: 'Author', checker: 'Checker', challenger: 'Challenger', verifier: 'Verifier', adjudicator: 'Adjudicator', referee: 'Referee', human: 'You', galley: 'Galley' }
@@ -69,9 +84,9 @@ const familyOf = (model: string): Family | null => model.startsWith('claude') ? 
 
 // Which seat does a behavior's work, for the activity line.
 const WORKS: Record<string, string> = {
-  extract: 'author', plan: 'author', outline: 'author', draft: 'author', figure: 'author', frame: 'author', respond: 'author', analyze: 'author', simulate: 'author',
+  extract: 'author', plan: 'author', outline: 'author', draft: 'author', figure: 'author', frame: 'author', respond: 'author', analyze: 'author', simulate: 'author', formulate: 'author',
   position: 'checker', 'select-direction': 'checker', 'find-evidence': 'checker', fidelity: 'checker', reconcile: 'checker',
-  'review-idea': 'challenger', reformulate: 'challenger', reprofile: 'challenger', reassess: 'challenger',
+  'review-idea': 'challenger', reformulate: 'challenger', reprofile: 'challenger', reassess: 'challenger', 'test-thesis': 'challenger',
   verify: 'verifier', calibrate: 'verifier', adjudicate: 'adjudicator', 'verify-disposition': 'referee',
 }
 const STAGE_OF: Record<string, string> = {
@@ -82,9 +97,11 @@ const STAGE_OF: Record<string, string> = {
   draft: 'draft', figure: 'draft', fidelity: 'draft', frame: 'draft',
   referee: 'review', respond: 'review', 'verify-disposition': 'review', adjudicate: 'review', 'close-round': 'review',
   reconcile: 'finish', reprofile: 'finish', typeset: 'finish', ready: 'finish',
+  formulate: 'thesis', 'test-thesis': 'test', 'thesis-brief': 'brief',
 }
-const STAGE_ORDER = ['seed', 'aim', 'substance', 'plan', 'evidence', 'draft', 'review', 'finish']
-const STAGE_LABEL: Record<string, string> = { seed: 'Seed', aim: 'Aim', substance: 'Materials', plan: 'Plan', evidence: 'Evidence', draft: 'Draft', review: 'Review', finish: 'Finish' }
+// A thesis's own stages come after the ones it shares with a paper; the two runs never mix them.
+const STAGE_ORDER = ['seed', 'aim', 'substance', 'plan', 'evidence', 'draft', 'review', 'finish', 'thesis', 'test', 'brief']
+const STAGE_LABEL: Record<string, string> = { seed: 'Seed', aim: 'Aim', substance: 'Materials', plan: 'Plan', evidence: 'Evidence', draft: 'Draft', review: 'Review', finish: 'Finish', thesis: 'Thesis', test: 'Test', brief: 'Brief' }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 const editorSlug = (slug: string) => slug.toLowerCase().replace(/[^a-z0-9-]+/g, '-')
@@ -114,7 +131,7 @@ function doing(s: PaperState, behavior: string, target: string): string {
     case 'review-idea': return 'scoring the idea on seven impact factors'
     case 'reformulate': return 'reframing the idea three ways'
     case 'select-direction': return 'choosing a direction'
-    case 'literature-review': return 'running the systematic review with Canary'
+    case 'literature-review': return 'running the literature review with Canary'
     case 'analyze': return 'measuring your data'
     case 'simulate': return 'designing and running the simulation'
     case 'plan': return 'planning the argument'
@@ -134,6 +151,9 @@ function doing(s: PaperState, behavior: string, target: string): string {
     case 'reconcile': return 'reading the final text against every claim'
     case 'reprofile': return 'profiling the finished paper'
     case 'typeset': return 'typesetting'
+    case 'formulate': return 'formulating the thesis'
+    case 'test-thesis': return 'testing the thesis against the literature'
+    case 'thesis-brief': return 'writing the brief'
     default: return behavior
   }
 }
@@ -142,7 +162,7 @@ interface JournalEvent { at: string, event: string, [key: string]: any }
 
 /** The journal as sentences, oldest first. */
 /** The journal as sentences, oldest first. Each reads after its actor's name: "Author drafted Introduction." */
-function activity(s: PaperState, events: JournalEvent[]): LiveEntry[] {
+function activity(s: PaperState, events: JournalEvent[], mode: 'paper' | 'thesis' = 'paper', pdf = false): LiveEntry[] {
   const out: LiveEntry[] = []
   const lastFamily: Record<string, Family> = {}
   let stage = 'seed'
@@ -156,7 +176,7 @@ function activity(s: PaperState, events: JournalEvent[]): LiveEntry[] {
       if (e.family) lastFamily[WORKS[e.behavior] ?? seat] = e.family
       continue
     }
-    if (e.event === 'created') { say(e, 'human', 'started the paper from your seed.', { human: true }); continue }
+    if (e.event === 'created') { say(e, 'human', `started the ${mode} from your seed.`, { human: true }); continue }
     if (e.event === 'human_edits') { say(e, 'human', `edited ${(e.sections as string[]).map((x) => x === 'title' || x === 'abstract' ? `the ${x}` : sectionTitle(x)).join(', ')}.`, { human: true }); continue }
     if (e.event === 'review') {
       stage = 'review'
@@ -191,7 +211,7 @@ function activity(s: PaperState, events: JournalEvent[]): LiveEntry[] {
       case 'review-idea': say(e, seat, `scored the idea ${s.ideaReview ? s.ideaReview.factors.reduce((a, f) => a + f.score, 0) : '?'} of 21: ${String(s.ideaReview?.verdict ?? '').replace(/_/g, ' ')}.`); break
       case 'reformulate': say(e, seat, 'proposed three directions.'); break
       case 'select-direction': say(e, seat, `chose “${s.directions.find((d) => d.id === s.selectedDirection?.id)?.title ?? 'a direction'}”.`); break
-      case 'literature-review': say(e, 'galley', 'received the systematic review from Canary.'); break
+      case 'literature-review': say(e, 'galley', 'received the literature review from Canary.'); break
       case 'plan': say(e, seat, 'planned the argument and set a working title.'); break
       case 'outline': say(e, seat, `outlined ${plural(s.outline?.sections.length ?? 0, 'section')}.`); break
       case 'find-evidence': say(e, seat, `searched for sources for ${ids.length > 3 ? plural(ids.length, 'claim') : ids.join(', ')}.`, where); break
@@ -208,7 +228,10 @@ function activity(s: PaperState, events: JournalEvent[]): LiveEntry[] {
       case 'reconcile': say(e, seat, 'read the final text against every claim.'); break
       case 'reprofile': say(e, seat, 'profiled the finished paper.'); break
       case 'typeset': say(e, 'galley', 'typeset the paper: PDF, LaTeX, Word, evidence package and sign-off sheet.'); break
-      case 'ready': say(e, 'galley', 'marked the paper ready for submission. The sign-off is yours.'); break
+      case 'ready': say(e, 'galley', s.outcome === 'finished_with_open_defects' ? `finished the paper with ${plural(openDefects(s), 'defect')} a reader would see still open. The sign-off lists them.` : 'marked the paper ready for submission. The sign-off is yours.'); break
+      case 'formulate': say(e, seat, target.startsWith('revision') ? 'formulated the thesis again after its test.' : 'formulated the thesis.'); break
+      case 'test-thesis': say(e, seat, 'tested the thesis against the literature, for its direction.'); break
+      case 'thesis-brief': say(e, 'galley', pdf ? 'wrote the brief into the document, with a PDF beside it.' : 'wrote the brief into the document.'); break
       case 'referee': break
       default: say(e, seat, `finished ${behavior}.`, where)
     }
@@ -216,7 +239,7 @@ function activity(s: PaperState, events: JournalEvent[]): LiveEntry[] {
   return out
 }
 
-function workingNotes(s: PaperState, config: { rounds?: number, literatureReview?: unknown, simulation?: unknown }): WorkingNote[] {
+function workingNotes(s: PaperState, config: { rounds?: number, literatureReview?: unknown, simulation?: unknown, datasets?: unknown[], materials?: { kind?: string }[], off?: string[], title?: string }, pdf = false): WorkingNote[] {
   const notes: WorkingNote[] = []
   const note = (key: string, label: string, text: string, seat: string, family: Family | null = null) => notes.push({ key, label, text, seat, family })
   if (!s.brief) note('start', 'Starting', 'The Author is reading your seed.', 'author')
@@ -224,8 +247,21 @@ function workingNotes(s: PaperState, config: { rounds?: number, literatureReview
   if (s.positioning.priorArt) note('placed', 'Placed', `${s.positioning.priorArt.verdict.replace(/_/g, ' ')} · ${s.positioning.priorArt.summary.split(/(?<=\.)\s/)[0]}`, 'checker')
   const profile = s.profileAfter ?? s.ideaReview
   if (profile) note('idea', s.profileAfter ? 'Profile' : 'Idea', `${profile.verdict.replace(/_/g, ' ')} · ${profile.factors.reduce((a, f) => a + f.score, 0)} of 21`, 'challenger')
-  if (s.directions.length) note('direction', 'Direction', s.selectedDirection ? `${s.selectedDirection.id} · ${s.directions.find((d) => d.id === s.selectedDirection!.id)?.title ?? ''}` : 'Three directions proposed; one to choose', 'checker')
+  // The direction chosen: one of those proposed, or the seed's own.
+  const chosen = s.selectedDirection && s.directions.find((d) => d.id === s.selectedDirection!.id)
+  if (s.directions.length) note('direction', 'Direction', !s.selectedDirection ? 'Three directions proposed; one to choose' : chosen ? `${chosen.id} · ${chosen.title}` : `${s.selectedDirection.id} · the seed's own`, 'checker')
   if (config.literatureReview && s.literature) note('literature', 'Review', s.literature.status === 'done' ? `${s.literature.counts?.reviewed ?? '?'} publications read · ${s.literature.counts?.findings ?? '?'} findings audited` : s.literature.status === 'failed' ? 'ended without an answer' : 'Canary is reading the literature', 'galley')
+  // The analysis of the authors' data, step by step: planned and reviewed, extracts taken, the shared preparation, the analyses computed.
+  const a = s.analysis
+  if (a?.plan.length) {
+    const computed = Object.values(a.runs ?? {}).filter((r) => r.ok).length
+    note('analysis', 'Analysis', [
+      `${plural(a.plan.length, 'analysis', 'analyses')} planned${a.reviewed ? `, reviewed by ${FAMILY_NAMES[a.reviewed.family] ?? a.reviewed.family}` : ', in review'}`,
+      ...(a.extracts?.length ? [`${a.extracts.filter((e) => e.ok).length} of ${a.extracts.length} extracts taken`] : []),
+      ...(a.mode === 'code' ? [a.prepare?.ok ? 'shared preparation done' : 'shared preparation being written'] : []),
+      `${computed} of ${a.plan.length} computed${a.notComputed?.length ? ` · ${a.notComputed.length} not computed` : ''}`,
+    ].join(' · '), 'author')
+  } else if (config.datasets?.length || config.materials?.some((m) => m.kind === 'dataset')) note('analysis', 'Analysis', 'The Author is planning the analysis of your data.', 'author')
   if (s.outline) {
     const verified = s.citations.filter((c) => c.status === 'verified').length
     const rejected = s.citations.filter((c) => c.status === 'rejected').length
@@ -240,15 +276,28 @@ function workingNotes(s: PaperState, config: { rounds?: number, literatureReview
     const findings = s.findings.filter((f) => f.origin === 'agent')
     note('review', 'Review', `Round ${s.round} of ${config.rounds ?? s.round} · ${plural(findings.length, 'finding')} · ${findings.filter((f) => f.status === 'open').length} open`, 'referee')
   }
+  const test = s.thesis?.test
+  if (s.thesis) note('thesis', 'Thesis', `${config.title || s.thesis.title || s.thesis.statement}${test ? ` · ${test.passes ? 'meets its test' : 'does not yet meet its test'}${test.searched === null ? ', without a novelty search' : ''}` : (config.off ?? []).includes('test-thesis') ? ' · not tested: the test is off for this run' : ' · being tested'}`, 'author')
   if (s.outcome === 'ready_for_submission') note('ready', 'Ready', 'Every gate holds on one revision. The sign-off is yours.', 'galley')
+  if (s.outcome === 'finished_with_open_defects') note('ready', 'Finished', `The last reading of the typeset paper left ${plural(openDefects(s), 'defect')} a reader would see that it could not fix. The sign-off lists them.`, 'galley')
+  if (s.outcome === 'thesis_ready') note('ready', 'Ready', pdf ? 'The brief is in the document, with a PDF beside it.' : 'The brief is in the document; its PDF was not made.', 'galley')
   return notes
 }
+
+/** The title the seed gives itself, in its first heading, before the run has one of its own. */
+const seedTitle = (text: string | undefined) => text?.match(/^#{1,2}\s+(.+?)\s*#*\s*$/m)?.[1]?.trim() || null
+const finished = (outcome: string | null | undefined) => outcome === 'ready_for_submission' || outcome === 'finished_with_open_defects' || outcome === 'thesis_ready'
+/** What the last reading of a finished paper left open that a reader would see. */
+const openDefects = (s: PaperState) => s.outcome === 'finished_with_open_defects' ? (s.proof?.left ?? []).filter((d) => d.severity !== 'P2' && d.severity !== 'P3').length : 0
 
 /** Everything a host draws about a paper in progress. */
 export function liveView(dir: string, options: { limit?: number } = {}): LiveView | null {
   const s = readJson<PaperState>(join(dir, 'state.json'))
   if (!s) return null
   const config = Paper.readConfig(dir)
+  const mode = config.mode === 'thesis' ? 'thesis' as const : 'paper' as const
+  // The brief's PDF is made when it can be; a brief can be ready without one.
+  const pdf = existsSync(join(dir, 'out', 'thesis.pdf'))
   const progress = readJson<{ pid: number, outcome: string | null, inFlight?: { behavior: string, target: string, what: string, started: string, family?: Family }[] }>(join(dir, 'progress.json'))
   let running = false
   if (progress && !progress.outcome && !s.outcome) {
@@ -276,17 +325,27 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
     }
   }
   const done = new Set(Object.keys(s.settled).map((key) => key.split(':')[0]))
-  const stages = [
+  // A thesis's stages, as the CLI's status names them.
+  const stages = mode === 'thesis' ? [
+    { id: 'seed', label: 'Seed', done: !!s.brief },
+    { id: 'aim', label: 'Place the idea', done: done.has('position') },
+    // Settled as the thesis takes it: in, ended, or not part of this run.
+    { id: 'literature', label: 'Literature', done: !config.literatureReview || (config.off ?? []).includes('literature-review') || (!!s.literature && s.literature.status !== 'running') },
+    { id: 'thesis', label: 'Thesis', done: !!s.thesis },
+    { id: 'test', label: 'Test', done: !!s.thesis?.test || (config.off ?? []).includes('test-thesis') },
+    { id: 'brief', label: 'Brief', done: s.outcome === 'thesis_ready' },
+  ] : [
     { id: 'seed', label: 'Seed', done: !!s.brief },
     { id: 'aim', label: 'Aim', done: !!s.selectedDirection || !!s.plan },
     { id: 'plan', label: 'Plan', done: !!s.outline },
     { id: 'evidence', label: 'Evidence', done: done.has('calibrate') || (!!s.outline && Object.keys(s.passages).length > 0) },
     { id: 'draft', label: 'Draft', done: !!s.frame },
     { id: 'review', label: 'Review', done: done.has('reconcile') || !!s.outcome },
-    { id: 'finish', label: 'Finish', done: s.outcome === 'ready_for_submission' },
+    { id: 'finish', label: 'Finish', done: s.outcome === 'ready_for_submission' || s.outcome === 'finished_with_open_defects' },
   ]
-  const current = stages.find((x) => !x.done) ?? stages[stages.length - 1]
-  const all = activity(s, events)
+  // A finished run stands at its last stage, whatever an earlier one recorded.
+  const current = (finished(s.outcome) ? undefined : stages.find((x) => !x.done)) ?? stages[stages.length - 1]
+  const all = activity(s, events, mode, pdf)
   // Referees rotate families between rounds: each shows the family it last worked as.
   const lastAs: Record<string, Family> = {}
   for (const e of events) {
@@ -294,7 +353,7 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
     if (e.event === 'review' && e.family) lastAs[String(e.seat)] = e.family
   }
   const member = (seat: string, family: Family | null) => {
-    const assigned = config.routing && config.routing.places[seat as Place] !== 'independent' ? modelForPlace(config.routing, seat as Place).identity : null
+    const assigned = config.routing && config.routing.places[seat as Place] && config.routing.places[seat as Place] !== 'independent' ? modelForPlace(config.routing, seat as Place).identity : null
     return { seat, name: seatName(seat), family, detail: assigned ?? (family ? FAMILY_NAMES[family] : null) }
   }
   const team = [
@@ -303,19 +362,77 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
     member('adjudicator', lastAs.adjudicator ?? null),
   ]
   const sections = (s.outline?.sections ?? []).map((sec) => ({ id: sec.id, title: sec.title, written: !!s.passages[sec.id] }))
+  const findings = s.findings.filter((f) => f.origin === 'agent')
+  // A paper that does not set its rounds has the engine's default, never just the round it is in.
+  const rounds = Math.max(config.rounds, s.round)
   return {
     slug: s.slug,
-    doc: editorSlug(s.slug),
-    title: config.title || s.titleByHuman || s.frame?.title || s.plan?.workingTitle || 'Untitled paper',
+    doc: config.editorDoc || editorSlug(s.slug),
+    // The person's title, else the run's own, else the one the seed gives itself.
+    title: config.title || s.titleByHuman || (mode === 'thesis' ? s.thesis?.title : s.frame?.title || s.plan?.workingTitle) || seedTitle(s.seed?.text) || `Untitled ${mode}`,
+    mode,
     running,
     outcome: s.outcome ?? null,
-    stage: { id: current.id, label: STAGE_LABEL[current.id] ?? current.label },
+    ready: finished(s.outcome),
+    open: openDefects(s),
+    stage: { id: current.id, label: mode === 'thesis' ? current.label : STAGE_LABEL[current.id] ?? current.label },
     stages,
     team,
     sections,
     now,
     waiting,
-    notes: workingNotes(s, config),
+    notes: [...workingNotes(s, { ...config, rounds }, pdf), lastActivity(dir, running, now, s.outcome ?? null)],
     activity: all.slice(-(options.limit ?? 400)),
+    updated: updatedAt(dir),
+    started: s.createdAt ?? null,
+    progress: {
+      sections: s.outline ? { written: sections.filter((sec) => sec.written).length, total: sections.length } : null,
+      review: s.round ? { round: s.round, rounds, findings: findings.length, open: findings.filter((f) => f.status === 'open').length } : null,
+    },
   }
+}
+
+/**
+ * Every paper in a folder of papers, as liveView sees each, with the folder it is in: those being written first, then
+ * those ready, then those stopped, each newest first. The order stays put while the papers change, so a list drawn from
+ * it does not reshuffle at every step.
+ */
+export function livePapers(root: string, options: { limit?: number } = {}): { dir: string, view: LiveView }[] {
+  if (!existsSync(root)) return []
+  const rank = (v: LiveView) => (v.running ? 0 : v.ready ? 1 : 2)
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+    .map((entry) => ({ dir: join(root, entry.name), view: liveView(join(root, entry.name), { limit: options.limit ?? 3 }) }))
+    .filter((p): p is { dir: string, view: LiveView } => !!p.view)
+    .sort((a, b) => rank(a.view) - rank(b.view) || (b.view.started ?? '').localeCompare(a.view.started ?? '') || a.view.slug.localeCompare(b.view.slug))
+}
+
+/** When anything in the paper's folder last changed: its state, the run's progress, its journal or its log. */
+function updatedAt(dir: string): string | null {
+  const times = ['state.json', 'progress.json', 'journal.jsonl', 'run.log'].map((file) => { try { return statSync(join(dir, file)).mtimeMs } catch { return 0 } })
+  const last = Math.max(...times)
+  return last ? new Date(last).toISOString() : null
+}
+
+const ago = (ms: number) => {
+  const s = Math.max(0, Math.round(ms / 1000))
+  return s < 60 ? `${s} s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min ago`
+}
+
+/**
+ * The last note: how long ago anything in the paper last changed, and what is being worked on right now, so a person
+ * can see the run is alive even while a long step shows nothing new.
+ */
+function lastActivity(dir: string, running: boolean, now: LiveSeat[], outcome: string | null): WorkingNote {
+  const updated = updatedAt(dir)
+  const when = updated ? `${ago(Date.now() - Date.parse(updated))} (${new Date(updated).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })})` : 'not yet'
+  // One line per seat at work: what it is doing, for how long, and how many more it is doing at once.
+  const bySeat = new Map<string, LiveSeat[]>()
+  for (const n of now) bySeat.set(n.name, [...(bySeat.get(n.name) ?? []), n])
+  const working = [...bySeat].map(([name, list]) => {
+    const longest = list.reduce((a, b) => (b.seconds > a.seconds ? b : a))
+    return `${name} ${longest.doing} (${longest.seconds < 60 ? `${longest.seconds} s` : `${Math.round(longest.seconds / 60)} min`}${list.length > 1 ? `, ${list.length} at once` : ''})`
+  })
+  const state = finished(outcome) ? '' : running ? (working.length ? ` · now: ${working.join('; ')}` : ' · between steps') : ' · the run has stopped; run it again to resume'
+  return { key: 'updated', label: 'Last activity', text: `${when}${state}`, seat: 'galley', family: null }
 }

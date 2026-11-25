@@ -44,11 +44,18 @@ function rangeForAnnotation(lines: HTMLElement[], a: Annotation): Range | null {
   }
 }
 
+/** Where a note's marks begin on the page: its passage's first line, or for a gone passage the line it was last seen on. */
+export interface NotePlace {
+  top: number
+  left: number
+  orphan: boolean
+}
+
 /**
  * Re-anchor every note and draw its marks. Notes that moved get their new
  * range (and `moved` is called so they are saved); notes whose passage is
- * gone draw as an inert tick on the line they were last seen on. Returns the
- * ids of orphaned notes.
+ * gone draw as an inert tick on the line they were last seen on. Returns
+ * where each note's marks begin.
  */
 export function renderAnnotationMarks(options: {
   layer: HTMLElement
@@ -56,11 +63,12 @@ export function renderAnnotationMarks(options: {
   surface: Surface
   annotations: Annotation[]
   moved(): void
-}): Set<string> {
+}): Map<string, NotePlace> {
   const { layer, page, surface, annotations } = options
   layer.innerHTML = ''
+  const places = new Map<string, NotePlace>()
   const orphans = new Set<string>()
-  if (!annotations.length) return orphans
+  if (!annotations.length) return places
   const lineEls = surface.lines()
   const texts = lineEls.map((line) => line.textContent || '')
 
@@ -82,6 +90,10 @@ export function renderAnnotationMarks(options: {
   // were last seen on, so a live mark on the same line paints over them.
   // Orphans sharing a line cascade rightward, one tick each: identical boxes
   // would stack and leave all but the top one unreachable.
+  // A tick is one line of text square, not the line element's height: a
+  // paragraph wrapped over twenty lines made each tick hundreds of pixels
+  // wide, the cascade ran far past the page, and the page scrolled sideways.
+  // For the same reason the cascade wraps at the line's right edge.
   const orphansOnLine = new Map<number, number>()
   for (const a of annotations) {
     if (!orphans.has(a.id)) continue
@@ -91,10 +103,14 @@ export function renderAnnotationMarks(options: {
     const slot = orphansOnLine.get(lineIdx) ?? 0
     orphansOnLine.set(lineIdx, slot + 1)
     const rect = lineEl.getBoundingClientRect()
-    const div = mark('galley-mark is-orphan', new DOMRect(rect.left - box.left + slot * rect.height, rect.top - box.top, rect.height, rect.height))
+    const size = Math.min(rect.height, parseFloat(getComputedStyle(lineEl).lineHeight) || rect.height)
+    const perRow = Math.max(1, Math.floor(rect.width / size) || 1)
+    const tick = new DOMRect(rect.left - box.left + (slot % perRow) * size, rect.top - box.top + Math.floor(slot / perRow) * size, size, size)
+    const div = mark('galley-mark is-orphan', tick)
     div.dataset.annotation = a.id
     div.title = a.comment ? `Passage changed: ${a.comment.slice(0, 200)}` : 'Passage changed'
     layer.appendChild(div)
+    places.set(a.id, { top: tick.y, left: tick.x, orphan: true })
   }
 
   for (const a of annotations) {
@@ -108,9 +124,17 @@ export function renderAnnotationMarks(options: {
       div.dataset.annotation = a.id
       div.title = a.comment ? a.comment.slice(0, 200) : 'Comment'
       layer.appendChild(div)
+      if (!places.has(a.id)) places.set(a.id, { top: rect.y, left: rect.x, orphan: false })
     }
   }
-  return orphans
+  // A passage with nothing to underline (only hidden markers) still has a place: its line.
+  for (const a of annotations) {
+    const line = places.has(a.id) ? null : lineEls[Math.max(0, Math.min(a.range.start_line, lineEls.length - 1))]
+    if (!line) continue
+    const rect = line.getBoundingClientRect()
+    places.set(a.id, { top: rect.top - box.top, left: rect.left - box.left, orphan: orphans.has(a.id) })
+  }
+  return places
 }
 
 /** Replace the layer's highlight with `range`, and bring it into view. */

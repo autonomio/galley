@@ -1,0 +1,8 @@
+id: "S-bcb19c8c-dc08-61e7-59bc-647f4544a049"
+kind: "publication"
+title: "Analyzing the effectiveness of One-Op Mutation against the minimal set of mutants"
+uri: "https://doi.org/10.1145/3356317.3356321"
+date: "2019"
+locator: "abstract"
+excerpt: "Mutation testing is a fault-based criterion that helps testers to evaluate the adequacy of a test set applied to a given program. In order to do that, mutation operators are applied to the software being tested, creating versions with few syntactic deviations from the original program, called mutants."
+access: "inspected"

@@ -1,0 +1,6 @@
+id: "C-ff2539c3-45d1-07ec-a639-4e66fc58d135"
+class: "hypothesis"
+statement: "Prior digital-library research may already model scholarly provenance at the level of individual claims, representing each assertion, its evidence and its source in one machine-readable record."
+uncertainty: "high"
+evidence_ids: ["E-5ffc26af-041a-5a2e-73c9-ef9ecb7d1a24"]
+state: "active"

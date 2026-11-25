@@ -1,6 +1,6 @@
 id: "C-21636ada-7395-1647-811a-5dd1709bc9e7"
 class: "observed_fact"
-statement: "The AI Scientist is an automated system that generates research ideas, writes code, runs experiments, writes a full scientific paper and evaluates it in a simulated review process."
-uncertainty: "medium"
-evidence_ids: ["E-0f9d449b-14b0-4c7e-3776-a1bf65618279"]
+statement: "OpenAlex is a fully open index of scholarly works, authors, venues and institutions."
+uncertainty: "low"
+evidence_ids: ["E-e851ad64-526b-6f74-ba54-a4abde0af94e","E-0f9d449b-14b0-4c7e-3776-a1bf65618279"]
 state: "active"

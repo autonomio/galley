@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { personNames } from './text.js'
 import type { Work } from './types.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -126,7 +127,7 @@ export function workFromHit(hit: SearchHit): Work {
     id: hit.id,
     doi: hit.doi ? hit.doi.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '').toLowerCase() : null,
     title: hit.title,
-    authors: hit.authors.filter(Boolean),
+    authors: personNames(hit.authors.filter(Boolean)),
     year: hit.year,
     venue: hit.venue,
     abstract: hit.abstract,
@@ -179,6 +180,74 @@ export function budgetLine(budget: { remaining: number; limit: number; resetSeco
 }
 
 /** The registry's CSL-JSON record for a DOI (Crossref and DataCite alike), or null. */
+export const titleWords = (title: string) => title.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+
+/** What the index returns for a work searched by its title. */
+interface IndexRecord {
+  doi?: string
+  display_name?: string
+  publication_year?: number
+  type?: string
+  cited_by_count?: number
+  authorships?: { author?: { display_name?: string }; institutions?: { display_name?: string }[] }[]
+  primary_location?: { landing_page_url?: string; source?: { display_name?: string } }
+}
+
+/** The index's kinds of work, as CSL names them; a kind it shares with a journal article says nothing and is left out. */
+const INDEX_TYPES: Record<string, string> = { dissertation: 'thesis', book: 'book', 'book-chapter': 'chapter', report: 'report', preprint: 'article', dataset: 'dataset', standard: 'standard' }
+
+/** A name to compare: lower case, without accents. */
+const plainName = (name: string) => name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
+/**
+ * A work known only by its title and year (a reference that would print as a title, a year and a link) completed from
+ * OpenAlex: its DOI, authors and venue, taken only from a record whose title is the same word for word and whose year
+ * is within one, or whose first author is the work's. One search; the work keeps what it had when nothing matches or
+ * the index cannot answer.
+ */
+export async function completeByTitle(work: Work, replace = false): Promise<boolean> {
+  const words = titleWords(work.title)
+  if (words.length < 3 || work.doi) return false
+  try {
+    const key = openalexKey()
+    const response = await fetch(`https://api.openalex.org/works?search=${encodeURIComponent(work.title)}&per_page=8&select=doi,display_name,publication_year,type,cited_by_count,authorships,primary_location${key ? `&api_key=${encodeURIComponent(key)}` : ''}`, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(30_000) })
+    if (!response.ok) return false
+    const { results = [] } = await response.json() as { results?: IndexRecord[] }
+    // The same title, and of those the one nearest the year the work gives. A document found on the web (`replace`)
+    // may carry the date it was posted or read rather than published, so its year only ranks the matches. The same
+    // title by the same first author is the work whatever year the index dates it by: its journal version, a reprint
+    // or a translation is often dated after it.
+    const near = (r: IndexRecord) => (work.year && r.publication_year ? Math.abs(r.publication_year - work.year) : 0)
+    const first = work.authors[0] ? plainName(work.authors[0].trim().split(/\s+/).pop() ?? '') : ''
+    const byFirst = (r: IndexRecord) => first.length > 1 && (r.authorships ?? []).some((a) => plainName(a.author?.display_name ?? '').split(/[\s-]+/).includes(first))
+    // Of the records that are the work, the one that says where it was published: a DOI first, then the most cited,
+    // so the work's main record and not a stub of it that the index also keeps.
+    const same = results
+      .filter((r) => titleWords(r.display_name ?? '').join(' ') === words.join(' ') && (replace || near(r) <= 1 || byFirst(r)))
+      .sort((a, b) => (b.doi ? 1 : 0) - (a.doi ? 1 : 0) || (b.cited_by_count ?? 0) - (a.cited_by_count ?? 0) || near(a) - near(b))[0]
+    if (!same) return false
+    work.doi = same.doi ? same.doi.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '').toLowerCase() : null
+    const authors = personNames((same.authorships ?? []).map((a) => a.author?.display_name ?? '').filter(Boolean))
+    if (authors.length) work.authors = authors
+    // A web document's issuer and date give way to the publication's own record.
+    work.year = replace ? same.publication_year ?? work.year : work.year ?? same.publication_year ?? null
+    work.venue = replace ? same.primary_location?.source?.display_name ?? work.venue : work.venue ?? same.primary_location?.source?.display_name ?? null
+    // Without a DOI record, what the index knows says what the work is and where it is found: its kind, the institution
+    // its author wrote it at, and the page of whoever holds it rather than the index's own.
+    if (!work.doi) {
+      const kind = INDEX_TYPES[same.type ?? '']
+      if (kind) work.kind = kind
+      const institution = same.authorships?.[0]?.institutions?.[0]?.display_name
+      if (institution) work.institution = institution
+      const page = same.primary_location?.landing_page_url
+      if (page && !/openalex\.org/i.test(page)) work.url = page
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function cslForDoi(doi: string): Promise<Record<string, unknown> | null> {
   const url = `https://doi.org/${encodeURIComponent(doi).replace(/%2F/g, '/')}`
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -186,7 +255,9 @@ export async function cslForDoi(doi: string): Promise<Record<string, unknown> | 
       const response = await fetch(url, { headers: { Accept: 'application/vnd.citationstyles.csl+json', 'User-Agent': UA }, redirect: 'follow', signal: AbortSignal.timeout(30_000) })
       if (response.status === 404) return null
       if (!response.ok) { await new Promise((r) => setTimeout(r, 1500 * (attempt + 1))); continue }
-      return (await response.json()) as Record<string, unknown>
+      const csl = (await response.json()) as Record<string, unknown>
+      await fromRegistry(doi, csl)
+      return csl
     } catch {
       await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)))
     }
@@ -194,21 +265,190 @@ export async function cslForDoi(doi: string): Promise<Record<string, unknown> | 
   return null
 }
 
+/** The JSON a registry's own API returns for a record, or null. */
+async function registryJson(url: string): Promise<any | null> {
+  try {
+    const response = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': UA }, signal: AbortSignal.timeout(30_000) })
+    return response.ok ? await response.json() : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * What a DOI's citation record folds away, taken from the record of the registry that issued it: the book a chapter is
+ * in beside the series it belongs to, and for a paper in proceedings, the proceedings' own title, its series and
+ * number, and its type. A record the registry cannot give is left as it came.
+ */
+export async function fromRegistry(doi: string, csl: Record<string, unknown>): Promise<void> {
+  const id = encodeURIComponent(doi).replace(/%2F/g, '/')
+  if (csl.source === 'Crossref') {
+    const record = (await registryJson(`https://api.crossref.org/works/${id}`))?.message
+    if (record) refineFromCrossref(csl, record)
+  } else {
+    const record = (await registryJson(`https://api.datacite.org/dois/${id}`))?.data?.attributes
+    if (record) refineFromDatacite(csl, record)
+  }
+}
+
+/** A chapter's Crossref record names the series first and the book second; the citation record keeps only the series. */
+export function refineFromCrossref(csl: Record<string, unknown>, record: any): void {
+  const titles = (Array.isArray(record?.['container-title']) ? record['container-title'] : []).filter((t: unknown) => typeof t === 'string' && t.trim())
+  if (titles.length < 2 || !/chapter|proceedings-article|book-section|book-part|reference-entry|book-track/.test(String(record.type))) return
+  csl['container-title'] = titles[titles.length - 1]
+  csl['collection-title'] = titles[0]
+  if (record.volume) {
+    csl['collection-number'] = String(record.volume)
+    delete csl.volume
+  }
+}
+
+const DATACITE_TYPES: Record<string, string> = { ConferencePaper: 'paper-conference', JournalArticle: 'article-journal', Preprint: 'article', BookChapter: 'chapter', Book: 'book', ConferenceProceeding: 'book', Report: 'report', Dissertation: 'thesis', Dataset: 'dataset', Software: 'software', Standard: 'standard' }
+
+/** A DataCite record says what a work is and what it was published in, with the series apart from the volume. */
+export function refineFromDatacite(csl: Record<string, unknown>, record: any): void {
+  const type = DATACITE_TYPES[String(record?.types?.resourceTypeGeneral)]
+  if (type) csl.type = type
+  for (const item of Array.isArray(record?.relatedItems) ? record.relatedItems : []) {
+    if (item?.relationType !== 'IsPublishedIn') continue
+    const titles: any[] = Array.isArray(item.titles) ? item.titles : []
+    const main = titles.find((t) => t && !t.titleType)?.title
+    const sub = titles.find((t) => t?.titleType === 'Subtitle')?.title
+    if (['ConferenceProceeding', 'Book', 'Journal'].includes(item.relatedItemType)) {
+      // A proceedings volume can carry its series and number as its title ("LIPIcs, Volume 102, CCC 2018") and its own
+      // name as the subtitle.
+      const name = sub && /\bvol(?:ume)?\.?\s*\d/i.test(String(main ?? '')) ? sub : [main, sub].filter(Boolean).join(': ')
+      if (name) csl['container-title'] = name
+      if (item.firstPage) csl.page = item.lastPage ? `${item.firstPage}-${item.lastPage}` : String(item.firstPage)
+      if (item.relatedItemType === 'Journal' && item.volume) csl.volume = String(item.volume)
+      if (item.relatedItemType === 'Journal' && item.issue) csl.issue = String(item.issue)
+    } else if (['Collection', 'BookSeries', 'Series'].includes(item.relatedItemType) && main) {
+      csl['collection-title'] = main
+      if (item.volume) csl['collection-number'] = String(item.volume)
+    }
+  }
+  // The series number is the series': it is not also the volume of the proceedings.
+  if (csl['collection-number'] && String(csl.volume ?? '') === String(csl['collection-number'])) delete csl.volume
+  // A paper's number within the proceedings or book it is in locates it there, as its pages do; the reference names
+  // the volume, as citation styles cite a chapter.
+  if (csl.type === 'paper-conference' || csl.type === 'chapter') delete csl.number
+}
+
 /** Registries sometimes list an affiliation as an author ("Department of …, … University"). */
 const ORGANIZATION = /\b(department|university|universit[äéà]t?|institute|institut|school|faculty|laborator(y|ies)|centre|center|college|hospital|academy|ministry|council|association|society|consortium)\b/i
 
-const CSL_STRINGS = ['type', 'title', 'container-title', 'container-title-short', 'collection-title', 'event-title', 'volume', 'issue', 'page', 'number', 'DOI', 'URL', 'publisher', 'publisher-place', 'ISSN', 'ISBN', 'genre', 'language']
+const CSL_STRINGS = ['type', 'title', 'container-title', 'container-title-short', 'collection-title', 'collection-number', 'event-title', 'volume', 'issue', 'page', 'number', 'DOI', 'URL', 'publisher', 'publisher-place', 'ISSN', 'ISBN', 'genre', 'language']
 const CSL_NAMES = ['author', 'editor']
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
 
 /** Registries sometimes ship HTML entities inside titles ("Scientometrics &amp; Informetrics"). */
 function decodeEntities(text: string): string {
+  // A registry can encode an entity twice ("I&amp;amp;CPS"): it is decoded until nothing is left to decode.
+  for (let pass = 0; pass < 3; pass++) {
+    const next = text
+      .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
+      .replace(/&#x([0-9a-f]+);/gi, (_, n: string) => String.fromCodePoint(parseInt(n, 16)))
+      .replace(/&([a-z]+);/gi, (whole, name: string) => ENTITIES[name.toLowerCase()] ?? whole)
+    if (next === text) break
+    text = next
+  }
   return text
-    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, n: string) => String.fromCodePoint(parseInt(n, 16)))
-    .replace(/&([a-z]+);/gi, (whole, name: string) => ENTITIES[name.toLowerCase()] ?? whole)
 }
+
+/** TeX a title carries: Greek letters, relations and operators by name, as the characters they print. */
+const TEX_CHARACTERS: Record<string, string> = {
+  alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', varepsilon: 'ε', zeta: 'ζ', eta: 'η', theta: 'θ', vartheta: 'ϑ', iota: 'ι', kappa: 'κ', lambda: 'λ', mu: 'μ', nu: 'ν', xi: 'ξ', pi: 'π', rho: 'ρ', sigma: 'σ', tau: 'τ', upsilon: 'υ', phi: 'φ', varphi: 'φ', chi: 'χ', psi: 'ψ', omega: 'ω',
+  Gamma: 'Γ', Delta: 'Δ', Theta: 'Θ', Lambda: 'Λ', Xi: 'Ξ', Pi: 'Π', Sigma: 'Σ', Upsilon: 'Υ', Phi: 'Φ', Psi: 'Ψ', Omega: 'Ω', ell: 'ℓ',
+  le: '≤', leq: '≤', ge: '≥', geq: '≥', ne: '≠', neq: '≠', approx: '≈', sim: '∼', simeq: '≃', equiv: '≡', propto: '∝', times: '×', cdot: '·', pm: '±', mp: '∓', infty: '∞',
+  in: '∈', notin: '∉', subset: '⊂', subseteq: '⊆', cup: '∪', cap: '∩', setminus: '∖', emptyset: '∅', to: '→', rightarrow: '→', leftarrow: '←', mapsto: '↦', Rightarrow: '⇒',
+  ldots: '…', dots: '…', cdots: '⋯', partial: '∂', nabla: '∇', forall: '∀', exists: '∃', neg: '¬', lnot: '¬', wedge: '∧', land: '∧', vee: '∨', lor: '∨', oplus: '⊕', otimes: '⊗',
+  langle: '⟨', rangle: '⟩', lfloor: '⌊', rfloor: '⌋', lceil: '⌈', rceil: '⌉', mid: '∣', star: '⋆', ast: '∗', circ: '∘', sum: '∑', prod: '∏', int: '∫',
+  ',': ' ', ';': ' ', ':': ' ', '!': '', ' ': ' ', quad: ' ', qquad: ' ', '{': '{', '}': '}', '%': '%', '&': '&', '_': '_', '#': '#', '$': '$', '|': '‖',
+}
+/** Operators a formula prints upright, by their names. */
+const TEX_OPERATORS = new Set(['log', 'ln', 'lg', 'exp', 'min', 'max', 'sup', 'inf', 'lim', 'liminf', 'limsup', 'sin', 'cos', 'tan', 'det', 'dim', 'deg', 'gcd', 'Pr', 'arg', 'poly', 'polylog'])
+/** Accents, as the combining marks that put them over the letter. */
+const TEX_ACCENTS: Record<string, string> = { tilde: '̃', widetilde: '̃', hat: '̂', widehat: '̂', bar: '̄', overline: '̅', vec: '⃗', dot: '̇', ddot: '̈', check: '̌' }
+/** Commands that set what they enclose upright, and those that set it in italics. */
+const TEX_UPRIGHT = new Set(['mathrm', 'text', 'textrm', 'textup', 'textnormal', 'operatorname', 'mathsf', 'textsf', 'mathtt', 'texttt', 'mathbf', 'textbf', 'boldsymbol', 'bm', 'mathbb', 'mathcal', 'mathfrak', 'mathscr'])
+const TEX_ITALIC = new Set(['mathit', 'textit', 'emph'])
+/** Commands that only size or space what follows: they print nothing themselves. */
+const TEX_SILENT = new Set(['left', 'right', 'big', 'Big', 'bigg', 'Bigg', 'bigl', 'bigr', 'Bigl', 'Bigr', 'biggl', 'biggr', 'Biggl', 'Biggr', 'displaystyle', 'textstyle', 'scriptstyle', 'limits', 'nolimits'])
+
+/** A formula in TeX as the rich text a citation style prints: letters in italics, exponents and indices raised and lowered. */
+function texMath(math: string): string {
+  let i = 0
+  const plain = (text: string) => text.replace(/<\/?i>/g, '')
+  const group = (): string => {
+    while (math[i] === ' ') i++
+    if (math[i] !== '{') return atom()
+    let depth = 0
+    let j = i
+    for (; j < math.length; j++) {
+      if (math[j] === '{') depth++
+      else if (math[j] === '}' && --depth === 0) break
+    }
+    const inner = math.slice(i + 1, j)
+    i = j + 1
+    return texMath(inner)
+  }
+  const atom = (): string => {
+    const ch = math[i]
+    if (ch === undefined) return ''
+    if (ch === '{') return group()
+    i++
+    if (ch === '\\') {
+      const name = math.slice(i).match(/^(?:[a-zA-Z]+|.)/)?.[0] ?? ''
+      i += name.length
+      if (name in TEX_CHARACTERS) return TEX_CHARACTERS[name]
+      if (TEX_OPERATORS.has(name)) return ` ${name}${/^\s*[A-Za-z0-9\\]/.test(math.slice(i)) ? ' ' : ''}`
+      if (name in TEX_ACCENTS) return `<i>${plain(group())}${TEX_ACCENTS[name]}</i>`.normalize('NFC')
+      if (TEX_UPRIGHT.has(name)) return plain(group())
+      if (TEX_ITALIC.has(name)) return `<i>${plain(group())}</i>`
+      if (TEX_SILENT.has(name)) return ''
+      if (name === 'sqrt') {
+        const inner = group()
+        return `√${inner.replace(/<[^>]+>/g, '').length > 1 ? `(${inner})` : inner}`
+      }
+      if (/^[dt]?frac$/.test(name)) {
+        const over = group()
+        return `${over}/${group()}`
+      }
+      // An unknown command prints its name, never its backslash.
+      return name
+    }
+    if (ch === '^') return `<sup>${group()}</sup>`
+    if (ch === '_') return `<sub>${group()}</sub>`
+    if (ch === '}' || ch === ' ') return ''
+    if (ch === '~') return ' '
+    if (ch === '-') return '−'
+    if (ch === "'") return '′'
+    return /[A-Za-z]/.test(ch) ? `<i>${ch}</i>` : ch
+  }
+  const out: string[] = []
+  while (i < math.length) out.push(atom())
+  return out.join('').replace(/<\/i><i>/g, '').replace(/<\/sup><sup>/g, '').replace(/<\/sub><sub>/g, '')
+    .replace(/ {2,}/g, ' ').replace(/([([{]|<su[bp]>) /g, '$1').trim()
+}
+
+/**
+ * A title's TeX ("for $k$-Sparse Parity", "$\tilde{O}(d^{k-1})$ Samples") as what it prints, never as code. A formula
+ * is marked as Pandoc marks one: its opening $ followed by a character, its closing $ preceded by one and not followed
+ * by a digit, so prices ("a $5 fee and $3 tax") stay as they are.
+ */
+export function texToCsl(text: string): string {
+  return text.replace(/\$\$([^$]+)\$\$|\$(?=\S)([^$\n]*?\S)\$(?!\d)|\\\(([\s\S]+?)\\\)/g, (_, display: string | undefined, inline: string | undefined, paren: string | undefined) => texMath(display ?? inline ?? paren ?? ''))
+}
+
+/** A name written all in capitals, with at least this many letters in a word. */
+export const shouting = (name: string, letters: number) => name === name.toUpperCase() && name !== name.toLowerCase() && new RegExp(`\\p{L}{${letters},}`, 'u').test(name)
+
+/** A capitalized name in name case: each word, and each part after a hyphen or apostrophe, starts with a capital. */
+export const nameCase = (name: string) => name.toLowerCase().replace(/(^|[\s\-'’])(\p{L})/gu, (_, before: string, letter: string) => before + letter.toUpperCase())
+
+/** A title without the footnote mark a publisher's page put after it, pointing to a note no reference carries. */
+export const bareTitle = (title: string) => title.replace(/\s*[†‡§¶]+$/u, '').trim()
 
 /** Keep only standard CSL variables in their standard shapes: registries add lists and extras that citation processors reject. */
 export function cleanCsl(raw: Record<string, unknown>): Record<string, unknown> {
@@ -216,9 +456,19 @@ export function cleanCsl(raw: Record<string, unknown>): Record<string, unknown> 
   for (const key of CSL_STRINGS) {
     const value = raw[key]
     const text = Array.isArray(value) ? value.find((v) => typeof v === 'string' && v.trim()) : value
-    if (typeof text === 'string' && text.trim()) out[key] = decodeEntities(text.replace(/<[^>]+>/g, '')).trim()
+    // Registries keep a title's markup line breaks as runs of white space.
+    if (typeof text === 'string' && text.trim()) out[key] = decodeEntities(text.replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim()
     else if (typeof text === 'number') out[key] = String(text)
   }
+  if (typeof out.title === 'string') out.title = bareTitle(out.title)
+  // A title with a subtitle prints whole ("Pebbles, Graphs, and a Pinch of Combinatorics: Towards Tight I/O Lower Bounds").
+  const subtitle = Array.isArray(raw.subtitle) ? raw.subtitle.find((v) => typeof v === 'string' && v.trim()) : raw.subtitle
+  if (typeof subtitle === 'string' && subtitle.trim() && typeof out.title === 'string') {
+    const sub = decodeEntities(subtitle.replace(/<[^>]+>/g, '')).trim()
+    if (!out.title.toLowerCase().includes(sub.toLowerCase())) out.title = `${out.title}${/[?!:.]$/.test(out.title) ? ' ' : ': '}${sub}`
+  }
+  // A formula in a title prints as the formula, not as the TeX a registry keeps it in.
+  for (const key of ['title', 'container-title', 'collection-title']) if (typeof out[key] === 'string') out[key] = texToCsl(out[key] as string)
   for (const key of CSL_NAMES) {
     const value = raw[key]
     if (!Array.isArray(value)) continue
@@ -226,6 +476,9 @@ export function cleanCsl(raw: Record<string, unknown>): Record<string, unknown> 
       const name: Record<string, string> = {}
       for (const part of ['family', 'given', 'literal', 'suffix', 'non-dropping-particle', 'dropping-particle']) if (typeof n[part] === 'string') name[part] = n[part]
       if (!name.family && !name.literal && typeof n.name === 'string') name.literal = n.name
+      // A person's name some registries keep in capitals (ZIRAS) prints as the name (Ziras); initials stay as they are.
+      if (name.family && shouting(name.family, 2)) name.family = nameCase(name.family)
+      if (name.given && shouting(name.given, 3)) name.given = nameCase(name.given)
       return name
     }).filter((n) => n.family || n.literal)
     // Keep an organization as an author only when no person is listed.
@@ -244,15 +497,29 @@ export function cleanCsl(raw: Record<string, unknown>): Record<string, unknown> 
   // Registries name types their own way; citation styles expect CSL's names.
   const types: Record<string, string> = { 'journal-article': 'article-journal', 'proceedings-article': 'paper-conference', 'book-chapter': 'chapter', 'posted-content': 'article', dissertation: 'thesis', 'reference-entry': 'entry', 'monograph': 'book', 'edited-book': 'book' }
   out.type = types[String(out.type)] ?? (out.type || 'article-journal')
+  // A thesis has one author: an index that lists more lists its advisers with them.
+  if (out.type === 'thesis' && Array.isArray(out.author) && out.author.length > 1) out.author = out.author.slice(0, 1)
+  // A paper in proceedings, a chapter or a book is dated by its year: the day of the conference is not part of it.
+  const parts = (out.issued as { 'date-parts': number[][] } | undefined)?.['date-parts']?.[0]
+  if (['paper-conference', 'chapter', 'book'].includes(String(out.type)) && parts && parts.length > 1) out.issued = { 'date-parts': [[parts[0]]] }
+  // A preprint server is where a preprint was posted, not a journal it appeared in.
+  if (/^10\.48550\//i.test(String(out.DOI ?? '')) || /^arxiv\b/i.test(String(out['container-title'] ?? '')) || /^arxiv$/i.test(String(out.publisher ?? ''))) {
+    out.type = 'article'
+    out.publisher = 'arXiv'
+    delete out['container-title']
+  }
+  // A container title that already states the volume ("LIPIcs, Volume 102, CCC 2018") prints it once.
+  const stated = String(out['container-title'] ?? '').match(/\bvol(?:ume)?\.?\s*(\d+)\b/i)
+  if (stated && stated[1] === String(out.volume ?? '')) delete out.volume
   return out
 }
 
 /** A CSL record from what the search knew, for works without a registered DOI. */
 export function cslFromWork(work: Work): Record<string, unknown> {
   return {
-    type: 'article-journal',
+    type: work.kind ?? 'article-journal',
     title: work.title,
-    author: work.authors.map((name) => {
+    author: personNames(work.authors).map((name) => {
       const parts = name.trim().split(/\s+/)
       return parts.length > 1 ? { family: parts.pop(), given: parts.join(' ') } : { literal: name }
     }),

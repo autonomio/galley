@@ -1,6 +1,6 @@
 id: "C-da48e33e-eaeb-e25a-be5a-c3067c4344b2"
 class: "derived_inference"
-statement: "Each paper gets its own evidence package in the Resolvent format (claims, evidence, sources). It ends with a claim ledger (every claim's kind, standing, origin in the seed or the system, and sources) and a production record generated from the run's journal. A sign-off sheet lists what only the authors can decide: declarations, claims the system added, claims stated as hypotheses, decisions a third family made, and skipped steps."
+statement: "Each run writes its own evidence package, holding the paper's claims, evidence and sources in the Resolvent format."
 uncertainty: "medium"
 evidence_ids: ["E-53a26d43-7fe0-ad7c-0b6e-ed75223a586e"]
 state: "active"

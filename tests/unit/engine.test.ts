@@ -136,7 +136,7 @@ describe('software evidence', () => {
       writeFileSync(join(workspace, 'input.txt'), 'a\nb\nc\n')
       evaluation.protocol = {
         paths: [], setup: [], validation: [],
-        workloads: [{ title: 'Count observations', conditions: 'Three input lines.', command: { directory: '.', argv: ['/bin/sh', '-c', 'wc -l < input.txt > result.txt'] }, resultFile: 'result.txt' }],
+        workloads: [{ title: 'Count observations', conditions: 'Three input lines.', command: { directory: '.', argv: ['/bin/sh', '-c', 'wc -l < input.txt >> result.txt'] }, resultFile: 'result.txt' }],
       }
       await executeSoftware(evaluation, workspace, workspace)
       expect(evaluation.instrument).toMatchObject({ run: { status: 'completed' }, result: { excerpt: expect.stringMatching(/^\s*3\s*$/) } })
@@ -302,7 +302,7 @@ describe('self-description', () => {
     for (const b of LADDER) expect(DOES[b.id], b.id).toBeTruthy()
     expect(block).toContain(`The ladder (${LADDER.length} behaviors`)
     expect(block).toContain('author: claude-opus-5-5-xhigh')
-    expect(block).toContain('MIT licence, source at https://github.com/autonomio/galley')
+    expect(block).toContain('MIT license, source at https://github.com/autonomio/galley')
   })
 })
 

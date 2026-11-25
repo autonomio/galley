@@ -1,0 +1,8 @@
+id: "S-e896a49a-fd53-9834-9f91-87f1c3ad5739"
+kind: "publication"
+title: "DeepMutation: Mutation Testing of Deep Learning Systems"
+uri: "https://doi.org/10.1109/issre.2018.00021"
+date: "2018"
+locator: "abstract"
+excerpt: "In traditional software testing, mutation testing is a well-established technique for quality evaluation of test suites, which analyzes to what extent a test suite detects the injected faults."
+access: "inspected"

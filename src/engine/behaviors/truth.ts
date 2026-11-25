@@ -9,6 +9,7 @@ import { arr, enm, nstr, obj, str } from '../schema.js'
 import { softwarePaperPurpose } from '../software.js'
 import { isVerbatim, overlap } from '../text.js'
 import type { Candidate, Citation, Claim } from '../types.js'
+import { describeWork, onlyWorldModel, searchWorldModel, worldModelOf } from '../worldmodel.js'
 import { activeClaims, claim, keyFor, live, seatFamily, setClaim } from './common.js'
 
 const BATCH = 6
@@ -22,6 +23,10 @@ export const isNarrowing = (original: string, narrowed: string) => overlap(narro
 
 /** Still waiting on evidence of some kind: a search, a verdict, or a person's choice. */
 const needsEvidence = (c: Claim) => c.need === 'external' && c.status === 'open'
+
+/** A claim the scholarly index had nothing for, still waiting for its look at primary sources on the web (when the paper uses them). */
+export const awaitsWebSearch = (paper: Paper, c: Claim) =>
+  paper.config.webSources !== false && !!paper.webModel() && c.need === 'external' && c.status === 'unsupported' && !paper.state.attempts[`web:${c.id}`]
 
 function needsSearch(paper: Paper, c: Claim): boolean {
   return needsEvidence(c) && !paper.state.candidates.some((k) => k.claimId === c.id) && !paper.state.choices?.[c.id]
@@ -98,6 +103,16 @@ export const findEvidence: Behavior = {
         key: `find-evidence:${ids.join(',')}`, label: `evidence for ${ids.join(', ')}`,
         run: async () => {
           const family = seatFamily(paper, 'checker')
+          const model = worldModelOf(paper)
+          const queries: { id: string; search: string; claimId: string }[] = []
+          let results: Record<string, QueryResult> = {}
+          // A paper built on a world model searches its sources first, by each claim's own words; with only the world
+          // model (the default), it searches nothing else.
+          if (model) for (const c of group) {
+            queries.push({ id: `${c.id}wm`, search: c.text, claimId: c.id })
+            results[`${c.id}wm`] = { matched: null, status: null, results: searchWorldModel(model, c.text, paper.config.candidatesPerClaim + 2) }
+          }
+          if (!onlyWorldModel(paper)) {
           // A search costs the same whatever its page size: without a key's budget, one search per claim reads deeper instead of two reading shallow.
           const searches = openalexKeyed() ? 2 : 1
           const q = await paper.ask<any>({
@@ -111,24 +126,28 @@ ${searches === 2
 ${group.map((c) => `${c.id}: ${c.text}`).join('\n')}`,
             schema: obj({ queries: arr(obj({ claim_id: str(), searches: arr(str()) })) }),
           })
-          const queries: { id: string; search: string; claimId: string }[] = []
+          const written: { id: string; search: string; claimId: string }[] = []
           for (const item of q.queries ?? []) {
             if (!ids.includes(item.claim_id)) continue
             for (const [n, search] of (item.searches ?? []).slice(0, searches).entries()) {
-              if (search && !queries.some((x) => x.search === search)) queries.push({ id: `${item.claim_id}q${n + 1}`, search, claimId: item.claim_id })
+              if (search && !written.some((x) => x.search === search)) written.push({ id: `${item.claim_id}q${n + 1}`, search, claimId: item.claim_id })
             }
           }
-          const searching = paper.begin({ behavior: 'find-evidence', target: ids.join(','), what: `Canary search, ${queries.length} queries` })
-          let results: Record<string, QueryResult>
+          const searching = paper.begin({ behavior: 'find-evidence', target: ids.join(','), what: `Canary search, ${written.length} queries` })
           try {
-            results = await canarySearch(paper.path('canary', `evidence-${hash(ids.join(','))}`), `galley:${paper.state.slug}:${ids.join(',')}`, queries, searches === 2 ? 10 : 20, (ms, why) => { paper.journal({ event: 'source_wait', behavior: 'find-evidence', wait_ms: ms, why }); paper.say(`… find-evidence: ${why}; next try in ${Math.round(ms / 1000)}s`) }).finally(searching)
+            Object.assign(results, await canarySearch(paper.path('canary', `evidence-${hash(ids.join(','))}`), `galley:${paper.state.slug}:${ids.join(',')}`, written, searches === 2 ? 10 : 20, (ms, why) => { paper.journal({ event: 'source_wait', behavior: 'find-evidence', wait_ms: ms, why }); paper.say(`… find-evidence: ${why}; next try in ${Math.round(ms / 1000)}s`) }).finally(searching))
+            queries.push(...written)
           } catch (error) {
             if (!(error instanceof SourceUnavailable)) throw error
-            // The outage was waited out as long as galley waits: these claims are stated as hypotheses, and the paper goes on.
-            for (const c of group) if (c.status === 'open') setClaim(paper, c, 'unsupported', 'find-evidence', `the evidence search could not run: ${error.message}`)
             paper.note('find-evidence', `Evidence for ${ids.join(', ')} could not be searched: ${error.message}`, true)
-            paper.save()
-            return
+            // The outage was waited out as long as galley waits: these claims are stated as hypotheses, and the paper
+            // goes on. A paper with a world model goes on with what its world model holds.
+            if (!model) {
+              for (const c of group) if (c.status === 'open') setClaim(paper, c, 'unsupported', 'find-evidence', `the evidence search could not run: ${error.message}`)
+              paper.save()
+              return
+            }
+          }
           }
           const perClaim = new Map<string, SearchHit[]>()
           for (const query of queries) {
@@ -137,15 +156,19 @@ ${group.map((c) => `${c.id}: ${c.text}`).join('\n')}`,
             perClaim.set(query.claimId, list.slice(0, paper.config.candidatesPerClaim + 2))
           }
           for (const list of perClaim.values()) for (const hit of list) paper.state.works[hit.id] ??= workFromHit(hit)
+          // A world model's source gives its excerpt, the passage the world model quotes from it, where a work gives its abstract.
+          const fromModel = (id: string) => !!model?.publications.has(id)
           const reply = await paper.ask<any>({
             behavior: 'find-evidence', target: `${ids.join(',')}:passages`, seat: 'checker', family,
             prompt: `${HOUSE}
 
-For each claim, read its candidate works and choose up to three whose abstracts bear on it. For each choice copy the exact passage (one or two consecutive sentences, verbatim, character for character from the abstract) that supports, qualifies or contradicts the claim. fit: direct (the passage states the claim), narrower (it states a narrower or weaker version), indirect (related but not the claim itself). role: support, contrast (contradicts or complicates), review (a synthesis that reports it), method (the source of a method or tool the claim uses), priority (the original work the claim credits). Choose nothing for a claim when no candidate bears on it; never stretch a passage.
+${model
+  ? 'For each claim, read its candidate works and choose up to three whose abstracts or excerpts bear on it. For each choice copy the exact passage (one or two consecutive sentences, verbatim, character for character from the abstract or excerpt) that supports, qualifies or contradicts the claim.'
+  : 'For each claim, read its candidate works and choose up to three whose abstracts bear on it. For each choice copy the exact passage (one or two consecutive sentences, verbatim, character for character from the abstract) that supports, qualifies or contradicts the claim.'} fit: direct (the passage states the claim), narrower (it states a narrower or weaker version), indirect (related but not the claim itself). role: support, contrast (contradicts or complicates), review (a synthesis that reports it), method (the source of a method or tool the claim uses), priority (the original work the claim credits). Choose nothing for a claim when no candidate bears on it; never stretch a passage.
 
 ${group.map((c) => {
   const list = perClaim.get(c.id) ?? []
-  return `CLAIM ${c.id}: ${c.text}\n${list.length ? list.map((h) => `  WORK ${h.id}: ${h.authors.slice(0, 3).join(', ')}${h.authors.length > 3 ? ' et al.' : ''} (${h.year ?? 'n.d.'}). ${h.title}.${h.venue ? ` ${h.venue}.` : ''}\n  ABSTRACT: ${h.abstract.slice(0, 1800)}`).join('\n') : '  (no candidates found)'}`
+  return `CLAIM ${c.id}: ${c.text}\n${list.length ? list.map((h) => `  WORK ${h.id}: ${h.authors.slice(0, 3).join(', ')}${h.authors.length > 3 ? ' et al.' : ''} (${h.year ?? 'n.d.'}). ${h.title}.${h.venue ? ` ${h.venue}.` : ''}\n  ${fromModel(h.id) ? 'EXCERPT' : 'ABSTRACT'}: ${h.abstract.slice(0, 1800)}`).join('\n') : '  (no candidates found)'}`
 }).join('\n\n')}`,
             schema: obj({ claims: arr(obj({ claim_id: str(), choices: arr(obj({ work_id: str(), passage: str(), fit: enm(['direct', 'narrower', 'indirect']), role: enm(['support', 'contrast', 'review', 'method', 'priority']), note: str() })) })) }),
           })
@@ -183,6 +206,10 @@ export const verify: Behavior = {
     return batches(pending, VERIFY_BATCH).map((group): Target => ({
       key: `verify:${group.map((c) => c.id).join(',')}`, label: `citations ${group.map((c) => c.id).join(', ')}`,
       run: async () => {
+        // A world model's source names no authors: its record in the DOI registries (or OpenAlex) does, before it is
+        // judged and before the text cites it.
+        const model = worldModelOf(paper)
+        if (model) for (const id of new Set(group.map((c) => c.workId))) if (model.publications.has(id)) await describeWork(model, paper.state.works[id])
         const reply = await paper.ask<any>({
           behavior: 'verify', target: group.map((c) => c.id).join(','), seat: 'verifier', family: seatFamily(paper, 'verifier'),
           prompt: `${HOUSE}
@@ -258,6 +285,8 @@ export const reassess: Behavior = {
     const s = paper.state
     if (!live(paper) || !s.plan) return []
     if (s.citations.some((c) => c.status === 'selected') || activeClaims(paper).some(needsEvidence)) return []
+    // A claim that may still find its primary source on the web has not failed yet.
+    if (activeClaims(paper).some((c) => awaitsWebSearch(paper, c))) return []
     const failed = activeClaims(paper).filter((c) => c.loadBearing && c.status === 'unsupported')
     if (!failed.length) return []
     const ids = failed.map((c) => c.id).join(',')
@@ -296,11 +325,11 @@ ${activeClaims(paper).filter((c) => c.status === 'supported' || c.status === 'na
   },
 }
 
-export { verifyCitationsSettled }
+export { verifyCitationsSettled, selectNext, PER_CLAIM }
 
 /** Whether a section's claims have finished their evidence work (or given up on it). */
 function verifyCitationsSettled(paper: Paper, claimIds: string[]): boolean {
   const ids = new Set(claimIds)
   if (paper.state.citations.some((c) => ids.has(c.claimId) && c.status === 'selected')) return false
-  return !activeClaims(paper).some((c) => ids.has(c.id) && needsEvidence(c))
+  return !activeClaims(paper).some((c) => ids.has(c.id) && (needsEvidence(c) || awaitsWebSearch(paper, c)))
 }

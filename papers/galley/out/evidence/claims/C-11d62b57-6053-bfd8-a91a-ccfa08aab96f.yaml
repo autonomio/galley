@@ -1,0 +1,6 @@
+id: "C-11d62b57-6053-bfd8-a91a-ccfa08aab96f"
+class: "derived_inference"
+statement: "Galley checks its reliability inside each run, on that manuscript's actual inputs. Code enforces verbatim matching of passages against abstracts, the calibrate behavior plants defects to test the verifier, and a different family reconciles the final text. These in-run checks take the place of long offline test suites run before deployment, so galley keeps its offline tests minimal."
+uncertainty: "medium"
+evidence_ids: ["E-4430f256-c940-b3c6-aed5-0e2bfce03da5"]
+state: "active"

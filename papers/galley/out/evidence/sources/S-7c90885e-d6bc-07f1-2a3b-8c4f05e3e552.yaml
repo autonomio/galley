@@ -4,5 +4,5 @@ title: "Argument plan of the manuscript"
 uri: null
 date: "2026-11-19"
 locator: "C34"
-excerpt: "Scope-elastic compilation uses required behaviours to carry the manuscript to completion while verification sets the standing of claims marked as needing external evidence. A claim that exceeds its verified evidence is narrowed, given hypothesis standing, or listed for human sign-off. Failed verification does not halt the draft. With citation choices on, a claim can be held back pending a person's decision. Code enforces citation eligibility, while keeping prose within a claim's standing depends on drafting instructions and model judgments."
+excerpt: "For citations from claim-level evidence search, Galley requires a code-confirmed verbatim match to the cited work's abstract. The checker proposes the passage and a verifier from another family judges it supported, narrower or not supported. Galley narrows the claim for a narrower judgment and rejects the citation for a not-supported judgment. Model-run review citations use independently audited full-text passages. Galley takes the bibliographic record for a cited work with a DOI from the DOI registry."
 access: "inspected"

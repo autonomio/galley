@@ -4,6 +4,7 @@
 // newest state. Improvers can fail without stopping the line: a target that
 // fails twice is settled as skipped, with a note, and the paper moves on.
 import { ModelFailure, RateLimited } from './models.js'
+import type { Mode } from './config.js'
 import type { Paper } from './paper.js'
 
 export interface Target {
@@ -19,7 +20,12 @@ export interface Target {
 
 export interface Behavior {
   id: string
-  stage: 'skeleton' | 'truth' | 'aim' | 'substance' | 'manuscript' | 'referees' | 'close'
+  stage: 'skeleton' | 'truth' | 'aim' | 'substance' | 'manuscript' | 'referees' | 'close' | 'thesis'
+  /**
+   * The branches this behavior belongs to: one ladder serves both, and a run takes the rungs of its own mode. A behavior
+   * that names none is the paper's.
+   */
+  modes?: Mode[]
   /** False only for the skeleton, which must succeed for a paper to exist at all. */
   improver: boolean
   title: string
@@ -84,9 +90,15 @@ async function runTarget(paper: Paper, behavior: Behavior, target: Target, log: 
 
 const elapsed = (ms: number) => ms < 90_000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60_000)}m`
 
+/** The rungs of one branch of the ladder, in ladder order: a paper's, or a thesis's. */
+export function branch(ladder: Behavior[], mode: Mode = 'paper'): Behavior[] {
+  return ladder.filter((behavior) => (behavior.modes ?? ['paper']).includes(mode))
+}
+
 /** Run every ready behavior until nothing is ready. Returns the paper's outcome, if it reached one. */
-export async function runPaper(paper: Paper, behaviors: Behavior[], options: RunOptions = {}): Promise<string | undefined> {
+export async function runPaper(paper: Paper, ladder: Behavior[], options: RunOptions = {}): Promise<string | undefined> {
   const log = options.log ?? ((line: string) => console.log(line))
+  const behaviors = branch(ladder, paper.config.mode)
   paper.say = log
   paper.ladder = behaviors.map(({ id, stage, improver, title }) => ({ id, stage, improver, title }))
   // The editor's copy is a convenience: keeping it in step never stops a paper.
@@ -124,6 +136,8 @@ async function scan(paper: Paper, behaviors: Behavior[], options: RunOptions, lo
   for (;;) {
     // What a person changed in the editor is state like any other: the next behavior sees it.
     sync()
+    // So is a change of model families in the project's settings: the next call goes to the seats dealt for them.
+    paper.refreshFamilies()
     let progressed = false
     for (const behavior of behaviors) {
       if (paper.config.off.includes(behavior.id)) continue

@@ -1,8 +1,8 @@
 id: "E-348cb907-17ce-21d7-7002-b70b662d90f8"
 kind: "external"
-summary: "narrower: The passage supports that unsupported claims remain an issue in AI-generated papers even with retrieval and human guidance, but it does not mention dedicated verifiers or DeepSciVerify."
-source_ids: ["S-891ddf2c-ac93-52ea-7a53-cf760718196a"]
+summary: "narrower: The passage reports a significant correlation between authors' coauthorship network centrality measures and citation counts, but it does not state that what sets very high-impact papers apart is unsettled or address preferential citation of positive results."
+source_ids: ["S-010ec645-ed0b-659d-8423-10d4391f3fbc"]
 independent: false
 limitations: ["Verified against the abstract; the full text was not inspected."]
 premise_claim_ids: []
-claim_ids: ["C-ad4d7174-8091-190a-0e3d-a7506711749f"]
+claim_ids: ["C-92a5cbf7-4f1f-f313-653e-d78f0e8a1f4a"]

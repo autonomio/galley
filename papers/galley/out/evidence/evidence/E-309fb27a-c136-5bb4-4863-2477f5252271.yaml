@@ -1,8 +1,8 @@
 id: "E-309fb27a-c136-5bb4-4863-2477f5252271"
 kind: "external"
-summary: "narrower: The passage confirms that evaluating AI-generated papers remains an open challenge and presents one benchmarking protocol using multi-LLM peer review to assess scientific papers, rather than multiple benchmarking studies or explicit evaluation of autonomous research-generation systems."
-source_ids: ["S-643169c1-2c3c-77c8-45a1-0feea4616dc2"]
+summary: "narrower: The passage describes DeepSurvey as an agent-oriented survey generation system that writes surveys and validates citation-claim alignment, but it does not mention LLMs, SciSage, peer review generation, DeepReviewer, or DeepSciVerify."
+source_ids: ["S-89067265-5d9d-37b8-fca2-9050b816d979"]
 independent: false
 limitations: ["Verified against the abstract; the full text was not inspected."]
 premise_claim_ids: []
-claim_ids: ["C-70cac857-6141-b0a9-11c9-848013315e81"]
+claim_ids: ["C-cf8cf36b-cd4b-167e-978f-6b8fa032c0ca"]

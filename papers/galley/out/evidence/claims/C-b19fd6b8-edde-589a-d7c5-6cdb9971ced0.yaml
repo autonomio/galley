@@ -1,0 +1,6 @@
+id: "C-b19fd6b8-edde-589a-d7c5-6cdb9971ced0"
+class: "observed_fact"
+statement: "Agentic LLM systems already generate complete research papers end to end; for example, The AI Scientist (Lu et al., 2024) generates research ideas, writes code, runs experiments, writes a full scientific paper and evaluates it with a simulated review process."
+uncertainty: "low"
+evidence_ids: ["E-b65fcba1-9269-17d2-b4e0-a7ddb783a209","E-90256656-2d6c-3ca0-d725-769705a0cca4"]
+state: "active"

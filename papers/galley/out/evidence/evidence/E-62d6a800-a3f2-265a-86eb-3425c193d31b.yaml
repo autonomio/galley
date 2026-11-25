@@ -1,0 +1,8 @@
+id: "E-62d6a800-a3f2-265a-86eb-3425c193d31b"
+kind: "external"
+summary: "narrower: The passage states that DraftMarks computes writing traces from writer–AI interactions and marks AI-generated content within the final written artifact, without specifying text-span granularity, explicit marking of human-written portions, or LLMs specifically."
+source_ids: ["S-ee4d5783-9c0e-0017-f880-0c338cca0047"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-a9fa3523-f94e-7115-2078-314dfd16fa87"]

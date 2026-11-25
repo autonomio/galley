@@ -1,6 +1,6 @@
 id: "C-e007b72b-75ae-8027-ee86-f23c0ca04c54"
 class: "derived_inference"
-statement: "Galley breaks manuscript production into a ladder of 24 atomic behaviours, 7 required and 17 improvers. With the dial set to autonomous, the person supplies only the seed text and no step waits for a person."
+statement: "Work is not blocked by minor issues. Only the seven skeleton behaviors (extract, plan, outline, draft, frame, typeset, ready) are required for a paper to exist. Every other behavior is an improver that can make the paper better but cannot stop it, so small defects do not halt production."
 uncertainty: "medium"
 evidence_ids: ["E-d0d860a4-3dfa-8ce0-ccba-5b2ef9b05678"]
 state: "active"

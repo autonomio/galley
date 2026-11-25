@@ -8,7 +8,8 @@ import { softwareEvidenceIds, softwarePaperPurpose } from '../software.js'
 import { arr, bool, enm, int, nstr, obj, str } from '../schema.js'
 import { squash } from '../text.js'
 import type { Claim, ClaimKind, Direction, EvidenceNeed, Factor, IdeaReview } from '../types.js'
-import { activeClaims, briefBlock, claim, live, nextClaimId, now, seatFamily, setClaim } from './common.js'
+import { onlyWorldModel, searchWorldModelQueries, worldModelOf } from '../worldmodel.js'
+import { activeClaims, briefBlock, claim, live, nextClaimId, noteForAuthors, now, seatFamily, setClaim } from './common.js'
 
 const KINDS = ['contribution', 'background', 'method', 'novelty', 'common_knowledge'] as const
 const OBJECT_TYPES = ['capability', 'coordinate_system', 'frame', 'territory', 'finding', 'other'] as const
@@ -17,7 +18,7 @@ const FACTORS = ['input_not_output', 'shared_bottleneck', 'conventional_body_one
 const needFor = (kind: ClaimKind): EvidenceNeed => kind === 'contribution' ? 'internal' : kind === 'common_knowledge' ? 'none' : 'external'
 
 export const extract: Behavior = {
-  id: 'extract', stage: 'skeleton', improver: false, title: 'Extract claims',
+  id: 'extract', stage: 'skeleton', modes: ['paper', 'thesis'], improver: false, title: 'Extract claims',
   ready: (paper) => paper.state.brief || paper.state.outcome ? [] : [{
     key: 'extract:seed', label: 'the seed',
     run: async () => {
@@ -36,7 +37,7 @@ Read the seed below. It may be a rant, rough notes or transcribed speech. Recove
 - field: the host field a paper on this would be published in.
 - audience: who would read and build on it.
 - about_system: true only when the seed is about galley itself, the system that is producing this manuscript, or about part of it; false for any other subject.
-- claims: every distinct claim the seed makes or clearly implies. Each is a short self-contained statement that keeps its conditions, quantifiers and scope. kind is contribution (what the authors' own work is or does), background (a claim about the world that others established), method (how something is done), novelty (that something is new), or common_knowledge (needs no citation). seed_quote is an exact, verbatim excerpt of the seed (at most 40 words) that the claim comes from. Do not add claims the seed does not make.
+- claims: every distinct claim the seed makes or clearly implies. Each is a short self-contained statement that keeps its conditions, quantifiers and scope. A seed's instructions about the paper itself (that it be ready, have impact, need no intervention) are goals, not claims. kind is contribution (what the authors' own work is or does), background (a claim about the world that others established), method (how something is done), novelty (that something is new), or common_knowledge (needs no citation). seed_quote is an exact, verbatim excerpt of the seed (at most 40 words) that the claim comes from. Do not add claims the seed does not make.
 
 SEED:
 """
@@ -73,7 +74,7 @@ function hitsBlock(results: Record<string, QueryResult>, queries: { id: string; 
 }
 
 export const position: Behavior = {
-  id: 'position', stage: 'aim', improver: true, title: 'Position against prior art, the bottleneck and the consensus',
+  id: 'position', stage: 'aim', modes: ['paper', 'thesis'], improver: true, title: 'Position against prior art, the bottleneck and the consensus',
   ready: (paper) => !live(paper) || !paper.state.brief?.hasSubject || paper.state.positioning.priorArt ? [] : [{
     key: 'position:seed', label: 'prior art, bottleneck and consensus',
     run: async () => {
@@ -96,16 +97,23 @@ ${brief}`,
         ...(q.bottleneck ?? []).slice(0, 2).map((search: string, i: number) => ({ id: `need${i + 1}`, search })),
         ...(q.consensus ?? []).slice(0, 2).map((search: string, i: number) => ({ id: `belief${i + 1}`, search })),
       ].filter((x, i, all) => x.search && all.findIndex((y) => y.search === x.search) === i)
-      const searching = paper.begin({ behavior: 'position', target: 'search', what: `Canary search, ${queries.length} queries` })
-      let results: Record<string, QueryResult>
-      try {
+      // A paper built on a world model positions itself against the world model's sources: only them by default, else
+      // them first and then the literature.
+      const model = worldModelOf(paper)
+      let results: Record<string, QueryResult> = {}
+      if (!onlyWorldModel(paper)) try {
+        const searching = paper.begin({ behavior: 'position', target: 'search', what: `Canary search, ${queries.length} queries` })
         results = await canarySearch(paper.path('canary', 'position'), `galley:${paper.state.slug}:position`, queries, 12, (ms, why) => { paper.journal({ event: 'source_wait', behavior: 'position', wait_ms: ms, why }); paper.say(`… position: ${why}; next try in ${Math.round(ms / 1000)}s`) }).finally(searching)
       } catch (error) {
         if (!(error instanceof SourceUnavailable)) throw error
-        // The outage was waited out as long as galley waits: the idea is reviewed without positioning rather than not at all.
-        paper.note('position', `Prior art, the bottleneck and the consensus were not checked: ${error.message}`, true)
-        paper.save()
-        return
+        // The outage was waited out as long as galley waits: the idea is reviewed without positioning rather than not at
+        // all, or against its world model alone.
+        paper.note('position', `Prior art, the bottleneck and the consensus were not checked${model ? ' in the literature, only in the world model' : ''}: ${error.message}`, true)
+        if (!model) { paper.save(); return }
+      }
+      if (model) {
+        const local = searchWorldModelQueries(model, queries, 12)
+        for (const q of queries) results[q.id] = { matched: null, status: null, results: [...local[q.id].results, ...(results[q.id]?.results ?? [])].slice(0, 12) }
       }
       for (const r of Object.values(results)) for (const hit of r.results) if (hit.abstract || hit.title) paper.state.works[hit.id] ??= workFromHit(hit)
       const years: Record<string, number> = {}
@@ -140,7 +148,7 @@ ${hitsBlock(results, queries, 12)}`,
   }],
 }
 
-function positioningBlock(paper: Parameters<Behavior['ready']>[0]): string {
+export function positioningBlock(paper: Parameters<Behavior['ready']>[0]): string {
   const p = paper.state.positioning
   const name = (id: string) => { const w = paper.state.works[id]; return w ? `${w.title} (${w.year ?? 'n.d.'})` : id }
   return [
@@ -278,6 +286,8 @@ ${s.directions.map((d) => `${d.id}: ${d.title}\n  Question: ${d.question}\n  Shi
 export function aimSettled(paper: Parameters<Behavior['ready']>[0]): boolean {
   const s = paper.state
   if (!paper.isSettled('position:seed') && !paper.config.off.includes('position')) return false
+  // A thesis takes its direction from the stance the person chose, so its aim is settled once the idea is placed.
+  if (paper.config.mode === 'thesis') return true
   if (paper.config.off.includes('review-idea')) return true
   if (!paper.isSettled('review-idea:seed')) return false
   if (!s.ideaReview || s.ideaReview.verdict === 'worth_writing') return true
@@ -295,7 +305,7 @@ export const plan: Behavior = {
     if ((paper.config.materials ?? []).some((m) => m.kind === 'dataset') && !s.measurements && !paper.config.off.includes('analyze')) return []
     // With a simulation, the argument is planned on what it shows.
     if (paper.config.simulation && !s.simulations && !paper.config.off.includes('simulate')) return []
-    // A paper whose contribution is its systematic review is planned once the review is in.
+    // A paper whose contribution is its literature review is planned once the review is in.
     if (paper.config.literatureReview === 'load-bearing' && s.literature?.status !== 'done' && s.literature?.status !== 'failed' && !paper.config.off.includes('literature-review')) return []
     return [{
       key: 'plan:argument', label: 'the argument',
@@ -313,15 +323,16 @@ Plan the argument of the paper. The seed is the person's; keep its concern and i
 - working_title: a plain working title.
 - noun: the name the paper gives its central idea, method or artifact, if it has one (else an empty string).
 - opens: 3 to 6 concrete next papers strangers could write because this one exists.
-- claims: the complete set of claims the argument needs. For each seed claim give its id and action keep, reword or drop (with the reason). Add the claims the argument needs that the seed lacks (id null, action add): background claims about prior work and the state of the field that the paper must establish with citations, and contribution claims that state exactly what this paper delivers. kind is contribution, background, method, novelty or common_knowledge. need is external (must be cited: other people's published work), internal (backed by the authors' own work: what this paper presents, and systems, tools or results the authors themselves built, as the seed's "we" and "our" show) or none (common knowledge or a definition). load_bearing is true when the thesis falls if the claim falls. depends_on lists the ids of claims this one rests on (no cycles).
+- claims: the complete set of claims the argument needs. For each seed claim give its id and action keep, reword or drop (with the reason). Add the claims the argument needs that the seed lacks (id null, action add): background claims about prior work and the state of the field that the paper must establish with citations, and contribution claims that state exactly what this paper delivers. kind is contribution, background, method, novelty or common_knowledge. need is external (must be cited: other people's published work), internal (backed by the authors' own work: what this paper presents, and systems, tools or results the authors themselves built, as the seed's "we" and "our" show) or none (common knowledge or a definition). A novelty claim (what this paper does that other work has not) is never internal: what it says of other work needs a source. load_bearing is true when the thesis falls if the claim falls. depends_on lists the ids of claims this one rests on (no cycles).
 Lift the weakest factor where the evidence allows it, but never claim more than can be supported.${paper.softwareRole === 'instrument' ? '\nFor a study claim established by the completed instrument task, use need internal and link I1 in software_evidence. Keep the thesis about the study question.' : s.softwareSubject ? '\nFor a claim established by the software evaluation, name its supporting F or B evidence IDs in software_evidence and use need internal. Use only the evidence and result placeholders shown below. Leave unresolved results out of the argument. Novelty and comparisons to external work still need external evidence.' : ''}
-A claim about the authors' data rests on the measurements: it names the ones it uses (A1, A2), has need internal, says only what they show, and writes any number from them as its placeholder ({{data.A1}}). A claim about a simulation rests on its results: it names the simulation (S1), has need internal, says only what the results show under the simulation's assumptions, and writes any number from them as its placeholder ({{sim.S1.profit.p95}}). Aim for about ${Math.max(8, Math.min(40, Math.round(paper.config.words / 230)))} claims in total, scaled to a paper of about ${paper.config.words} words.
+A claim states what the paper argues, presents or shows, never what it does not: never reword a claim into what the paper does not test, establish or cover, into an open hypothesis, or into a narrow definition of readiness or success. A seed's aims and instructions about the paper itself (that it be ready, have impact, need no intervention) are the person's goals, not claims to qualify. A claim the paper cannot support is dropped, with the reason; the reason reaches the authors as a note, never the text.
+A claim about the authors' data rests on the measurements: it names the ones it uses (A1, A2), has need internal, says only what they show, and writes any number from them as its placeholder ({{data.A1}}), with its interval ({{data.A1.ci}}) where it has one. A method claim names only analyses that ran; a planned analysis that did not run is never a claim. A claim about a simulation rests on its results: it names the simulation (S1), has need internal, says only what the results show under the simulation's assumptions, and writes any number from them as its placeholder ({{sim.S1.profit.p95}}). Aim for about ${Math.max(8, Math.min(40, Math.round(paper.config.words / 230)))} claims in total, scaled to a paper of about ${paper.config.words} words.
 
 ${briefBlock(paper)}
 ${review}
 ${positioningBlock(paper)}
 
-${paper.config.literatureReview === 'load-bearing' && s.literature?.status === 'done' ? `\nTHE PAPER'S MAIN CONTRIBUTION IS ITS SYSTEMATIC REVIEW. The thesis states what the review establishes about its question. The review's findings (marked "review finding" below) are the paper's contribution claims: keep each one as it is (action keep), give it kind contribution, need external, and load_bearing true when the thesis rests on it. Add only the claims a review paper needs to frame them, never a contribution beyond what the review found.\n` : ''}${paper.config.simulation === 'load-bearing' && Object.keys(s.simulations ?? {}).length ? `\nTHE PAPER'S MAIN CONTRIBUTION RESTS ON ITS SIMULATION. The thesis states what the simulation shows. The contribution claims are claims about its results (need internal, load_bearing true), each naming the simulation and writing its numbers as placeholders. State the assumptions the results depend on as claims too, so the paper argues from them openly.\n` : ''}
+${paper.config.literatureReview === 'load-bearing' && s.literature?.status === 'done' ? `\nTHE PAPER'S MAIN CONTRIBUTION IS ITS LITERATURE REVIEW. The thesis states what the review establishes about its question. The review's findings (marked "review finding" below) are the paper's contribution claims: keep each one as it is (action keep), give it kind contribution, need external, and load_bearing true when the thesis rests on it. Add only the claims a review paper needs to frame them, never a contribution beyond what the review found.\n` : ''}${paper.config.simulation === 'load-bearing' && Object.keys(s.simulations ?? {}).length ? `\nTHE PAPER'S MAIN CONTRIBUTION RESTS ON ITS SIMULATION. The thesis states what the simulation shows. The contribution claims are claims about its results (need internal, load_bearing true), each naming the simulation and writing its numbers as placeholders. State the assumptions the results depend on as claims too, so the paper argues from them openly.\n` : ''}
 Seed claims:
 ${s.claims.filter((c) => c.origin !== 'review' || paper.config.literatureReview === 'load-bearing').map((c) => `- ${c.id} [${c.kind}${c.origin === 'review' ? ', review finding' : ''}] ${c.text}${c.seedQuote ? ` (seed: "${c.seedQuote}")` : ''}`).join('\n')}`,
           schema: obj({
@@ -332,7 +343,12 @@ ${s.claims.filter((c) => c.origin !== 'review' || paper.config.literatureReview 
         s.plan = { thesis: reply.thesis, workingTitle: reply.working_title, noun: reply.noun || '', opens: reply.opens ?? [], objectType: s.brief!.objectType }
         for (const c of reply.claims ?? []) {
           const existing = c.id ? claim(paper, c.id) : undefined
-          if (existing && c.action === 'drop') { setClaim(paper, existing, 'dropped', 'plan', c.reason); continue }
+          if (existing && c.action === 'drop') {
+            setClaim(paper, existing, 'dropped', 'plan', c.reason)
+            // A seed claim the argument leaves out is the authors' to know about, beside the text.
+            if (existing.origin === 'seed') noteForAuthors(paper, { sectionId: null, quote: '', text: `Your seed's claim "${existing.text}" is not in the argument: ${c.reason}`, kind: 'caution', seat: 'author', family: seatFamily(paper, 'author'), behavior: 'plan' })
+            continue
+          }
           const target = existing ?? (() => {
             const added: Claim = { id: nextClaimId(paper), text: c.text, kind: c.kind, seedQuote: '', origin: 'system', need: c.need, loadBearing: false, dependsOn: [], status: 'open', history: [{ at: now(), behavior: 'plan', from: '', to: c.text, reason: c.reason }] }
             s.claims.push(added)
@@ -340,7 +356,8 @@ ${s.claims.filter((c) => c.origin !== 'review' || paper.config.literatureReview 
           })()
           if (existing && c.action === 'reword' && c.text.trim() !== existing.text) setClaim(paper, existing, existing.status, 'plan', c.reason, c.text)
           target.kind = c.kind
-          target.need = c.need
+          // What a novelty claim says of other work is a claim about the literature, which needs a source.
+          target.need = c.kind === 'novelty' && c.need === 'internal' ? 'external' : c.need
           target.loadBearing = !!c.load_bearing
           target.dependsOn = (c.depends_on ?? []).filter((id: string) => id !== target.id)
           if (s.softwareSubject && Array.isArray(c.software_evidence)) {
@@ -348,7 +365,7 @@ ${s.claims.filter((c) => c.origin !== 'review' || paper.config.literatureReview 
             if (ids.length) target.softwareEvidence = ids
           }
         }
-        // A finding of the systematic review keeps the sources it was imported with.
+        // A finding of the literature review keeps the sources it was imported with.
         for (const c of s.claims) if (c.origin === 'review') c.need = 'external'
         // Claims that need no outside evidence are settled now.
         for (const c of activeClaims(paper)) {
@@ -378,8 +395,8 @@ export const outline: Behavior = {
 ${STYLE}
 
 Outline the paper for ${paper.config.venue} in the host field (${s.brief!.field}), about ${paper.config.words} words in total.
-- sections: in order. Each has an id (S1, S2, …), a title, its purpose in one or two sentences, the ids of the claims it establishes, and its word budget. Every load-bearing claim is placed in exactly one section; other claims where they help, or nowhere. Use the host field's conventional structure. ${paper.config.literatureReview === 'load-bearing' && s.literature?.status === 'done' ? 'This paper is a systematic review; structure it as one: Introduction; Methods (the review\'s protocol: question, source and queries, eligibility, screening, full-text reading, independent audit); Results (the findings, by theme); Discussion (where studies disagree, what is left open, what follows); Limitations; Conclusion. Place the review\'s findings in Results.' : paper.config.literatureReview && s.literature?.status !== 'failed' ? 'A systematic literature review section is placed after the introduction for you: do not include a separate related-work section; position the paper against prior work in the introduction and the discussion.' : 'Include a section on related work.'}${paper.config.simulation === 'load-bearing' && Object.keys(s.simulations ?? {}).length ? ' The paper is built around its simulation: include a section that specifies the model (method, inputs with their bases, model lines, events, checks), a results section, and a section on how the results depend on the assumptions; chart the main results.' : ''} Include a section stating the limitations, and a closing section that names what this opens. Do not include an abstract or a references section; those are written later.
-- figures: at most three in the whole paper, each in the section it belongs to, with an id (fig1, …), a caption, and a spec precise enough to draw it. A figure is a diagram of a structure the paper describes (a pipeline, a set of roles, a lifecycle) or a chart of numbers the paper states. Never a figure that needs data the paper does not have.${s.simulations && Object.keys(s.simulations).length ? ' A simulation\'s results can be charted from its run: the distribution of an output, or a sequential run\'s bands over time.' : ''}
+- sections: in order. Each has an id (S1, S2, …), a title, its purpose in one or two sentences, the ids of the claims it establishes, and its word budget. Every load-bearing claim is placed in exactly one section; other claims where they help, or nowhere. Use the host field's conventional structure. ${paper.config.literatureReview === 'load-bearing' && s.literature?.status === 'done' ? 'This paper is a systematic review; structure it as one: Introduction; Methods (the review\'s protocol: question, source and queries, eligibility, screening, full-text reading, independent audit); Results (the findings, by theme); Discussion (where studies disagree, what is left open, what follows); Conclusion. Place the review\'s findings in Results.' : paper.config.literatureReview && s.literature?.status !== 'failed' ? 'A systematic literature review section is placed after the introduction for you: do not include a separate related-work section; position the paper against prior work in the introduction and the discussion.' : 'Include a section on related work.'}${paper.config.simulation === 'load-bearing' && Object.keys(s.simulations ?? {}).length ? ' The paper is built around its simulation: include a section that specifies the model (method, inputs with their bases, model lines, events, checks), a results section, and a section on how the results depend on the assumptions; chart the main results.' : ''} End with a conclusion section: what the paper established, then what it opens. Plan no limitations section: the limits of the work go to the authors as comments beside the text. Do not include an abstract or a references section; those are written later.
+- figures: at most three in the whole paper, each in the section it belongs to, with an id (fig1, …), a caption that refers to no section by its number, and a spec precise enough to draw it. A figure is a diagram of a structure the paper describes (a pipeline, a set of roles, a lifecycle) or a chart of numbers the paper states. Never a figure that needs data the paper does not have.${s.simulations && Object.keys(s.simulations).length ? ' A simulation\'s results can be charted from its run: the distribution of an output, or a sequential run\'s bands over time.' : ''}
 - style: notes on register and conventions for this venue and field.
 - glossary: the terms the paper defines, as "term: definition", including the paper's noun.
 

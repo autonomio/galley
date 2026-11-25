@@ -1,6 +1,6 @@
 id: "E-40a281ea-838d-e55a-cb4a-fe0956b78996"
-kind: "assumption"
-summary: "No external evidence was verified; the manuscript states this as a hypothesis."
+kind: "statement"
+summary: "Stated by the authors about their own work, as presented in the manuscript."
 source_ids: ["S-a54052bf-d007-bdf4-ae1f-cd355919e2e8"]
 independent: false
 limitations: []

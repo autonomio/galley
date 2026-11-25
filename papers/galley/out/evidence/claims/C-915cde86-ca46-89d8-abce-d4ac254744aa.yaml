@@ -1,0 +1,6 @@
+id: "C-915cde86-ca46-89d8-abce-d4ac254744aa"
+class: "hypothesis"
+statement: "Multi-agent LLM systems for scholarly work, such as SciSage, DeepReviewer 2.0 and DeepSciVerify, automate manuscript writing, peer review or scientific claim verification by dividing these tasks among role-specialized agents."
+uncertainty: "high"
+evidence_ids: ["E-9496cc01-48ff-fb24-2eb8-5f475244c637"]
+state: "active"

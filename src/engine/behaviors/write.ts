@@ -8,14 +8,13 @@ import type { Behavior, Target } from '../scheduler.js'
 import { arr, enm, obj, str } from '../schema.js'
 import { applyExact, dropUnknownCitations, words } from '../text.js'
 import type { Passage, Section } from '../types.js'
-import { briefBlock, claimsBlock, keyFor, live, manuscriptBlock, now, seatFamily, sectionText } from './common.js'
+import { activeClaims, briefBlock, citableKeys, claimsBlock, keyFor, live, manuscriptBlock, noteForAuthors, now, seatFamily, sectionName, sectionText } from './common.js'
 import { verifyCitationsSettled } from './truth.js'
 import { literatureBlock, REVIEW_SECTION, REVIEW_SECTION_RULES } from '../literature.js'
 import { simulationSeries } from '../simulations.js'
+import { fillPlaceholders, productionRecord } from '../record.js'
 
-function knownKeys(paper: Paper): Set<string> {
-  return new Set(paper.state.citations.filter((c) => c.status === 'verified').map((c) => keyFor(paper, paper.state.works[c.workId])))
-}
+const knownKeys = citableKeys
 
 function figureNumbers(paper: Paper): Map<string, number> {
   const numbers = new Map<string, number>()
@@ -63,9 +62,9 @@ Venue: ${paper.config.venue}. Style for this venue and field: ${s.outline!.style
 Glossary: ${s.outline!.glossary.join('; ')}
 
 The whole paper, so you know what the other sections cover:
-${s.outline!.sections.map((sec) => `${sec.id} ${sec.title}: ${sec.purpose}`).join('\n')}
+${s.outline!.sections.map((sec) => `${sectionName(paper, sec)}: ${sec.purpose}`).join('\n')}
 
-YOUR SECTION: ${section.id} ${section.title}
+YOUR SECTION: ${sectionName(paper, section)}
 Purpose: ${section.purpose}
 Length: about ${section.words} words.
 ${figures.length ? `Figures placed after this section's text, to refer to by number: ${figures.map((f) => `Figure ${numbers.get(f.id)}: ${f.caption}`).join('; ')}` : ''}
@@ -75,18 +74,28 @@ ${claimsBlock(paper, section.claimIds) || '(none; this section connects and fram
 
 Rules:
 - Every factual sentence states one of the claims above or connects them. Add no new factual claims, numbers or names.
+- Refer to another section by the number it prints with, as listed above (Section 5), never by its id.
+- A statement about what the data or an analysis shows agrees with the measurement it rests on. Where the paper reads a result differently from what an analysis recorded (for example under a stricter definition), it says so where it states the result: what the record holds, and why the paper reads it as it does.
+- Define a term, symbol or quantity only in the section whose purpose it is (see the whole paper above). Every other section uses it as defined there, pointing to that section or definition where a reader needs it, and never defines it again; the introduction names the central idea in a sentence, not its full definition. Each symbol stands for one thing only.
 - Cite only with the keys given above, in Pandoc form: [@key] or [@key1; @key2], or @key for a narrative citation. Cite a claim's evidence where the claim is made. Never cite a key that is not listed.
-- A claim without verified evidence is written as a hypothesis, an expectation or an open question, never as an established fact.
+- A claim without verified evidence is stated plainly, like the paper's other claims, and gets a note for the authors saying it has no verified source.
+- notes: everything the authors should know about this section that the text must not say: a claim with no verified source, a limit of the work, a doubt, a caution. Each note gives quote (the exact words of your section it concerns, copied character for character) and note (one or two sentences to the authors).
 - Do not write the section heading. You may use ## subheadings if the section is long.
 - Numbers about how this manuscript itself was produced may be written only as these placeholders, which are filled in from the production record at typesetting:
 ${placeholderGuide()}
 ${section.id === REVIEW_SECTION ? `\n${literatureBlock(paper)}\n\n${REVIEW_SECTION_RULES}\n` : ''}
-Return markdown (the section body) and used_claims (ids of the claims you stated).`,
-            schema: obj({ markdown: str(), used_claims: arr(str()) }),
+Return markdown (the section body), used_claims (ids of the claims you stated) and notes.`,
+            schema: obj({ markdown: str(), used_claims: arr(str()), notes: arr(obj({ quote: str(), note: str() })) }),
           })
           const { text, dropped } = dropUnknownCitations(String(reply.markdown ?? '').trim(), knownKeys(paper))
           if (dropped.length) paper.note('draft', `${section.id}: removed citations to unknown keys ${[...new Set(dropped)].join(', ')}`)
           setPassage(paper, section.id, text, { kind: 'agent', family, model: paper.modelFor({ seat: 'author', family }).model, seat: 'author', behavior: 'draft' }, 'first draft')
+          // The caution the text leaves out goes beside it, for the authors.
+          for (const n of reply.notes ?? []) noteForAuthors(paper, { sectionId: section.id, quote: text.includes(String(n.quote ?? '')) ? String(n.quote) : '', text: String(n.note ?? ''), kind: /source|evidence|verif|cit/i.test(String(n.note)) ? 'unverified' : 'caution', seat: 'author', family, behavior: 'draft' })
+          // A claim the section states without a verified source is flagged for the authors even when the draft did not say so.
+          for (const c of activeClaims(paper).filter((k) => section.claimIds.includes(k.id) && k.status === 'unsupported' && (reply.used_claims ?? []).includes(k.id))) {
+            if (!(paper.state.authorNotes ?? []).some((n) => n.sectionId === section.id && n.kind === 'unverified' && n.text.includes(c.id))) noteForAuthors(paper, { sectionId: section.id, quote: '', text: `${c.id} has no verified source: "${c.text}" Cite a source for it, or cut it.`, kind: 'unverified', seat: 'author', family, behavior: 'draft' })
+          }
           paper.save()
         },
       }))
@@ -99,7 +108,7 @@ export const fidelity: Behavior = {
     const s = paper.state
     if (!live(paper) || !s.outline) return []
     return s.outline.sections
-      .filter((section) => s.passages[section.id] && !s.passages[section.id].revisions.some((r) => r.reason.startsWith('fidelity')) && s.passages[section.id].checked === 'unchecked')
+      .filter((section) => section.role !== 'limitations' && s.passages[section.id] && !s.passages[section.id].revisions.some((r) => r.reason.startsWith('fidelity')) && s.passages[section.id].checked === 'unchecked')
       .map((section): Target => ({
         key: `fidelity:${section.id}`, label: `${section.id} against its claims`,
         run: async () => {
@@ -111,7 +120,7 @@ export const fidelity: Behavior = {
 
 ${STYLE}
 
-Check one section of a manuscript against the claims and evidence it is allowed to state. Report each sentence that says more than its claim or passage supports (overclaim), states a fact that is not among the claims (unsupported), cites a key whose passage does not back the sentence (miscite), contradicts another claim (contradiction), or breaks the style rules (style). For each, give the exact text to replace (old, copied character for character from the section, long enough to be unique) and its replacement (new): the smallest change that makes the sentence faithful. When a citation is wrong, remove or replace its key; never write an author's name in its place. Placeholders like {{run.calls}} are filled in later and are allowed. Report nothing for sentences that are fine.
+Check one section of a manuscript against the claims and evidence it is allowed to state. Report each sentence that says more than its claim or passage supports (overclaim), states a fact that is not among the claims (unsupported), cites a key whose passage does not back the sentence (miscite), contradicts another claim (contradiction), or breaks the style rules (style). For each, give the exact text to replace (old, copied character for character from the section, long enough to be unique) and its replacement (new): the smallest change that makes the sentence faithful. Fix an overclaim by stating exactly what the evidence supports, plainly; never by adding a hedge (may, might, could, appears, suggests) or a caveat. When a citation is wrong, remove or replace its key; never write an author's name in its place. Placeholders like {{run.calls}} are filled in later and are allowed. Report nothing for sentences that are fine.
 
 Section ${section.id} ${section.title} (purpose: ${section.purpose}):
 """
@@ -150,17 +159,21 @@ export const figure: Behavior = {
   ready: (paper) => {
     const s = paper.state
     if (!live(paper) || !s.outline) return []
-    return s.figures.filter((f) => f.status === 'planned').map((fig): Target => ({
-      key: `figure:${fig.id}`, label: fig.id,
+    // A chart is drawn by Astetik in the story step; this draws the rest.
+    return s.figures.filter((f) => f.status === 'planned' && f.kind !== 'chart').map((fig): Target => ({
+      // A figure a reader sent back is drawn again as a step of its own: the first drawing's step is long settled.
+      key: fig.redraws ? `figure:${fig.id}:redraw${fig.redraws}` : `figure:${fig.id}`, label: fig.id,
       run: async () => {
         const dir = paper.path('build', 'figures')
         mkdirSync(dir, { recursive: true })
         const lastError = paper.state.notes.filter((n) => n.behavior === `figure:${fig.id}`).pop()?.text
+        // Drawn again after review, a figure follows the section as it now reads, so the two say the same.
+        const sectionNow = paper.state.passages[fig.sectionId]?.text.slice(0, 9000) ?? ''
         const reply = await paper.ask<any>({
           behavior: 'figure', target: fig.id, seat: 'author', family: seatFamily(paper, 'author'),
           prompt: `${HOUSE}
 
-Draw one figure for the paper as a standalone Typst document (Typst 0.15). Use only built-in Typst: rect, circle, ellipse, line, polygon, path, place, grid, stack, box, block, align, text, table, arrows drawn with line and polygon. Do not import packages. Design it at the width it will be printed: start with #set page(width: 16cm, height: auto, margin: 6pt) and #set text(font: "New Computer Modern", size: 9pt), keep every label at 8pt or larger, and keep the figure no wider than it is tall by more than about two to one, so it stays legible on a printed page; stack or wrap rows rather than running one long row. Keep it clean and legible in greyscale with one accent colour (rgb("#2b5797")). The figure must show only what the paper describes; no invented data.
+Draw one figure for the paper as a standalone Typst document (Typst 0.15). Use only built-in Typst: rect, circle, ellipse, line, polygon, path, place, grid, stack, box, block, align, text, table, arrows drawn with line and polygon. Do not import packages. Design it at the size it will be printed, which is exactly the size you draw it: start with #set page(width: 14cm, height: auto, margin: 6pt) and #set text(font: "New Computer Modern", size: 9pt), keep every label at 8pt or larger, and keep the figure no wider than it is tall by more than about two to one, so it stays legible on a printed page; stack or wrap rows rather than running one long row. Keep it clean and legible in greyscale with one accent colour (rgb("#2b5797")). The figure must show only what the paper describes; no invented data. Print no internal identifier (no claim, dataset, scenario, simulation, plan or section id such as C12, D1, S2 or P3): name each thing as the text names it. Put no citation or author–year reference inside the figure; the caption and the text cite. Put no note, paragraph or explanation inside the figure either: the caption explains it, so the figure carries only its labels, axis titles and legend.
 
 ${briefBlock(paper)}
 Figure: ${fig.caption}
@@ -168,16 +181,20 @@ Specification: ${fig.spec}
 Section it illustrates: ${paper.state.outline!.sections.find((sec) => sec.id === fig.sectionId)?.title}
 Relevant claims:
 ${claimsBlock(paper, paper.state.outline!.sections.find((sec) => sec.id === fig.sectionId)?.claimIds ?? [])}
-${simulationSeries(paper) ? `\n${simulationSeries(paper)}\nChart a simulation only from these values, and label the axes with the quantities and units the paper uses.` : ''}
-${lastError ? `\nThe previous attempt failed to compile with: ${lastError}\nFix that.` : ''}
+${sectionNow ? `\nThe section as it now reads; the figure and its caption must agree with it (its counts, categories, statuses and wording):\n"""\n${sectionNow}\n"""\n` : ''}${simulationSeries(paper) ? `\n${simulationSeries(paper)}\nChart a simulation only from these values, and label the axes with the quantities and units the paper uses.` : ''}
+${lastError ? `\nThe previous attempt failed to compile with: ${lastError}\nFix that.` : ''}${fig.revise ? `\nIn the typeset paper, a reader found this in the figure: ${fig.revise}\nDraw it again without that defect.` : ''}
+A number may be written as its {{placeholder}}; it is filled in with its recorded value before the figure is drawn.
 
-Return typst (the complete document source).`,
-          schema: obj({ typst: str() }),
+Return typst (the complete document source), and caption: the caption as it should print under the figure. Keep the current caption unless it no longer matches the figure as drawn or the section as it reads; never name an internal identifier in it, never refer to a section by its number (remove any such reference), and write any mathematics in it in LaTeX between dollar signs ($W_t$, not W_t).`,
+          schema: obj({ typst: str(), caption: str() }),
         })
-        const source = String(reply.typst ?? '')
+        // A figure is a picture: its numbers are written in before it is drawn, never left as placeholders. No label is
+        // set smaller than 8pt, whatever the drawing asked for, so it stays legible at the size it is printed.
+        const source = fillPlaceholders(String(reply.typst ?? ''), productionRecord(paper)).text
+          .replace(/size:\s*(\d+(?:\.\d+)?)pt/g, (setting: string, size: string) => Number(size) < 8 ? 'size: 8pt' : setting)
         writeFileSync(`${dir}/${fig.id}.typ`, source)
         try {
-          await typst(['compile', `${fig.id}.typ`, `${fig.id}.png`, '--ppi', '250'], dir)
+          await typst(['compile', `${fig.id}.typ`, `${fig.id}.png`, '--ppi', '600'], dir)
         } catch (error) {
           const message = (error as Error).message.slice(0, 600)
           paper.state.notes.push({ at: now(), behavior: `figure:${fig.id}`, text: message })
@@ -187,6 +204,8 @@ Return typst (the complete document source).`,
         fig.status = 'rendered'
         fig.file = `figures/${fig.id}.png`
         fig.source = source
+        if (String(reply.caption ?? '').trim()) fig.caption = String(reply.caption).trim()
+        delete fig.revise
         paper.save()
       },
       skip: () => { fig.status = 'skipped' },

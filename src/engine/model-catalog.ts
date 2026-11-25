@@ -86,6 +86,7 @@ export const specIdentity = (spec: ModelSpec) => spec.family === 'gemini' ? spec
 export interface ModelRouting {
   slots: Record<Slot, CatalogModel>
   places: Places
+  enabled?: Slot[]
 }
 
 export function resolveRouting(catalog: ModelCatalog): ModelRouting {
@@ -134,15 +135,44 @@ export function modelForPlace(routing: ModelRouting, place: Place): CatalogModel
   return model
 }
 
-export function adjudicatorModel(routing: ModelRouting, referee: CatalogModel): CatalogModel {
-  if (routing.places.adjudicator !== 'independent') return modelForPlace(routing, 'adjudicator')
-  const author = modelForPlace(routing, 'author')
-  const candidates = SLOTS.map((slot) => routing.slots[slot]).filter((model) => model.identity !== author.identity && model.identity !== referee.identity)
-  return candidates.find((model) => model.provider !== author.provider && model.provider !== referee.provider) ?? candidates[0]
+/** Apply an explicit project family choice to its saved model assignments. */
+export function restrictRouting(routing: ModelRouting, families?: readonly Family[]): ModelRouting {
+  validateRouting(routing)
+  if (!families) return routing
+  const enabled = SLOTS.filter((slot) => families.includes(modelSpec(routing.slots[slot]).family))
+  const provider = (slot: Slot) => routing.slots[slot].provider
+  if (new Set(enabled.map(provider)).size < 2) throw new Error('Choose at least two model families assigned to slots in Settings → Models.')
+  const places = { ...routing.places }
+  const author = places.author as Slot
+  places.author = enabled.includes(author) ? author : enabled[0]
+  const checker = enabled.find((slot) => provider(slot) !== provider(places.author as Slot))!
+  for (const place of placeKeys) {
+    const slot = places[place]
+    if (place === 'author' || slot === 'independent') continue
+    if (!enabled.includes(slot) || provider(slot) === provider(places.author as Slot)) {
+      places[place] = place === 'adjudicator' ? 'independent' : checker
+    }
+  }
+  return { ...routing, places, enabled }
 }
 
+export function adjudicationAssignment(routing: ModelRouting, referee: CatalogModel): CatalogModel | undefined {
+  if (routing.places.adjudicator !== 'independent') return modelForPlace(routing, 'adjudicator')
+  const author = modelForPlace(routing, 'author')
+  const candidates = (routing.enabled ?? SLOTS).map((slot) => routing.slots[slot]).filter((model) => model.identity !== author.identity && model.identity !== referee.identity)
+  return candidates.find((model) => model.provider !== author.provider && model.provider !== referee.provider) ?? (routing.enabled ? undefined : candidates[0])
+}
+
+export function adjudicatorModel(routing: ModelRouting, referee: CatalogModel): CatalogModel {
+  const model = adjudicationAssignment(routing, referee)
+  if (!model) throw new Error('No independent model is available for this adjudication.')
+  return model
+}
+
+export const activeModelFamilies = (routing: ModelRouting): Family[] => [...new Set((routing.enabled ?? SLOTS).map((slot) => modelSpec(routing.slots[slot]).family))]
+
 export const providerNames = (routing: ModelRouting) => [...new Set(placeKeys.flatMap((place) =>
-  routing.places[place] === 'independent' ? SLOTS.map((slot) => PROVIDERS[routing.slots[slot].provider].name) : [PROVIDERS[modelForPlace(routing, place).provider].name]))]
+  routing.places[place] === 'independent' ? (routing.enabled ?? SLOTS).map((slot) => PROVIDERS[routing.slots[slot].provider].name) : [PROVIDERS[modelForPlace(routing, place).provider].name]))]
 
 export function validateRouting(routing: ModelRouting): void {
   for (const slot of SLOTS) modelSpec(routing.slots[slot])

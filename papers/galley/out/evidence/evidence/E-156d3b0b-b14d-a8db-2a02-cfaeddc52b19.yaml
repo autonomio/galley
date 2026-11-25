@@ -1,0 +1,8 @@
+id: "E-156d3b0b-b14d-a8db-2a02-cfaeddc52b19"
+kind: "external"
+summary: "narrower: The passage states that large language models frequently produce fabricated or erroneous references, but it mentions GPT-4 and other frontier models rather than ChatGPT and refers to knowledge synthesis and legal contexts rather than scholarly text such as literature reviews."
+source_ids: ["S-743346d5-ddb9-8654-cd23-072d2bb17a7d"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-9fd0b749-d665-bb35-13b9-b718f99aca9f"]

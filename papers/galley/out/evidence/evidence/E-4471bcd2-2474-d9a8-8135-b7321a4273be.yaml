@@ -1,0 +1,8 @@
+id: "E-4471bcd2-2474-d9a8-8135-b7321a4273be"
+kind: "external"
+summary: "supported: The passage directly introduces the Panel of LLm evaluators (PoLL) to evaluate models across judge settings and states that it exhibits less intra-model bias than a single large judge due to its composition of disjoint model families."
+source_ids: ["S-3ed0d732-4aaf-c64d-44ed-5d59ef0292ff"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-7129ecfb-1e2c-1cff-41c0-6ff4bea8807f"]

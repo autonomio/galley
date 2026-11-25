@@ -1,6 +1,6 @@
 id: "C-7d5493ef-ec01-c2d8-c7e6-972b3039a41e"
 class: "derived_inference"
-statement: "The authors built galley's behaviours one at a time, showing each one working before building the next, until the chain of working behaviours covered the full ladder."
+statement: "The authors built the behaviors one at a time and showed each one working before building the next, until the 27-behavior chain covered the whole path from seed to submission."
 uncertainty: "medium"
 evidence_ids: ["E-47fdb049-a2d2-9c39-eb2f-2a1e71763535"]
 state: "active"

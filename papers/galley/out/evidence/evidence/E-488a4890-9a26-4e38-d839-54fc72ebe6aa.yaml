@@ -1,0 +1,8 @@
+id: "E-488a4890-9a26-4e38-d839-54fc72ebe6aa"
+kind: "external"
+summary: "narrower: The passage states that separation of duties is an extensively used security principle in organizations, but it does not state that no party approves or audits its own work or specifically establish it as a control principle in computer security or organizational design."
+source_ids: ["S-fd769bad-60e3-ba4f-81d9-c779bd7253f5"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-c3a470ac-5923-8c47-e87e-fca2650f7ea6"]

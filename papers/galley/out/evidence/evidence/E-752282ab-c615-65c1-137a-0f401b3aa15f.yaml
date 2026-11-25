@@ -1,0 +1,8 @@
+id: "E-752282ab-c615-65c1-137a-0f401b3aa15f"
+kind: "external"
+summary: "narrower: The passage states that mutation testing measures test suite quality via the percentage of generated mutants killed by the test suite, but it does not state that mutants are created by introducing small syntactic faults into a program."
+source_ids: ["S-b60b59f8-d475-88a9-c7c4-4d4d19bdcd6d"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-c68e1907-3d3a-75ef-4102-f49bf6fd7c65"]

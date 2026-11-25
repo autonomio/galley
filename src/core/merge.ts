@@ -5,40 +5,12 @@
 // side stands and the overlap is counted, so a person's words are never lost
 // to a write they did not see.
 import type { Annotation, AnnotationReply } from '../types.js'
+import { matchLines } from './diff.js'
 
 export interface MergeResult {
   text: string
   /** Places where both sides changed the same lines; the local side was kept. */
   conflicts: number
-}
-
-// Beyond this many cells the line table is not built: the changed middle is
-// treated as one overlapping change, which keeps the local side.
-const MAX_TABLE = 4_000_000
-
-/** For each line of `a`, the index of the line of `b` it pairs with in a longest common subsequence, or -1. */
-function pairs(a: string[], b: string[]): Int32Array {
-  const out = new Int32Array(a.length).fill(-1)
-  let start = 0
-  while (start < a.length && start < b.length && a[start] === b[start]) { out[start] = start; start++ }
-  let endA = a.length, endB = b.length
-  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) { endA--; endB--; out[endA] = endB }
-  const rows = endA - start, cols = endB - start
-  if (!rows || !cols || rows * cols > MAX_TABLE) return out
-  const w = cols + 1
-  const table = new Uint32Array((rows + 1) * w)
-  for (let i = rows - 1; i >= 0; i--) {
-    for (let j = cols - 1; j >= 0; j--) {
-      table[i * w + j] = a[start + i] === b[start + j] ? table[(i + 1) * w + j + 1] + 1 : Math.max(table[(i + 1) * w + j], table[i * w + j + 1])
-    }
-  }
-  let i = 0, j = 0
-  while (i < rows && j < cols) {
-    if (a[start + i] === b[start + j]) { out[start + i] = start + j; i++; j++ }
-    else if (table[(i + 1) * w + j] >= table[i * w + j + 1]) i++
-    else j++
-  }
-  return out
 }
 
 const sameLines = (x: string[], y: string[]) => x.length === y.length && x.every((line, i) => line === y[i])
@@ -48,7 +20,7 @@ export function merge3(base: string, ours: string, theirs: string): MergeResult 
   if (ours === theirs || theirs === base) return { text: ours, conflicts: 0 }
   if (ours === base) return { text: theirs, conflicts: 0 }
   const B = base.split('\n'), O = ours.split('\n'), T = theirs.split('\n')
-  const po = pairs(B, O), pt = pairs(B, T)
+  const po = matchLines(B, O), pt = matchLines(B, T)
   const out: string[] = []
   let conflicts = 0
   let b = 0, o = 0, t = 0

@@ -1,0 +1,8 @@
+id: "E-8ba46e58-01a4-61c5-5e86-86e2d7ab7279"
+kind: "external"
+summary: "narrower: The passage establishes mutation testing as a well-established technique for evaluating fault detection only in traditional software testing rather than for checkers across domains in general or for fault seeding separately."
+source_ids: ["S-e896a49a-fd53-9834-9f91-87f1c3ad5739"]
+independent: false
+limitations: ["Verified against the abstract; the full text was not inspected."]
+premise_claim_ids: []
+claim_ids: ["C-4a52c88f-f4b6-4854-f891-27f13c9d882d"]
