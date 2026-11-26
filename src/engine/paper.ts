@@ -160,6 +160,7 @@ export class Paper {
 
   static open(dir: string): Paper {
     const state = JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8')) as PaperState
+    state.figures ??= []
     // An earlier engine marked a finding "noted" when its referee still disagreed. No finding is dropped now, so in a
     // paper that is still being worked on such a finding is open again, for escalation, adjudication or a stated
     // limitation to settle. A finding a person set aside stays theirs.
