@@ -10,7 +10,7 @@ import { activeClaims, claim, live, manuscriptBlock, seatFamily, serious, setCla
 import { isNarrowing } from './truth.js'
 import { toReview } from './front.js'
 import { resolved } from './review.js'
-import { storyReadDone } from './story.js'
+import { storyReadDone, storyTold } from './story.js'
 import { FRAME_NUMBERS } from './write.js'
 
 const FACTORS = ['input_not_output', 'shared_bottleneck', 'conventional_body_one_graft', 'surprising_and_certain', 'opens_more_than_closes', 'cheap_to_adopt', 'early'] as const
@@ -209,7 +209,7 @@ ${manuscriptBlock(paper)}`,
 /** The frame behavior's second pass: after review, title, abstract and keywords are written again from the text as it now stands. */
 export function finalFrame(paper: Paper): Target[] {
     const s = paper.state
-    if (!live(paper) || !s.frame || s.outcome || paper.isSettled('frame:final') || !reviewDone(paper)) return []
+    if (!live(paper) || !s.frame || s.outcome || paper.isSettled('frame:final') || !reviewDone(paper) || !storyTold(paper)) return []
     // The frame is rewritten from the reconciled ledger, so its numbers count what the text states.
     if (!paper.isSettled('reconcile:ledger') && !paper.config.off.includes('reconcile')) return []
     return [{

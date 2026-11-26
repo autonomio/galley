@@ -248,7 +248,7 @@ export function formatResult(r: AnalysisResult): { value: string; ci: string; su
   const share = r.unit === 'share'
   // A unit prints as a unit: a qualifier the code gave it ("ms (label)": milliseconds, as the column is labelled) goes
   // with the method, not after every number.
-  const unit = r.unit && !share ? r.unit.replace(/\s*\([^)]*\)\s*$/, '').trim() : ''
+  const unit = r.unit && !share ? r.unit.replace(/\s*\(label\)\s*$/, '').trim() : ''
   const qualified = unit && unit !== r.unit ? `; unit: ${r.unit}` : ''
   const show = (x: number) => share ? `${formatNumber(x * 100)}%` : `${formatNumber(x)}${unit ? ` ${unit}` : ''}`
   const value = share && r.count !== undefined && r.n !== undefined ? `${show(r.value)} (${formatNumber(r.count)} of ${formatNumber(r.n)})` : show(r.value)

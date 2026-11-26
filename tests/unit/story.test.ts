@@ -5,18 +5,21 @@
 import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { formatResult } from '../../src/engine/analysis.js'
+import { finalFrame, typeset } from '../../src/engine/behaviors/close.js'
 import { copyedit } from '../../src/engine/behaviors/copyedit.js'
 import { proof } from '../../src/engine/behaviors/proof.js'
-import { STORY_STEPS, checkCalculation, madeTalk, renumber, researchLost, storyCaveats, storyCharts, storyExample, storyRead, storyReadDone, storyRegister, storyTold, writtenNumber } from '../../src/engine/behaviors/story.js'
-import { fidelity } from '../../src/engine/behaviors/write.js'
+import { STORY_STEPS, checkCalculation, madeTalk, renumber, researchLost, storyCaveats, storyCharts, storyExample, storyLead, storyRead, storyReadDone, storyRegister, storyTold, writtenNumber } from '../../src/engine/behaviors/story.js'
+import { fidelity, frame } from '../../src/engine/behaviors/write.js'
+import * as charts from '../../src/engine/charts.js'
 import { chartCatalog, declaredFailure, drawChart, panelRows, toCsv } from '../../src/engine/charts.js'
 import { Paper } from '../../src/engine/paper.js'
 import { buildManuscript, contentHash } from '../../src/engine/render.js'
 import { simulate } from '../../src/engine/simulation/index.js'
 
 let dir = ''
-afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }) })
+afterEach(() => { vi.restoreAllMocks(); if (dir) rmSync(dir, { recursive: true, force: true }) })
 
 /** A reviewed paper whose works are cited: the story may begin. */
 function reviewed(): Paper {
@@ -40,6 +43,52 @@ function reviewed(): Paper {
 }
 
 describe('telling the research', () => {
+  it('holds the final frame for every story step even when reconciliation is off', () => {
+    const paper = reviewed()
+    paper.config.off = ['reconcile']
+    const steps = [storyCaveats, storyLead, storyExample, storyRegister, storyCharts]
+    for (const [i, step] of STORY_STEPS.entries()) {
+      expect(finalFrame(paper)).toEqual([])
+      expect(steps[i].ready(paper).map((t) => t.key)).toEqual([step.key])
+      paper.settle(step.key, 'done')
+    }
+    expect(finalFrame(paper).map((t) => t.key)).toEqual(['frame:final'])
+  })
+
+  it('emits no story targets, read-throughs or chart redraws when the story group is off', () => {
+    const paper = reviewed()
+    paper.config.off = ['story']
+    paper.state.figures = [{ id: 'chart1', caption: '', spec: '', sectionId: 'S2', status: 'planned', kind: 'chart', chart: { purpose: '', panels: [] } }]
+    for (const behavior of [storyCaveats, storyLead, storyExample, storyRegister, storyCharts]) expect(behavior.ready(paper)).toEqual([])
+    expect(storyTold(paper)).toBe(true)
+    paper.settle('frame:final', 'done')
+    expect(storyRead.ready(paper)).toEqual([])
+    expect(storyReadDone(paper)).toBe(true)
+  })
+
+  it.each(['story-charts', 'story'])('settles saved pending charts on resume with %s off, keeping a previous drawing', async (disabled) => {
+    const paper = reviewed()
+    paper.state.figures = [
+      { id: 'chart1', caption: 'An existing chart.', spec: '', sectionId: 'S2', status: 'planned', kind: 'chart', file: 'figures/chart1.png', source: 'previous drawing', revise: 'shorten the labels' },
+      { id: 'chart2', caption: 'An undrawn chart.', spec: '', sectionId: 'S2', status: 'planned', kind: 'chart' },
+    ]
+    paper.save()
+    writeFileSync(paper.path('paper.json'), JSON.stringify({ ...paper.config, off: [disabled] }))
+    const resumed = Paper.open(paper.dir)
+    expect(resumed.state.figures).toMatchObject([
+      { id: 'chart1', status: 'rendered', file: 'figures/chart1.png', source: 'previous drawing' },
+      { id: 'chart2', status: 'skipped' },
+    ])
+    expect(storyCharts.ready(resumed)).toEqual([])
+    const { markdown } = await buildManuscript(resumed)
+    expect(markdown).toContain('](figures/chart1.png)')
+    expect(markdown).not.toContain('An undrawn chart.')
+    expect(typeset.ready(resumed)).toHaveLength(1)
+    for (const section of resumed.state.outline!.sections) resumed.settle(`fidelity:${section.id}`, 'done')
+    delete resumed.state.frame
+    expect(frame.ready(resumed).map((t) => t.key)).toEqual(['frame:paper'])
+  })
+
   it('keeps what the research rests on, wherever it moves', () => {
     const record = { 'sim.S1.x.p50': '5.04' }
     const before = new Map([['S1', 'Dense training sits {{sim.S1.x.p50}} above the floor [@kaplan2020].'], ['S2', '**Proposition 1 (Floor).** It holds.\n\n| a | b |\n|---|---|\n| 1 | 2 |']])
@@ -134,6 +183,26 @@ describe('telling the research', () => {
     expect(paper.state.notes.at(-1)?.text).toContain('would have changed the research')
   })
 
+  it.each([false, true])('repairs and undoes every unchecked part of a partial checker reply (partial: %s)', async (partial) => {
+    const paper = reviewed()
+    for (const step of STORY_STEPS.slice(0, 3)) paper.settle(step.key, 'done')
+    const targets: string[] = []
+    paper.ask = (async (options: { seat: string; target: string }) => {
+      targets.push(options.target)
+      return options.seat === 'checker'
+        ? { parts: partial ? [{ id: '[S1]', verdict: 'kept', what: '' }] : [] }
+        : { edits: [
+          { in: 'S1', old: 'Scaling curves describe', new: 'Scaling curves show' },
+          { in: 'S3', old: 'Search dominates.', new: 'Search cost dominates execution cost.' },
+        ] }
+    }) as Paper['ask']
+    await storyRegister.ready(paper)[0].run()
+    expect(targets).toEqual(['tell', 'check', 'repair', 'check'])
+    expect(paper.state.passages.S1.text).toBe(`Scaling curves ${partial ? 'show' : 'describe'} what compute buys [@kaplan2020].`)
+    expect(paper.state.passages.S3.text).toBe('Search dominates.')
+    expect(paper.state.notes.at(-1)?.text).toContain('no independent verdict')
+  })
+
   it('keeps no caveat moved when the Limitations section that would state it cannot stand', async () => {
     const paper = reviewed()
     let asked = 0
@@ -210,6 +279,56 @@ describe('charts from the paper\'s own records', () => {
     model: [{ name: 'profit', expr: 'price * volume - fixed' }],
     outputs: ['profit'], events: [{ name: 'loss', when: 'profit < 0' }], correlations: [], sequential: null,
   }
+
+  it('charts a share estimate and both bounds on the percent scale advertised to the author', () => {
+    const paper = reviewed()
+    const results = [
+      { name: 'share', value: 0.5, unit: 'share', ci_low: 0.4, ci_high: 0.6, ci_level: 0.95, n: 100, method: 'Wilson' },
+      { name: 'delay', value: 0.5, unit: 'ms', ci_low: 0.4, ci_high: 0.6, n: 100, method: 'bootstrap' },
+    ]
+    paper.state.analysis = { field: '', conventions: [], preparation: [], plan: [], mode: 'code', runs: { P1: { ok: true, code: '', results, checks: [], attempts: 1, ms: 1 } } }
+    paper.state.measurements = Object.fromEntries(results.map((r, i) => [`A${i + 1}`, { id: `A${i + 1}`, analysis: 'P1', name: r.name, ...formatResult(r), n: 100 }]))
+    expect(chartCatalog(paper)[0].about).toContain('50%, 95% CI 40% to 60%')
+    for (const [id, unit, scale] of [['A1', '%', 100], ['A2', 'ms', 1]] as const) {
+      const panel = panelRows(paper, { kind: 'interval', data: [`data:${id}`, `data:${id}`], labels: ['a', 'b'], x: '', y: '', unit, marks: [] })
+      if ('problem' in panel) throw new Error(panel.problem)
+      expect(panel.rows).toEqual(['a', 'b'].map((label) => ({ label, estimate: 0.5 * scale, lower: 0.4 * scale, upper: 0.6 * scale })))
+    }
+  })
+
+  it.each(['overlap', 'preservation'])('installs only charts whose callouts survive final %s checks, then renumbers retained figures', async (reason) => {
+    const paper = reviewed()
+    for (const step of STORY_STEPS.slice(0, 4)) paper.settle(step.key, 'done')
+    const out = simulate(spec)
+    if (!out.ok) throw new Error('spec did not run')
+    paper.state.simulations = { S1: { id: 'S1', title: out.result.title, purpose: '', assumptions: [], result: out.result } }
+    paper.state.passages.S3.text = 'Figure 1 shows the model.'
+    paper.state.figures = [{ id: 'F1', caption: 'The model in Figure 1.', spec: '', sectionId: 'S3', status: 'rendered', file: 'figures/F1.png' }]
+    vi.spyOn(charts, 'ensureAstetik').mockResolvedValue('astetik')
+    vi.spyOn(charts, 'astetikCatalog').mockResolvedValue({ kinds: new Map([['hist', new Set<string>()]]), panels: false })
+    vi.spyOn(charts, 'drawChart').mockImplementation(async (_paper, fig) => ({ ok: true, file: `figures/${fig.id}.png`, source: '', bundle: 'bundle' }))
+    const mentions = [
+      { old: 'Scaling curves describe', new: 'Scaling curves describe (see [[chart-1]])' },
+      reason === 'overlap'
+        ? { old: 'Scaling curves describe what compute buys', new: 'Scaling curves describe what compute buys (see [[chart-2]])' }
+        : { old: 'what compute buys [@kaplan2020].', new: 'what compute buys (see [[chart-2]]).' },
+      { old: 'Search costs exceed execution costs in every draw.', new: 'Search costs exceed execution costs in every draw (see [[chart-3]]).' },
+    ]
+    paper.ask = (async () => ({ charts: mentions.map((mention, i) => ({
+      section: i === 2 ? 'S2' : 'S1', replaces: '', purpose: '', caption: 'Compare Figure 1.', mention,
+      panels: [{ kind: 'hist', data: ['sim:S1:profit'], labels: ['Profit'], x: 'Profit', y: 'Draws', unit: 'EUR', marks: [] }],
+    })) })) as Paper['ask']
+    await storyCharts.ready(paper)[0].run()
+    const shifted = reason === 'overlap' ? 3 : 2
+    expect(paper.state.figures.map((f) => f.id)).toEqual(reason === 'overlap' ? ['F1', 'chart1', 'chart3'] : ['F1', 'chart3'])
+    expect(paper.state.passages.S1.text).toBe(reason === 'overlap'
+      ? 'Scaling curves describe (see Figure 1) what compute buys [@kaplan2020].'
+      : 'Scaling curves describe what compute buys [@kaplan2020].')
+    expect(paper.state.passages.S2.text).toContain(`see Figure ${shifted - 1}`)
+    expect(paper.state.passages.S3.text).toBe(`Figure ${shifted} shows the model.`)
+    expect(paper.state.figures.map((f) => f.caption)).toEqual([`The model in Figure ${shifted}.`, ...Array.from({ length: shifted - 1 }, () => `Compare Figure ${shifted}.`)])
+    expect(paper.state.figures.every((f) => !f.caption.includes('[[chart-'))).toBe(true)
+  })
 
   it('draws a histogram from the run\'s own draws and an interval from its summary', async () => {
     const paper = reviewed()

@@ -95,7 +95,7 @@ describe('the typeset review', () => {
     const s = paper.state
     s.outline = { sections: [{ id: 'S1', title: 'Results', purpose: '', claimIds: [], words: 300, figureIds: ['F1'] }], style: '', glossary: [] }
     s.passages = { S1: { sectionId: 'S1', text: 'The switch takes 422 ms, as Figure ?? shows.', revisions: [], checked: 'faithful' } }
-    s.figures = [{ id: 'F1', caption: 'Switchover percentiles against the tiers.', spec: '', sectionId: 'S1', status: 'rendered', file: 'figures/F1.png', source: '#text[p99 {{data.A5}} ms]' }]
+    s.figures = [{ id: 'F1', caption: 'Switchover percentiles against the tiers [@caption2026].', spec: '', sectionId: 'S1', status: 'rendered', file: 'figures/F1.png', source: '#text[p99 {{data.A5}} ms]' }]
     s.frame = { title: 'T', abstract: 'A', keywords: [], limitations: '', opens: '' }
     s.round = paper.config.rounds
     paper.settle('frame:final', 'done')
@@ -108,12 +108,16 @@ describe('the typeset review', () => {
       asked.push(options.seat)
       return options.seat === 'checker'
         ? { defects: [{ page: 2, where: 'section text', quote: 'as Figure ?? shows', problem: 'The figure reference did not resolve.', fix: 'Name the figure.', fix_in: 'prose' }] }
-        : { edits: [{ old: 'as Figure ?? shows', new: 'as Figure 1 shows' }] }
+        : { edits: [
+          { old: 'as Figure ?? shows', new: 'as Figure 1 shows [@caption2026]' },
+          { old: 'The switch takes', new: 'The switch takes [@uncited2026]' },
+        ] }
     }) as Paper['ask']
     await proof.ready(paper)[0].run()
 
     expect(asked).toEqual(['checker', 'author'])
-    expect(s.passages.S1.text).toBe('The switch takes 422 ms, as Figure 1 shows.')
+    // A source cited only in a printed caption is already cited by the paper; an uncited source is still rejected.
+    expect(s.passages.S1.text).toBe('The switch takes 422 ms, as Figure 1 shows [@caption2026].')
     expect(s.figures[0]).toMatchObject({ status: 'planned' })
     expect(s.figures[0].revise).toContain('an unfilled placeholder')
     // The unresolved reference also leaves Figure 1 with no callout; the check finds that too, and the author's one call fixes both.

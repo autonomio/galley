@@ -54,8 +54,8 @@ const ORGANIZATION_WORD = /\b(universit|institut|laborator|department|school|col
  * the family name first ("Linder, Andreas"): they come back as "Blake R Lundstrom", "Sourav Patel", "Andreas Linder".
  */
 export function personNames(names: string[]): string[] {
-  return names.flatMap((name) => String(name ?? '').split(/\s*;\s*/))
-    .map((name) => name.replace(/\[[^\]]*(?:\]|$)/g, ' ').replace(/\s+/g, ' ').trim().replace(/[,;]+$/, '').trim())
+  return names.flatMap((name) => String(name ?? '').replace(/\[[^\]]*(?:\]|$)/g, ' ').split(/\s*;\s*/))
+    .map((name) => name.replace(/\s+/g, ' ').trim().replace(/[,;]+$/, '').trim())
     .filter(Boolean)
     .map((name) => {
       const m = name.match(/^([^,]+),\s*([^,]+)$/)

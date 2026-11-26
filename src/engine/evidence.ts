@@ -413,7 +413,7 @@ function texMath(math: string): string {
       }
       if (/^[dt]?frac$/.test(name)) {
         const over = group()
-        return `${over}/${group()}`
+        return `(${over})/(${group()})`
       }
       // An unknown command prints its name, never its backslash.
       return name
@@ -497,8 +497,6 @@ export function cleanCsl(raw: Record<string, unknown>): Record<string, unknown> 
   // Registries name types their own way; citation styles expect CSL's names.
   const types: Record<string, string> = { 'journal-article': 'article-journal', 'proceedings-article': 'paper-conference', 'book-chapter': 'chapter', 'posted-content': 'article', dissertation: 'thesis', 'reference-entry': 'entry', 'monograph': 'book', 'edited-book': 'book' }
   out.type = types[String(out.type)] ?? (out.type || 'article-journal')
-  // A thesis has one author: an index that lists more lists its advisers with them.
-  if (out.type === 'thesis' && Array.isArray(out.author) && out.author.length > 1) out.author = out.author.slice(0, 1)
   // A paper in proceedings, a chapter or a book is dated by its year: the day of the conference is not part of it.
   const parts = (out.issued as { 'date-parts': number[][] } | undefined)?.['date-parts']?.[0]
   if (['paper-conference', 'chapter', 'book'].includes(String(out.type)) && parts && parts.length > 1) out.issued = { 'date-parts': [[parts[0]]] }

@@ -396,7 +396,7 @@ ${text}
             let next = text
             // A key the paper does not cite, or a citation written by hand as a link, is not an edit to make: it prints
             // as a raw key or a broken link.
-            const keys = new Set(Object.values(s.passages).flatMap((p) => citedKeys(p.text)))
+            const keys = new Set([...Object.values(s.passages).flatMap((p) => citedKeys(p.text)), ...shown.flatMap((f) => citedKeys(f.caption))])
             for (const edit of answer.edits ?? []) {
               const written = String(edit.new ?? '')
               if (/\]\(#ref-/.test(written) || citedKeys(written).some((k) => !keys.has(k))) continue

@@ -171,7 +171,12 @@ export class Paper {
     for (const fig of state.figures ?? []) {
       if (fig.status === 'planned' && fig.revise && !fig.redraws && `figure:${fig.id}` in (state.settled ?? {})) fig.redraws = 1
     }
-    return new Paper(dir, state, Paper.readConfig(dir))
+    const paper = new Paper(dir, state, Paper.readConfig(dir))
+    // A saved chart awaiting a disabled renderer must not hold the frame or typesetting; a previous drawing still prints.
+    if (paper.config.off.includes('story-charts') || paper.config.off.includes('story')) {
+      for (const fig of state.figures) if (fig.kind === 'chart' && fig.status === 'planned') fig.status = fig.file ? 'rendered' : 'skipped'
+    }
+    return paper
   }
 
   static readConfig(dir: string): PaperConfig {

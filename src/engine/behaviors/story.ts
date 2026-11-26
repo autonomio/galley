@@ -337,10 +337,13 @@ THE REST OF THE PAPER:
 ${block(step.parts.filter((p) => !changed.includes(p.id)), texts, record)}`,
     schema: obj({ parts: arr(obj({ id: str(), verdict: enm(['kept', 'changed']), what: str() })) }),
   })
+  const kept = new Set<string>()
   for (const part of verdict.parts ?? []) {
     const id = String(part.id ?? '').replace(/[[\]]/g, '').trim()
+    if (part.verdict === 'kept') kept.add(id)
     if (part.verdict === 'changed' && changed.includes(id)) found.set(id, String(part.what ?? '').trim() || 'judged to change the research')
   }
+  for (const id of changed) if (!kept.has(id) && !found.has(id)) found.set(id, 'no independent verdict confirmed that the research was kept')
   return found
 }
 
@@ -367,8 +370,8 @@ const limitsId = (paper: Paper) => paper.state.outline?.sections.find((sec) => s
 const bodySections = (paper: Paper) => (paper.state.outline?.sections ?? []).filter((sec) => sec.role !== 'limitations')
 
 function stepTarget(paper: Paper, index: number, label: string, run: () => Promise<void>): Target[] {
-  const { key } = STORY_STEPS[index]
-  if (!telling(paper, index) || paper.isSettled(key)) return []
+  const { id, key } = STORY_STEPS[index]
+  if (off(paper, id) || !telling(paper, index) || paper.isSettled(key)) return []
   // An improvement: if it cannot run, the paper keeps the text it has.
   return [{ key, label, run, skip: () => {} }]
 }
@@ -579,6 +582,7 @@ ${block(parts, new Map(parts.map((p) => [p.id, p.text])), null)}`
 export const storyCharts: Behavior = {
   id: 'story-charts', stage: 'close', improver: true, title: 'Chart what the argument rests on',
   ready: (paper) => {
+    if (off(paper, 'story-charts')) return []
     const s = paper.state
     const targets: Target[] = []
     // A chart a reader sent back is drawn again, its data unchanged: only its design answers the defect.
@@ -667,29 +671,50 @@ export const storyCharts: Behavior = {
         drawn.push({ fig, token, mention, added: !replaced })
       }
       if (!drawn.length) return
+      const original = new Map(parts.map((p) => [p.id, p.text]))
+      let retained = drawn
+      let texts = new Map(original)
+      // Callouts stand together in the final prose: an overlapping edit or a whole-part revert can remove one.
+      // Rebuild without rejected charts before installing any, so only the charts that keep a callout get a number.
+      for (;;) {
+        texts = new Map(original)
+        for (const d of retained) {
+          texts.set(d.fig.id, d.fig.caption)
+          if (!d.added) continue
+          const after = applyExact(texts.get(d.fig.sectionId) ?? '', d.mention)
+          if (after !== null) texts.set(d.fig.sectionId, after)
+        }
+        for (;;) {
+          const lost = researchLost(original, texts, record)
+          if (!lost.size) break
+          for (const [id] of lost) texts.set(id, original.get(id) ?? '')
+        }
+        const kept = retained.filter((d) => texts.get(d.fig.id) === d.fig.caption && (!d.added || texts.get(d.fig.sectionId)?.includes(d.token)))
+        if (kept.length === retained.length) break
+        retained = kept
+      }
+      if (!retained.length) return
       // A replaced figure keeps its place and number; a new chart prints after the figures already in its section.
-      for (const d of drawn) {
+      for (const d of retained) {
         const at = s.figures.findIndex((f) => f.id === d.fig.id)
         if (at >= 0) s.figures[at] = { ...s.figures[at], ...d.fig, revise: undefined }
         else s.figures.push(d.fig)
       }
       const numbersAfter = new Map(printedOrder(paper).map((f, i) => [f.id, i + 1]))
       const map = new Map([...numbersBefore].map(([id, n]) => [n, numbersAfter.get(id) ?? n]))
-      for (const d of drawn) d.fig.caption = renumber(d.fig.caption, map)
-      const original = new Map(parts.map((p) => [p.id, p.text]))
-      const renumbered = new Map([...original].map(([id, t]) => [id, renumber(t, map)]))
-      const texts = new Map(renumbered)
-      for (const d of drawn.filter((x) => x.added)) {
-        const mention = { old: renumber(d.mention.old, map), new: renumber(d.mention.new, map).split(d.token).join(`Figure ${numbersAfter.get(d.fig.id)}`) }
-        const after = applyExact(texts.get(d.fig.sectionId) ?? '', mention)
-        if (after !== null) texts.set(d.fig.sectionId, after)
+      for (const [id, text] of texts) {
+        let numbered = renumber(text, map)
+        for (const d of retained) numbered = numbered.split(d.token).join(`Figure ${numbersAfter.get(d.fig.id)}`)
+        texts.set(id, numbered)
       }
-      // A reference added must not take anything the research rests on with it.
-      for (const [id] of researchLost(renumbered, texts, record)) texts.set(id, renumbered.get(id)!)
       // A chart's caption is its own, checked above and renumbered with it: the caption it replaced is not written back.
-      for (const d of drawn) { texts.delete(d.fig.id); original.delete(d.fig.id) }
+      for (const d of retained) {
+        s.figures.find((f) => f.id === d.fig.id)!.caption = texts.get(d.fig.id)!
+        texts.delete(d.fig.id)
+        original.delete(d.fig.id)
+      }
       commit(paper, texts, original, 'story-charts')
-      paper.journal({ event: 'story', step: 'story-charts', charts: drawn.map((d) => d.fig.id) })
+      paper.journal({ event: 'story', step: 'story-charts', charts: retained.map((d) => d.fig.id) })
       paper.save()
     })]
   },
@@ -700,7 +725,7 @@ export const storyRead: Behavior = {
   id: 'story-read', stage: 'close', improver: true, title: 'Read the told paper through',
   ready: (paper) => {
     const s = paper.state
-    if (!live(paper) || s.outcome || !s.outline || !s.frame || !paper.isSettled('frame:final')) return []
+    if (off(paper, 'story-read') || !live(paper) || s.outcome || !s.outline || !s.frame || !paper.isSettled('frame:final')) return []
     const n = Array.from({ length: READS }, (_, i) => i + 1).find((i) => !paper.isSettled(`story:read:${i}`))
     if (!n || (n > 1 && !paper.isSettled(`story:read:${n - 1}`))) return []
     return [{

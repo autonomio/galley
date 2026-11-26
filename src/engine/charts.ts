@@ -48,7 +48,8 @@ function measured(paper: Paper, id: string): { value: number; low: number; high:
   const m = paper.state.measurements?.[id]
   const result = m?.analysis ? paper.state.analysis?.runs?.[m.analysis]?.results.find((x) => x.name === m.name) : undefined
   if (!result || result.ci_low === undefined || result.ci_high === undefined) return null
-  return { value: result.value, low: result.ci_low, high: result.ci_high, level: result.ci_level, method: result.method }
+  const scale = result.unit === 'share' ? 100 : 1
+  return { value: result.value * scale, low: result.ci_low * scale, high: result.ci_high * scale, level: result.ci_level, method: result.method }
 }
 
 /** What a panel's series are told apart by, as the paper names it; it heads the panels or the legend. */
