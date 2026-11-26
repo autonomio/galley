@@ -864,7 +864,7 @@ export function thesisMarkdown(paper: Paper): string {
       // What its novelty was checked against: the nearest work a search found, and what the thesis claims that it does not.
       test.closest?.length ? `The closest work the search found, and how the thesis differs from it:\n\n${test.closest.map((c) => `- ${c.title} (${c.year ?? 'n.d.'}). ${prose(c.differs)}${bareDoi(c.doi) ? ` https://doi.org/${bareDoi(c.doi)}` : ''}`).join('\n')}`
         : test.searched === 0 ? 'The search for work already stating it found none to compare.'
-          : test.searched === null ? 'No search for work already stating it ran, so its novelty was judged from the literature review alone.' : '',
+          : test.searched === null ? 'No search for work already stating it ran.' : '',
       test.already.length ? `Already stated in: ${test.already.join('; ')}.` : '',
       test.revisedFrom ? `The thesis was formulated again after a first test. It first read: ${prose(test.revisedFrom)}` : '',
     ].filter(Boolean).join('\n\n') : paper.config.off.includes('test-thesis') ? '## Tested against the literature\n\nThe test was turned off for this run, so the thesis was not tested.' : '',
