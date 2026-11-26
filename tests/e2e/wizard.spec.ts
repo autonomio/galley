@@ -92,6 +92,55 @@ test('the paper wizard walks through seed, materials and settings, and starts th
   })])
 })
 
+test('late context preserves settings after going Back to Materials and submits those choices', async ({ page }) => {
+  const slug = `late-context-${Date.now()}`
+  writeFileSync(join(process.env.GALLEY_E2E_DIR!, `${slug}.md`), `# Street trees\n\n${'City trees die young in narrow pavement pits. '.repeat(10)}\n`)
+  let release = () => {}
+  const held = new Promise<void>((done) => { release = done })
+  await page.route('**/api/galley-papers/_context', async (route) => {
+    await held
+    return route.fulfill({ json: {
+      modelRevision: 'test-revision', openalexKey: true,
+      seats: { author: { family: 'claude', name: 'Claude', model: 'claude' }, checker: { family: 'gpt', name: 'GPT', model: 'gpt' }, challenger: { family: 'gemini', name: 'Gemini', model: 'gemini' }, verifier: { family: 'gemini', name: 'Gemini', model: 'gemini' } },
+      referees: ['methods', 'field', 'citations', 'editor'], refereeModels: [], adjudicator: 'gpt',
+      defaults: { venue: 'preprint (arXiv)', words: 9000, rounds: 2, dial: 'autonomous', citations: 'auto', simulation: false },
+    } })
+  })
+  let posted: { settings: Record<string, unknown> } | null = null
+  await page.route(`**/api/galley-papers/${slug}`, (route) => {
+    if (route.request().method() !== 'POST') return route.fulfill({ status: 404, body: '' })
+    posted = route.request().postDataJSON()
+    return route.fulfill({ status: 202, json: {} })
+  })
+  await page.goto(`/?doc=${slug}`)
+  await page.waitForFunction((s) => window.galley?.slug === s, slug)
+  await page.locator('[data-action="write-paper"]').click()
+  const wizard = page.locator('dialog.gw')
+  await wizard.getByRole('radio', { name: /A paper/ }).click()
+  await wizard.getByRole('button', { name: 'Next: Seed' }).click()
+  await wizard.getByRole('button', { name: 'Next: Materials' }).click()
+  await wizard.getByRole('button', { name: 'Next: Settings' }).click()
+  await wizard.getByLabel('Venue', { exact: true }).fill('journal article')
+  await wizard.getByRole('radio', { name: '5,000 words' }).click()
+  await wizard.getByRole('checkbox', { name: /Monte Carlo simulation/ }).check()
+  await wizard.getByRole('radio', { name: '1 round', exact: true }).click()
+  await wizard.getByRole('radio', { name: /Assisted/ }).click()
+  await wizard.getByRole('radio', { name: /You pick the load-bearing ones/ }).click()
+  await wizard.getByRole('button', { name: 'Back' }).click()
+  await expect(wizard.getByRole('heading', { name: 'What the paper draws on' })).toBeVisible()
+  const response = page.waitForResponse('**/api/galley-papers/_context')
+  release()
+  await (await response).finished()
+  // Let the response's JSON handler apply while Materials is still open.
+  await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => done())))
+  await wizard.getByRole('button', { name: 'Next: Settings' }).click()
+  await expect(wizard).toContainText('key found: two searches per claim')
+  await wizard.getByRole('button', { name: 'Next: Start' }).click()
+  await wizard.getByRole('button', { name: 'Start the paper' }).click()
+  await expect(wizard.getByRole('heading', { name: 'Writing the paper' })).toBeVisible()
+  expect(posted!.settings).toMatchObject({ venue: 'journal article', words: 5000, rounds: 1, dial: 'assisted', citations: 'mixed', simulation: true })
+})
+
 test('a link to a published dataset becomes a dataset, read from its record and cited by it', async ({ page }) => {
   const dir = process.env.GALLEY_E2E_DIR!
   const slug = `seed-${Date.now()}`

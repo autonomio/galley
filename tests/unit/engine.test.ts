@@ -3,7 +3,7 @@
 // stop the line.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -54,6 +54,57 @@ describe('software evidence', () => {
       vi.unstubAllGlobals()
     }
   })
+
+  it('retains verified excerpts and records each failed source read', async () => {
+    const text = '# Solver\nA documented method.\n'
+    const oid = createHash('sha1').update(`blob ${Buffer.byteLength(text)}\0${text}`).digest('hex')
+    const paths = ['README.md', 'src/network.ts', 'src/missing.ts', 'src/corrupt.ts']
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response(text))
+      .mockRejectedValueOnce(new Error('Network unavailable'))
+      .mockResolvedValueOnce(new Response('', { status: 404 }))
+      .mockResolvedValueOnce(new Response('Different bytes')))
+    const evaluation = emptySoftwareEvaluation(subject)
+    try {
+      evaluation.excerpts = await readSoftware(subject, paths.map((path) => ({ path, mode: '100644', oid })), paths, evaluation.gaps)
+      expect(evaluation.excerpts).toEqual([{ path: 'README.md', text, url: `${subject.repository}/blob/${sha}/README.md#L1-L3` }])
+      expect(evaluation.gaps).toEqual([
+        'Source file src/network.ts could not be read and verified against the commit tree.',
+        'Source file src/missing.ts could not be read and verified against the commit tree.',
+        'Source file src/corrupt.ts could not be read and verified against the commit tree.',
+      ])
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it.runIf(process.platform === 'darwin' || process.platform === 'linux').each(['completed', 'timed-out'])(
+    'terminates detached descendants without profiling when the wrapper is %s', (status) => {
+      const workspace = mkdtempSync(join(tmpdir(), 'galley-detached-test-'))
+      const pidFile = join(workspace, 'child.pid')
+      try {
+        const wrapper = [
+          'import subprocess, sys, time',
+          'child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True)',
+          'with open("child.pid", "w") as file: file.write(str(child.pid))',
+          ...(status === 'timed-out' ? ['time.sleep(60)'] : []),
+        ].join('\n')
+        const result = JSON.parse(execFileSync('python3', [join(import.meta.dirname, '../../src/engine/assets/software-run.py'), JSON.stringify({
+          command: ['python3', '-c', wrapper], cwd: workspace, env: { PATH: process.env.PATH }, profile: false, timeout: 0.5,
+        })], { encoding: 'utf8', timeout: 8000 }))
+        expect(result).toMatchObject({ status })
+        const pid = Number(readFileSync(pidFile, 'utf8'))
+        const probe = spawnSync('/bin/ps', ['-p', String(pid), '-o', 'stat='], { encoding: 'utf8' })
+        expect(probe.error).toBeUndefined()
+        expect([0, 1]).toContain(probe.status)
+        // A reparented zombie may await init's reap, but must consume no resources.
+        expect(probe.stdout.trim()).toMatch(/^(Z|$)/)
+      } finally {
+        if (existsSync(pidFile)) {
+          try { process.kill(Number(readFileSync(pidFile, 'utf8')), 'SIGKILL') } catch { /* Already reaped. */ }
+        }
+        rmSync(workspace, { recursive: true, force: true })
+      }
+    },
+  )
 
   it('cites the commit in the manuscript even when no benchmark completed', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'galley-software-paper-'))
