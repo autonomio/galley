@@ -516,11 +516,8 @@ function panelsOf(raw: any[]): ChartPanel[] {
 export function keepData(original: ChartPanel[], revised: ChartPanel[]): ChartPanel[] {
   const same = (a: string[], b: string[]) => a.length === b.length && a.every((ref) => b.includes(ref))
   const used = new Set<number>()
-  return original.map((was, j) => {
-    const available = (p: ChartPanel, i: number) => !used.has(i) && same(p.data, was.data)
-    let index = revised.findIndex((p, i) => available(p, i) && p.kind === was.kind)
-    if (index < 0) index = revised.findIndex(available)
-    if (index < 0 && !used.has(j)) index = j
+  return original.map((was) => {
+    const index = revised.findIndex((p, i) => !used.has(i) && p.kind === was.kind && same(p.data, was.data))
     const now = revised[index]
     if (!now) return was
     used.add(index)
