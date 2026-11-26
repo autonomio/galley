@@ -8,6 +8,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Ajv } from 'ajv'
 import { INLINE_LIMIT, prepareInputs, transcriptPath, truncatedBytes, verifyDelivery, type Delivery } from './agy-inputs.js'
 import { bool, obj, parseLooseJson, type Schema } from './schema.js'
 import type { Family } from './types.js'
@@ -205,12 +206,18 @@ function agyAgent(name: string, files = false): string {
 async function callAgy(spec: ModelSpec, prompt: string, schema: Schema, cwd: string, timeoutMs: number) {
   const started = Date.now()
   const left = () => Math.max(60_000, timeoutMs - (Date.now() - started))
+  let inlineUsage: Usage | null = null
   if (Buffer.byteLength(prompt, 'utf8') <= INLINE_LIMIT) {
     const inline = await agyRun(spec, prompt, schema, cwd, left(), false)
     if (!inline.truncated) return inline.answer
+    inlineUsage = inline.answer.usage
   }
-  return (await agyRun(spec, prompt, schema, cwd, left(), true)).answer
+  const answer = (await agyRun(spec, prompt, schema, cwd, left(), true)).answer
+  if (inlineUsage) answer.usage = { input: inlineUsage.input + answer.usage.input, cached: inlineUsage.cached + answer.usage.cached, output: inlineUsage.output + answer.usage.output, reasoning: inlineUsage.reasoning + answer.usage.reasoning }
+  return answer
 }
+
+const validateFileAnswer = (schema: Schema, data: unknown): boolean => new Ajv({ strict: false }).validate(schema, data) === true
 
 async function agyRun(spec: ModelSpec, prompt: string, schema: Schema, cwd: string, timeoutMs: number, files: boolean) {
   const env = scrubbed(/^(GEMINI_API_KEY|GOOGLE_API_KEY|AGY_ADC_AUTH|GOOGLE_APPLICATION_CREDENTIALS|GOOGLE_GEMINI_BASE_URL)$/)
@@ -237,18 +244,17 @@ async function agyRun(spec: ModelSpec, prompt: string, schema: Schema, cwd: stri
         deny: ['command(*)', 'write_file(*)', 'read_url(*)', 'execute_url(*)', 'mcp(*)'],
       } }
       : AGY_SETTINGS
-    const base = ['--model', spec.model, '--agent', name, ...(input ? ['--print', input.manifest] : ['--input-format', 'stream-json']),
-      '--output-format', 'stream-json', '--disable-slash-commands', '--sandbox', '--settings', JSON.stringify(settings), '--json-schema', schemaPath]
+    const common = ['--output-format', 'stream-json', '--disable-slash-commands', '--sandbox', '--settings', JSON.stringify(settings), '--json-schema', schemaPath]
     const started = Date.now()
     let conversation: string | null = null
     let result: any = null
     let out: Spawned | null = null
     const events: any[] = []
-    // A long answer's stream can drop on the provider's side; an inline request resumes that same conversation once.
-    for (let pass = 0; pass < (input ? 1 : 2); pass++) {
+    // A long answer's stream can drop on the provider's side; resume that same conversation once.
+    for (let pass = 0; pass < 2; pass++) {
       const resume = pass > 0 && conversation
-      const args = resume ? [...base, '--conversation', conversation!] : base
       const content = resume ? 'The stream was interrupted. Continue the same task and deliver the complete JSON object with the finish tool.' : prompt
+      const args = ['--model', spec.model, '--agent', name, ...(input ? ['--print', resume ? content : input.manifest] : ['--input-format', 'stream-json']), ...common, ...(resume ? ['--conversation', conversation!] : [])]
       const stdin = input ? '' : JSON.stringify({ event: 'user', message: { role: 'user', content } }) + '\n'
       out = await run('agy', args, { cwd: work, env, input: stdin, timeoutMs: Math.max(60_000, timeoutMs - (Date.now() - started)) })
       if (out.timedOut) failure('gemini', 'timed out')
@@ -277,6 +283,7 @@ async function agyRun(spec: ModelSpec, prompt: string, schema: Schema, cwd: stri
     const wrapped: any = result.structured_output ?? parseLooseJson(text)
     let data: unknown
     try { data = JSON.parse(String(wrapped?.result_json ?? '')) } catch { failure('gemini', 'the answer in result_json is not JSON') }
+    if (!validateFileAnswer(schema, data)) failure('gemini', 'the answer in result_json does not match the response schema')
     return { answer: { data, text, usage, delivery }, truncated: 0 }
   } finally {
     rmSync(agentPath, { force: true })
@@ -311,7 +318,7 @@ export async function callModel(options: CallOptions): Promise<CallResult> {
     const hit = join(options.cacheDir, `${key}.json`)
     if (existsSync(hit)) {
       const saved = JSON.parse(readFileSync(hit, 'utf8'))
-      return { ...saved, cached: true }
+      if (saved.delivery?.mode !== 'files' || validateFileAnswer(schema, saved.data)) return { ...saved, cached: true }
     }
   }
   const cwd = mkdtempSync(join(tmpdir(), 'galley-call-'))
