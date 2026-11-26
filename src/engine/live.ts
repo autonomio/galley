@@ -5,7 +5,7 @@
 // the text and the threads themselves.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { modelForPlace, type Place } from './model-catalog.js'
+import { modelForPlace, specIdentity, type Place } from './model-catalog.js'
 import { Paper } from './paper.js'
 import { FAMILY_NAMES } from './config.js'
 import type { Family, PaperState } from './types.js'
@@ -348,13 +348,16 @@ export function liveView(dir: string, options: { limit?: number } = {}): LiveVie
   const all = activity(s, events, mode, pdf)
   // Referees rotate families between rounds: each shows the family it last worked as.
   const lastAs: Record<string, Family> = {}
+  let adjudicatorModel: string | null = null
   for (const e of events) {
     if (e.event === 'call' && e.family) lastAs[String(e.seat).replace(/^referee:/, '')] = e.family
     if (e.event === 'review' && e.family) lastAs[String(e.seat)] = e.family
+    if (e.event === 'call' && e.seat === 'adjudicator' && e.model) adjudicatorModel = e.effort && e.family ? specIdentity({ family: e.family, model: e.model, effort: e.effort }) : e.model
   }
   const member = (seat: string, family: Family | null) => {
     const assigned = config.routing && config.routing.places[seat as Place] && config.routing.places[seat as Place] !== 'independent' ? modelForPlace(config.routing, seat as Place).identity : null
-    return { seat, name: seatName(seat), family, detail: assigned ?? (family ? FAMILY_NAMES[family] : null) }
+    const independent = seat === 'adjudicator' && !assigned ? now.find((entry) => entry.seat === seat)?.model ?? adjudicatorModel : null
+    return { seat, name: seatName(seat), family, detail: assigned ?? independent ?? (family ? FAMILY_NAMES[family] : null) }
   }
   const team = [
     ...(['author', 'checker', 'challenger', 'verifier'] as const).map((seat) => member(seat, config.seats[seat] ?? null)),

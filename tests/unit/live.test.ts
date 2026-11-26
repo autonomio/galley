@@ -11,6 +11,12 @@ let dir = ''
 afterEach(() => { if (dir) rmSync(dir, { recursive: true, force: true }) })
 
 describe('liveView', () => {
+  it('reports the actual independent adjudicator model from the last call', () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-live-'))
+    const paper = Paper.create(join(dir, 'p'), 'seed', {})
+    appendFileSync(paper.path('journal.jsonl'), JSON.stringify({ at: new Date().toISOString(), event: 'call', behavior: 'adjudicate', seat: 'adjudicator', family: 'gpt', model: 'gpt-6.1-sol', effort: 'xhigh' }) + '\n')
+    expect(liveView(paper.dir)!.team.find((member) => member.seat === 'adjudicator')?.detail).toBe('gpt-6.1-sol-xhigh')
+  })
   it('says who is working on what, where the paper stands, and what has happened', () => {
     dir = mkdtempSync(join(tmpdir(), 'galley-live-'))
     const paper = Paper.create(join(dir, 'Seed-Paper'), 'seed', {})
