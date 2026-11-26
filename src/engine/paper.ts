@@ -174,7 +174,7 @@ export class Paper {
     const paper = new Paper(dir, state, Paper.readConfig(dir))
     // A saved chart awaiting a disabled renderer must not hold the frame or typesetting; a previous drawing still prints.
     if (paper.config.off.includes('story-charts') || paper.config.off.includes('story')) {
-      for (const fig of state.figures) if (fig.kind === 'chart' && fig.status === 'planned') fig.status = fig.file ? 'rendered' : 'skipped'
+      for (const fig of state.figures ?? []) if (fig.kind === 'chart' && fig.status === 'planned') fig.status = fig.file ? 'rendered' : 'skipped'
     }
     return paper
   }

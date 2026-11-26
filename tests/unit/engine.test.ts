@@ -25,6 +25,18 @@ import { briefBlock, manuscriptBlock } from '../../src/engine/behaviors/common.j
 import { analyze, parseTable, profileDataset, profileText, type AnalysisSpec } from '../../src/engine/materials.js'
 import { checkoutSoftware, emptySoftwareEvaluation, executeSoftware, readSoftware, softwareEvidenceIds, softwareNumbers } from '../../src/engine/software.js'
 
+describe('opening papers', () => {
+  it.each(['story-charts', 'story'])('opens a saved state without figures when %s is off', (disabled) => {
+    const dir = mkdtempSync(join(tmpdir(), 'galley-open-'))
+    try {
+      const paper = Paper.create(dir, 'A saved paper.')
+      writeFileSync(paper.path('state.json'), JSON.stringify({ ...paper.state, figures: undefined }))
+      writeFileSync(paper.path('paper.json'), JSON.stringify({ ...paper.config, off: [disabled] }))
+      expect(Paper.open(dir).state.seed).toEqual(paper.state.seed)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})
+
 describe('software evidence', () => {
   const sha = 'a1b2c3d4'.repeat(5)
   const url = `https://github.com/example/solver/commit/${sha}`
