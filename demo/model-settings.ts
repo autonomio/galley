@@ -132,6 +132,7 @@ export function mountModelSettings(root: HTMLElement, back: string): void {
           }, 'gms-link'),
           button('Use theirs', () => { notice(key, 'Read the current settings.'); render(focus) }, 'gms-link'),
         )
+        render(focus)
         return
       }
       if (!response.ok) throw new Error(data.error ?? 'The setting could not be saved.')

@@ -64,3 +64,33 @@ test('a retained conflict uses the latest settings after a catalog check and ano
   await page.getByRole('button', { name: 'Use theirs' }).click()
   await expect(checker.getByRole('button', { name: choice })).toHaveAttribute('aria-pressed', 'true')
 })
+
+test('undo after a conflict restores the external value that the save replaced', async ({ page, request }) => {
+  const initial = await (await request.get('/api/galley-models')).json()
+  let current = structuredClone(initial)
+  current.revision = 'external'
+  current.places.author = 'secondary'
+  let conflict = true
+  await page.route('**/api/galley-models**', async (route) => {
+    if (route.request().method() === 'GET' && conflict) return route.fulfill({ json: initial })
+    if (route.request().method() === 'PUT') {
+      if (conflict) {
+        conflict = false
+        return route.fulfill({ status: 409, json: { error: 'Changed elsewhere', current } })
+      }
+      const body = route.request().postDataJSON()
+      current = { ...current, revision: 'saved', places: { ...current.places, [body.place]: body.slot } }
+    }
+    return route.fulfill({ json: current })
+  })
+  await page.goto('/')
+  await page.getByRole('link', { name: 'Settings', exact: true }).click()
+  const author = page.getByRole('group', { name: 'Author', exact: true })
+  await author.getByRole('button', { name: 'Secondary' }).click()
+  await expect(page.getByRole('button', { name: 'Use theirs' })).toBeVisible()
+  await author.getByRole('button', { name: 'Tertiary' }).click()
+  await expect(author.getByRole('button', { name: 'Tertiary' })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect(author.getByRole('button', { name: 'Secondary' })).toHaveAttribute('aria-pressed', 'true')
+  expect(current.places.author).toBe('secondary')
+})
