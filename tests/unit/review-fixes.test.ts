@@ -38,6 +38,14 @@ describe('what the last review asked of the engine', () => {
     ])
   })
 
+  it('does not give an unmatched panel a revision belonging to another panel', () => {
+    const original = [panel(['A'], ['Original A']), panel(['B'], ['Original B'])]
+    const revised = [panel(['B'], ['Revised B']), panel(['C'], ['Revised C'])]
+    const result = keepData(original, revised)
+    expect(result[0]).toEqual(original[0])
+    expect(result[1]).toMatchObject({ data: ['B'], labels: ['Revised B'] })
+  })
+
   it('never puts the run labels under a column the rows already use', () => {
     expect(groupOf({ ...panel([], []), group: 'Value' })).toBe('Run')
     expect(groupOf({ ...panel([], []), group: 'Mean' })).toBe('Run')
