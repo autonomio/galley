@@ -128,10 +128,11 @@ describe('the thesis branch', () => {
     expect(liveView(join(dir, 'p'))!.notes.find((n) => n.key === 'ready')?.text).toBe('The brief is in the document, with a PDF beside it.')
   })
 
-  it('says what did not happen: no literature review keeps no stage waiting, and a test with no search says its novelty was judged without one', () => {
+  it.each(['disabled', 'failed'] as const)('says what did not happen with a %s review and distinguishes no search from an empty search', (review) => {
     dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
-    const paper = Paper.create(join(dir, 'p'), '# Street trees\n\nCity trees die young.', { mode: 'thesis', stance: 'extend', literatureReview: false })
+    const paper = Paper.create(join(dir, 'p'), '# Street trees\n\nCity trees die young.', { mode: 'thesis', stance: 'extend', literatureReview: review !== 'disabled' })
     const s = paper.state
+    if (review === 'failed') s.literature = { question: 'How do street trees die?', status: 'failed' }
     s.brief = { hasSubject: true, concern: 'Street trees die young.', contribution: '', objectType: 'finding', field: 'urban forestry', audience: '', aboutSystem: false }
     paper.settle('position:seed', 'done')
     paper.save()
@@ -147,9 +148,14 @@ describe('the thesis branch', () => {
     const brief = thesisMarkdown(paper)
     expect(brief).toContain('**Thesis.** Street trees live or die as one shared root network (Roe 2020).')
     expect(brief).toContain('It first read: Street trees are a network, as Roe (2020) hints.')
-    expect(brief).toContain('No search for work already stating it ran, so its novelty was judged from the literature review alone.')
+    expect(brief).toContain('No search for work already stating it ran.')
+    expect(brief).not.toContain('novelty was judged from the literature review alone')
     expect(brief).toContain('- Jane Roe (2020). Narrow pits shorten tree lives.')
     expect(brief).not.toContain(key)
+    s.thesis.test!.searched = 0
+    const emptySearchBrief = thesisMarkdown(paper)
+    expect(emptySearchBrief).toContain('The search for work already stating it found none to compare.')
+    expect(emptySearchBrief).not.toContain('No search for work already stating it ran')
   })
 
   it('does not pass a thesis whose search failed: the test is tried again instead', async () => {
