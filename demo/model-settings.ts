@@ -125,14 +125,14 @@ export function mountModelSettings(root: HTMLElement, back: string): void {
       const { response, data } = await request('', 'PUT', { revision: known.revision, ...change })
       if (response.status === 409 && data.current) {
         const status = notice(key, data.error ?? 'The settings changed.', 'is-error')
-        const current = data.current
+        known = data.current
         status.append(
           button('Save mine', () => {
-            known = current
-            void save(key, change, 'slots' in change ? { slots: current.slots } : { place: change.place, slot: current.places[change.place] })
+            void save(key, change, 'slots' in change ? { slots: known.slots } : { place: change.place, slot: known.places[change.place] })
           }, 'gms-link'),
-          button('Use theirs', () => { known = current; notice(key, 'Read the current settings.'); render(focus) }, 'gms-link'),
+          button('Use theirs', () => { notice(key, 'Read the current settings.'); render(focus) }, 'gms-link'),
         )
+        render(focus)
         return
       }
       if (!response.ok) throw new Error(data.error ?? 'The setting could not be saved.')

@@ -1176,7 +1176,7 @@ ${list(s.notes.filter((n) => / was skipped /.test(n.text)).map((n) => `${n.behav
 
 ${s.literature?.status === 'done' ? `## The literature review
 Question: ${s.literature.question}
-Canary run ${s.literature.key}, searched ${s.literature.searchedOn}: ${s.literature.counts?.discovered} records identified, ${s.literature.counts?.screened} screened, ${s.literature.counts?.reviewed} read in full; ${s.literature.counts?.findings} findings, cited from ${s.literature.counts?.cited} publications. The full research bundle is ${s.literature.bundle}. Check that the question is the one you want answered; the findings appear in the claim ledger as "from the literature review".
+Canary run ${s.literature.key}, searched ${s.literature.searchedOn}: ${s.literature.counts?.discovered} records identified, ${s.literature.counts?.screened} screened, ${s.literature.counts?.retrieved} read in full and ${s.literature.counts?.reviewed} included; ${s.literature.counts?.findings} findings, cited from ${s.literature.counts?.cited} publications. The full research bundle is ${s.literature.bundle}. Check that the question is the one you want answered; the findings appear in the claim ledger as "from the literature review".
 
 ` : ''}${runsOf(paper).length ? `## Simulations: check what each one assumes
 ${runsOf(paper).map((r) => `${r.id} ${r.title} (${methodWords(r.result.method)}, ${sizeOf(r.result)}, seed ${r.result.provenance.seed}${r.result.provenance.ok ? '' : `; checks: ${r.result.provenance.checks.filter((c) => !c.ok).map((c) => c.detail).join('; ')}`})\n${r.result.spec.inputs.map((i) => `- ${i.name} ~ ${i.dist}: ${r.assumptions.find((a) => a.name === i.name)?.basis ?? 'no basis given'}`).join('\n')}`).join('\n\n')}

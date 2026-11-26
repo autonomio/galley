@@ -26,6 +26,18 @@ describe('what the last review asked of the engine', () => {
     expect(keepData(original, revised)).toEqual([expect.objectContaining({ data: ['sim:S1:profit', 'sim:S2:profit'], labels: ['Base case', 'Stress case'], unit: 'EUR' })])
   })
 
+  it('keeps each revised design with the matching panel kind when panels share references', () => {
+    const data = ['sim:S1:profit', 'sim:S2:profit']
+    const original: ChartPanel[] = [panel(data, ['A', 'B']), { ...panel(data, ['A', 'B']), kind: 'interval' }]
+    const revised: ChartPanel[] = [
+      { ...panel(data, ['A', 'B']), kind: 'interval', x: 'Interval x', marks: [{ axis: 'x', value: 1, label: 'interval' }] },
+      { ...panel(data, ['A', 'B']), x: 'Histogram x', marks: [{ axis: 'x', value: 2, label: 'histogram' }] },
+    ]
+    expect(keepData(original, revised).map((p) => [p.kind, p.x, p.marks[0].label])).toEqual([
+      ['hist', 'Histogram x', 'histogram'], ['interval', 'Interval x', 'interval'],
+    ])
+  })
+
   it('never puts the run labels under a column the rows already use', () => {
     expect(groupOf({ ...panel([], []), group: 'Value' })).toBe('Run')
     expect(groupOf({ ...panel([], []), group: 'Mean' })).toBe('Run')
