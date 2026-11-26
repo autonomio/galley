@@ -20,6 +20,14 @@ describe('analysis results', () => {
     expect(formatResult({ name: 'on time', value: 75 / 121, unit: 'share', n: 121, count: 75, ci_low: 0.53, ci_high: 0.71, method: 'Wilson' }).value).toBe('61.98% (75 of 121)')
     expect(formatResult({ name: 'p99', value: 10634.4, unit: 'ms', n: 217, ci_low: 10102.5, ci_high: 10699, method: 'order statistic' })).toMatchObject({ value: '10,634.4 ms', ci: '95% CI 10,102.5 ms to 10,699 ms' })
   })
+
+  it('preserves parentheses in units and strips only the label annotation', () => {
+    const result = { name: 'viscosity', value: 2, ci_low: 1, ci_high: 3, method: 'bootstrap' }
+    for (const unit of ['kg/(m s)', 'kg / (m s)']) {
+      expect(formatResult({ ...result, unit })).toMatchObject({ value: `2 ${unit}`, ci: `95% CI 1 ${unit} to 3 ${unit}` })
+    }
+    expect(formatResult({ ...result, unit: 'ms (label)' })).toMatchObject({ value: '2 ms', ci: '95% CI 1 ms to 3 ms', summary: expect.stringContaining('; unit: ms (label)') })
+  })
 })
 
 describe('writing the analyses', () => {

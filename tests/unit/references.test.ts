@@ -39,12 +39,18 @@ describe('reference records', () => {
     expect(cleanCsl({ type: 'journal-article', title: 'Fast Learning Requires Good Memory: A Time-Space Lower Bound', subtitle: ['A Time-Space Lower Bound'], issued: { 'date-parts': [[2018, 12, 12]] } })).toMatchObject({ title: 'Fast Learning Requires Good Memory: A Time-Space Lower Bound', issued: { 'date-parts': [[2018, 12, 12]] } })
   })
 
-  it('prints the TeX of a title as the formula it is, and a thesis under its one author', () => {
+  it('prints the TeX of a title as the formula it is, and preserves a thesis\'s coauthors', () => {
     expect(cleanCsl({ type: 'proceedings-article', title: 'Matching the Statistical Query Lower Bound for $k$-Sparse Parity Problems' }).title).toBe('Matching the Statistical Query Lower Bound for <i>k</i>-Sparse Parity Problems')
     expect(texToCsl('Learning with $\\tilde{O}(d^{k-1})$ samples and $2^{\\Theta(k)}$ neurons')).toBe('Learning with <i>Õ</i>(<i>d</i><sup><i>k</i>−1</sup>) samples and 2<sup>Θ(<i>k</i>)</sup> neurons')
     expect(texToCsl('An $\\Omega(n \\log n)$ bound in $\\mathrm{GF}(2)$')).toBe('An Ω(<i>n</i> log <i>n</i>) bound in GF(2)')
     expect(texToCsl('No formula here: 5$ and 6$, a $5 fee and $3 tax')).toBe('No formula here: 5$ and 6$, a $5 fee and $3 tax')
-    expect(cleanCsl({ type: 'dissertation', title: 'Kolmogorov Complexity and Derandomization', author: [{ family: 'Ronneburger', given: 'Detlef' }, { family: 'Allender', given: 'Eric' }] }).author).toEqual([{ family: 'Ronneburger', given: 'Detlef' }])
+    const author = [{ family: 'Chen', given: 'Li' }, { family: 'Patel', given: 'Sourav' }]
+    for (const type of ['dissertation', 'thesis']) expect(cleanCsl({ type, title: 'A coauthored thesis', author })).toMatchObject({ type: 'thesis', author })
+  })
+
+  it('keeps the grouping of both fraction operands, including nested fractions', () => {
+    expect(texToCsl('$\\frac{a+b}{c+d}$')).toBe('(<i>a</i>+<i>b</i>)/(<i>c</i>+<i>d</i>)')
+    expect(texToCsl('$\\frac{\\frac{a+b}{c}}{\\frac{d}{e+f}}$')).toBe('((<i>a</i>+<i>b</i>)/(<i>c</i>))/((<i>d</i>)/(<i>e</i>+<i>f</i>))')
   })
 
   it('completes a stub by its title from the record that says where the work was published, whatever year it carries', async () => {

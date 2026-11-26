@@ -13,7 +13,7 @@ import { resetHintMs } from '../../src/engine/models.js'
 import { buildManuscript, fillPlaceholders, importEditorEdits, syncEditor } from '../../src/engine/render.js'
 import { runPaper, Stalled, type Behavior } from '../../src/engine/scheduler.js'
 import { obj, str } from '../../src/engine/schema.js'
-import { applyExact, citationKey, dropUnknownCitations, escapeUnknownCitations, isVerbatim, overlap, sameClaim } from '../../src/engine/text.js'
+import { applyExact, citationKey, dropUnknownCitations, escapeUnknownCitations, isVerbatim, overlap, personNames, sameClaim } from '../../src/engine/text.js'
 import { resolved } from '../../src/engine/behaviors/review.js'
 import { isNarrowing } from '../../src/engine/behaviors/truth.js'
 import { LADDER } from '../../src/engine/behaviors/index.js'
@@ -180,6 +180,11 @@ describe('text rules', () => {
     const work = { id: 'W1', doi: null, title: 'Atypical Combinations and Scientific Impact', authors: ['Brian Uzzi'], year: 2013, venue: null, abstract: '', citedBy: null, url: null }
     expect(citationKey(work, taken)).toBe('uzzi2013atypical')
     expect(citationKey(work, taken)).toBe('uzzi2013atypical2')
+  })
+
+  it('removes bracketed affiliations before splitting the people an index names', () => {
+    expect(personNames(['Chen, Li [Lab A; Lab B]'])).toEqual(['Li Chen'])
+    expect(personNames(['Chen, Li [Lab A; Lab B]; Patel, Sourav [Lab C]', 'University of California, Berkeley'])).toEqual(['Li Chen', 'Sourav Patel', 'University of California, Berkeley'])
   })
 
   it('fills production placeholders and marks unknown ones', () => {
