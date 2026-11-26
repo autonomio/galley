@@ -75,7 +75,7 @@ export function describeClaim(paper: Paper, c: Claim): string {
     : c.status === 'internal' ? 'evidence: the authors\' own work; state it plainly as a property of what this paper presents; do not cite'
       : c.status === 'assumed' ? 'evidence: none needed (common knowledge or a stated premise)'
         : 'evidence: none verified; state it plainly as the paper states its own claims, and add a note for the authors that it has no verified source; or leave it out if the section works without it'
-  const review = c.origin === 'review' ? `, finding of the systematic review, uncertainty ${c.uncertainty ?? 'moderate'}` : ''
+  const review = c.origin === 'review' ? `, finding of the targeted review, uncertainty ${c.uncertainty ?? 'moderate'}` : ''
   return `- ${c.id} [${c.kind}${c.loadBearing ? ', load-bearing' : ''}${review}] ${c.text}\n  ${support}${c.softwareEvidence?.length ? `\n  Software evaluation evidence: ${c.softwareEvidence.join(', ')}.` : ''}`
 }
 

@@ -1,11 +1,13 @@
 // The systematic review: Canary's finished bundle becomes ledger claims with
 // verified citations and a section of the paper, and the review runs in the
 // background without holding up the rest.
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
-import { plan } from '../../src/engine/behaviors/front.js'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { outline, plan } from '../../src/engine/behaviors/front.js'
+import { describeClaim } from '../../src/engine/behaviors/common.js'
+import { writeSignoff } from '../../src/engine/render.js'
 import { declaration, importReview, REVIEW_SECTION, REVIEW_SETTINGS, withReviewSection } from '../../src/engine/literature.js'
 import { Paper } from '../../src/engine/paper.js'
 import { productionRecord } from '../../src/engine/record.js'
@@ -53,6 +55,33 @@ const bundle = {
 }
 
 describe('systematic review', () => {
+  it('uses the targeted protocol in outline prompts and claim descriptions', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    for (const mode of ['load-bearing', true] as const) {
+      const paper = Paper.create(join(dir, String(mode)), 'seed', { literatureReview: mode })
+      paper.state.brief = { hasSubject: true, concern: 'c', contribution: 'k', objectType: 'finding', field: 'Ecology', audience: 'a' }
+      paper.state.plan = { thesis: 't', workingTitle: 'Trees', noun: 'n', opens: [], objectType: 'finding' }
+      paper.state.literature = { question: 'q', status: 'done' }
+      const ask = vi.spyOn(paper, 'ask').mockResolvedValue({ sections: [{ title: 'Introduction', claim_ids: [], words: 800, figures: [] }], style: '', glossary: [] })
+      await outline.ready(paper)[0].run()
+      const prompt = ask.mock.calls[0][0].prompt
+      expect(prompt).toContain('targeted')
+      expect(prompt).not.toContain('This paper is a systematic review')
+      expect(prompt).not.toContain('A systematic literature review section')
+    }
+    const paper = Paper.create(join(dir, 'claim'), 'seed', {})
+    const claim = { id: 'C1', kind: 'finding', origin: 'review', text: 'Finding', status: 'assumed' } as unknown as Paper['state']['claims'][number]
+    expect(describeClaim(paper, claim)).toContain('finding of the targeted review')
+  })
+
+  it('reports full-text retrievals separately from included studies on the sign-off', () => {
+    dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
+    const paper = Paper.create(join(dir, 'p'), 'seed', { literatureReview: true })
+    paper.state.literature = { question: 'q', status: 'done', key: 'k', counts: { discovered: 100, screened: 60, retrieved: 55, reviewed: 50, core: 30, supporting: 20, cited: 3, queries: 2, findings: 2, audited: 2, minutes: 1 } }
+    mkdirSync(paper.path('out'), { recursive: true })
+    writeSignoff(paper)
+    expect(readFileSync(paper.path('out', 'signoff.md'), 'utf8')).toContain('55 read in full')
+  })
   it('turns the findings the audit upheld into claims with one verified citation per source, and keeps the protocol and counts', () => {
     dir = mkdtempSync(join(tmpdir(), 'galley-test-'))
     const paper = Paper.create(join(dir, 'p'), 'seed', { literatureReview: true })
