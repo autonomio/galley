@@ -48,13 +48,36 @@ def output_record(stream):
     return {"bytes": size, "sha256": digest.hexdigest(), "excerpt": excerpt}
 
 
+def stop_descendants(marker):
+    # The inherited marker survives setsid() and reparenting, unlike a process
+    # group or a parent-tree snapshot. Rescan to include children forked during teardown.
+    deadline = time.monotonic() + 3
+    while True:
+        output = subprocess.check_output(
+            ["/bin/ps", "-Eww" if sys.platform == "darwin" else "eww", "-A", "-o", "pid=,command="],
+            text=True, errors="replace", timeout=1,
+        )
+        pids = [int(line.split()[0]) for line in output.splitlines() if marker in line.split()]
+        if not pids:
+            return
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if time.monotonic() >= deadline:
+            raise OSError("Workload descendants could not be terminated.")
+        time.sleep(0.01)
+
+
 def run(request):
     started = time.monotonic()
     timed_out = False
     samples = []
+    run_id = os.urandom(16).hex()
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr, tempfile.TemporaryDirectory() as profiler:
         child = subprocess.Popen(
-            request["command"], cwd=request["cwd"], env=request["env"],
+            request["command"], cwd=request["cwd"], env={**request["env"], "GALLEY_SOFTWARE_RUN": run_id},
             stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             start_new_session=True, preexec_fn=limits,
         )
@@ -103,6 +126,7 @@ def run(request):
             signal.setitimer(signal.ITIMER_REAL, 0)
             # Stop descendants left by command wrappers or by a timeout.
             stop_child()
+            stop_descendants("GALLEY_SOFTWARE_RUN=" + run_id)
         stacks = None
         if stack_sample is not None:
             try:

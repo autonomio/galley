@@ -142,14 +142,17 @@ async function readBlob(url: string, id: string): Promise<string | null> {
   return oid === id && !blob.includes(0) ? blob.toString('utf8') : null
 }
 
-export async function readSoftware(subject: SoftwareSubject, files: SourceFile[], paths: string[]): Promise<SoftwareExcerpt[]> {
+export async function readSoftware(subject: SoftwareSubject, files: SourceFile[], paths: string[], gaps: string[] = []): Promise<SoftwareExcerpt[]> {
   const available = new Map(files.filter(regular).map((file) => [file.path, file.oid]))
   const excerpts: SoftwareExcerpt[] = []
   for (const path of new Set(paths.slice(0, 14))) {
     if (!available.has(path) || !sourcePath(path)) continue
     const encoded = path.split('/').map(encodeURIComponent).join('/')
     const raw = await readBlob(`https://raw.githubusercontent.com/${subject.name}/${subject.commit}/${encoded}`, available.get(path)!).catch(() => null)
-    if (raw === null) continue
+    if (raw === null) {
+      gaps.push(`Source file ${path} could not be read and verified against the commit tree.`)
+      continue
+    }
     const text = raw.slice(0, 5600).split('\n').slice(0, 180).join('\n')
     excerpts.push({ path, url: `${subject.repository}/blob/${subject.commit}/${encoded}#L1-L${text.split('\n').length}`, text })
   }

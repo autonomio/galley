@@ -38,7 +38,7 @@ async function collect(paper: Paper, subject: SoftwareSubject, role: SoftwareRol
     try {
       files = await fetchSoftware(subject, repo)
       initial = entryFiles(files)
-      evaluation.excerpts = await readSoftware(subject, files, initial)
+      evaluation.excerpts = await readSoftware(subject, files, initial, evaluation.gaps)
     } catch (error) {
       evaluation.gaps.push(`The linked revision could not be read. ${reason(error)}`)
       return evaluation
@@ -50,7 +50,7 @@ async function collect(paper: Paper, subject: SoftwareSubject, role: SoftwareRol
       schema: obj({ paths: arr(str()) }),
     })
     try {
-      const more = await readSoftware(subject, files, selection.paths.filter((path) => !initial.includes(path)))
+      const more = await readSoftware(subject, files, selection.paths.filter((path) => !initial.includes(path)), evaluation.gaps)
       evaluation.excerpts.push(...more)
     } catch (error) {
       evaluation.gaps.push(`Some source excerpts could not be read. ${reason(error)}`)

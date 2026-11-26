@@ -139,6 +139,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   let softwareLink = ''
   let softwareRole: SoftwareRole | undefined
   let reviewChosen = false
+  let settingsShown = false
   let step = 0
   let context: Context | null = null
   const settings = { mode: '' as '' | 'paper' | 'thesis', stance: '' as '' | 'extend' | 'contest' | 'reframe', author: '', affiliation: '', funding: '', competingInterests: '', acknowledgements: '', venue: 'preprint (arXiv)', words: 7000, rounds: 2, dial: 'autonomous', citations: 'auto', literatureReview: false, reviewRole: 'supporting', simulation: false, simulationRole: 'supporting', webSources: true, families: [...FAMILY_ORDER] }
@@ -166,7 +167,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   void readContext().then((c) => {
     context = c
     settings.families = c.families?.map((f) => f.family) ?? [...FAMILY_ORDER]
-    if (steps()[step] !== 'Settings' && steps()[step] !== 'Start') Object.assign(settings, { venue: c.defaults.venue, words: c.defaults.words, rounds: c.defaults.rounds, dial: c.defaults.dial, citations: c.defaults.citations, simulation: !!c.defaults.simulation })
+    if (!settingsShown) Object.assign(settings, { venue: c.defaults.venue, words: c.defaults.words, rounds: c.defaults.rounds, dial: c.defaults.dial, citations: c.defaults.citations, simulation: !!c.defaults.simulation })
     if (!reviewChosen) settings.literatureReview = softwareRole === 'introduction' || !!c.defaults.literatureReview
     if (steps()[step] === 'Settings' || steps()[step] === 'Start') render()
   }).catch((error: Error) => { hint.textContent = error.message })
@@ -525,6 +526,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   // ---------------------------------------------------------------- 3. settings
   const modelPlan = () => context?.choices?.[[...settings.families].sort().join(',')] ?? context
   function settingsStep(): (Node | null)[] {
+    settingsShown = true
     // A paper that rests only on its world model searches nothing else.
     const onlyModel = !!worldModel?.only
     const field = (label: string, control: Node, help?: string) => h('div', { class: 'gw-field' }, h('div', { class: 'gw-label', text: label }), control, help ? h('p', { class: 'gw-help', text: help }) : null)
