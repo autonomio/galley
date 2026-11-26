@@ -26,13 +26,15 @@ import { analyze, parseTable, profileDataset, profileText, type AnalysisSpec } f
 import { checkoutSoftware, emptySoftwareEvaluation, executeSoftware, readSoftware, softwareEvidenceIds, softwareNumbers } from '../../src/engine/software.js'
 
 describe('opening papers', () => {
-  it.each(['story-charts', 'story'])('opens a saved state without figures when %s is off', (disabled) => {
+  it.each([{ off: [] }, { off: ['story-charts'] }, { off: ['story'] }])('normalizes missing figures with off: $off', ({ off }) => {
     const dir = mkdtempSync(join(tmpdir(), 'galley-open-'))
     try {
       const paper = Paper.create(dir, 'A saved paper.')
       writeFileSync(paper.path('state.json'), JSON.stringify({ ...paper.state, figures: undefined }))
-      writeFileSync(paper.path('paper.json'), JSON.stringify({ ...paper.config, off: [disabled] }))
-      expect(Paper.open(dir).state.seed).toEqual(paper.state.seed)
+      writeFileSync(paper.path('paper.json'), JSON.stringify({ ...paper.config, off }))
+      const reopened = Paper.open(dir)
+      expect(reopened.state.seed).toEqual(paper.state.seed)
+      expect(reopened.state.figures).toEqual([])
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })
