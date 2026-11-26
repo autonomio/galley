@@ -526,7 +526,6 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
   // ---------------------------------------------------------------- 3. settings
   const modelPlan = () => context?.choices?.[[...settings.families].sort().join(',')] ?? context
   function settingsStep(): (Node | null)[] {
-    settingsShown = true
     // A paper that rests only on its world model searches nothing else.
     const onlyModel = !!worldModel?.only
     const field = (label: string, control: Node, help?: string) => h('div', { class: 'gw-field' }, h('div', { class: 'gw-label', text: label }), control, help ? h('p', { class: 'gw-help', text: help }) : null)
@@ -558,6 +557,7 @@ export function openPaperWizard(options: { slug: string; title: string; text: st
       field('Seats', h('table', { class: 'gw-seats' }, h('tbody', {}, seatRow('author', seats.author), seatRow('challenger', seats.challenger))), 'The author formulates the thesis; the challenger, from another family, tests it for its direction.'),
       field('Literature', literature, `A literature review by Canary, its question leaning toward the direction you chose: at least ${context?.review?.papers ?? 50} full papers read and every finding audited by a second model. A thesis is formulated from the literature only.`),
     ]
+    settingsShown = true
     return [
       h('h2', { id: 'gw-title', class: 'gw-title', text: 'How the paper is made' }),
       field('Author', h('div', { class: 'gw-pair' }, input('author', 'Name'), input('affiliation', 'Affiliation')), 'Set in the byline when the paper is typeset; never sent to a model.'),
